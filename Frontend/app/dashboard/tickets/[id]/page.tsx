@@ -411,7 +411,7 @@ export default async function TicketDetailPage({
                     <span className="text-xs text-foreground">{ticket.moduleName}</span>
                   </div>
                 )}
-                {ticket.revisionCount && ticket.revisionCount > 0 && (
+                {(ticket.revisionCount ?? 0) > 0 && (
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground flex items-center gap-1.5"><RefreshCw className="h-3 w-3 text-orange-500 dark:text-orange-400" />Revisions</span>
                     <span className="text-xs text-foreground font-medium">{ticket.revisionCount}</span>

@@ -132,9 +132,9 @@ export function TicketsPageClient({
   const currentDate = useMemo(() => format(new Date(), 'EEEE, MMMM d, yyyy'), [])
 
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col max-h-[calc(100dvh-7.5rem)]">
       {/* ── SECTION 1: Page Header — AI Studio style, scrolls away naturally ── */}
-       <div data-tour="tickets-header" className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6">
+       <div data-tour="tickets-header" className="shrink-0 relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6">
    
       <div className="space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fadeIn">
@@ -174,7 +174,7 @@ export function TicketsPageClient({
       </div>
 
       {/* ── SECTION 2: KPI & Filters — scrolls away naturally ── */}
-      <div className="space-y-5" data-tour="ticket-filters">
+      <div className="shrink-0 space-y-5" data-tour="ticket-filters">
         <TicketTopBar
           stats={stats}
           projects={projects}
@@ -192,11 +192,10 @@ export function TicketsPageClient({
         />
       </div>
 
-      {/* ── SECTION 3: Ticket Container — sticks to top when reached ── */}
-      <div className="sticky top-0 z-30 bg-background" style={{ maxHeight: '100dvh' }}>
-        <div className="flex flex-col h-full overflow-hidden">
+      {/* ── SECTION 3: Ticket Container — fills remaining viewport space ── */}
+      <div className="flex-1 min-h-0 overflow-hidden">
           {/* Main area: Ticket List + Right Panel */}
-          <div className="flex-1 flex min-h-0">
+          <div className="flex h-full min-h-0">
             {/* Center: Ticket List (scrolls) */}
             <div data-tour="ticket-list" className="flex-1 overflow-y-auto overscroll-behavior-contain scroll-smooth px-4 lg:px-6 py-4">
               {viewMode === 'list' ? (
@@ -276,7 +275,6 @@ export function TicketsPageClient({
             </div>
           </div>
         </div>
-      </div>
     </div>
   )
 }
