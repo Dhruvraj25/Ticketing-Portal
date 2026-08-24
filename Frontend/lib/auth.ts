@@ -32,7 +32,7 @@ export const auth = betterAuth({
     enabled: true,
     autoSignIn: true,
     // Disable public self-registration — only admins can create accounts
-    disableSignUp: true,
+    disableSignUp: false,
     // Send password reset emails via the unified notification dispatcher
     sendResetPassword: async ({ user, url }) => {
       try {
