@@ -1,0 +1,763 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* Inter font — loaded once globally via next/font in app/layout.tsx
+   (--font-inter). Sidebar typography opts in with this class; the rest of
+   the application keeps its existing font stack. */
+.font-inter {
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ============================================================================
+ * SupportHub AI Studio design system
+ * Palette: slate + #f4f7f9 canvas, white rounded-2xl cards, mono labels
+ * ============================================================================ */
+
+/* ─── Light Theme (default) ─────────────────────────────────────────────── */
+:root {
+  --background: #f4f7f9;
+  --foreground: #0f172a;
+
+  --card: #FFFFFF;
+  --card-foreground: #0f172a;
+
+  --popover: #FFFFFF;
+  --popover-foreground: #0f172a;
+
+  --primary: #0f172a;
+  --primary-foreground: #FFFFFF;
+
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+
+  --muted: #f8fafc;
+  --muted-foreground: #64748b;
+
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+
+  --success: #22C55E;
+  --success-foreground: #FFFFFF;
+
+  --warning: #F59E0B;
+  --warning-foreground: #FFFFFF;
+
+  --info: #3B82F6;
+  --info-foreground: #FFFFFF;
+
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #0f172a;
+
+  --chart-1: #2563EB;
+  --chart-2: #22C55E;
+  --chart-3: #F59E0B;
+  --chart-4: #EF4444;
+  --chart-5: #64748B;
+
+  --radius: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+
+  --sidebar: #f4f7f9;
+  --sidebar-foreground: #0f172a;
+  --sidebar-muted: #64748b;
+  --sidebar-accent: #FFFFFF;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #0f172a;
+
+  /* Layout variables */
+  --topbar-height: 0px;
+  --sidebar-width: 256px;
+  --sidebar-collapsed-width: 80px;
+  --right-panel-width: 320px;
+}
+
+/* ─── Dark Theme ────────────────────────────────────────────────────────── */
+.dark {
+  --background: #020617;
+  --foreground: #e2e8f0;
+
+  --card: #0f172a;
+  --card-foreground: #f1f5f9;
+
+  --popover: #0f172a;
+  --popover-foreground: #f1f5f9;
+
+  --primary: #f8fafc;
+  --primary-foreground: #0f172a;
+
+  --secondary: #1e293b;
+  --secondary-foreground: #f1f5f9;
+
+  --accent: #1e293b;
+  --accent-foreground: #f1f5f9;
+
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+
+  --success: #22C55E;
+  --success-foreground: #FFFFFF;
+
+  --warning: #F59E0B;
+  --warning-foreground: #FFFFFF;
+
+  --info: #3B82F6;
+  --info-foreground: #FFFFFF;
+
+  --border: #1e293b;
+  --input: #1e293b;
+  --ring: #e2e8f0;
+
+  --chart-1: #3B82F6;
+  --chart-2: #22C55E;
+  --chart-3: #F59E0B;
+  --chart-4: #EF4444;
+  --chart-5: #94A3B8;
+
+  --sidebar: #0f172a;
+  --sidebar-foreground: #f1f5f9;
+  --sidebar-muted: #94a3b8;
+  --sidebar-accent: #1e293b;
+  --sidebar-accent-foreground: #f1f5f9;
+  --sidebar-border: #1e293b;
+  --sidebar-ring: #f1f5f9;
+}
+
+/* ─── Tailwind Theme Tokens ────────────────────────────────────────────── */
+@theme inline {
+  /* Exact typography from the AI Studio design (Tailwind default stacks) */
+  --font-sans: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* ─── Global typography scale (AI Studio refinement) ─────────────── */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.25rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.375rem;
+  --text-base: 1.0625rem;
+  --text-base--line-height: 1.625rem;
+  --text-lg: 1.25rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.375rem;
+  --text-xl--line-height: 1.875rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.25rem;
+  --text-3xl: 2.25rem;
+  --text-3xl--line-height: 2.5rem;
+  --text-4xl: 2.625rem;
+  --text-4xl--line-height: 3rem;
+  --text-5xl: 3.25rem;
+  --text-5xl--line-height: 3.5rem;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius-xl);
+  --radius-2xl: var(--radius-2xl);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/* ─── Base Layer ────────────────────────────────────────────────────────── */
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Smooth transitions for theme changes */
+  *,
+  *::before,
+  *::after {
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  /* Typography */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-sans tracking-tight;
+  }
+}
+
+/* ─── Custom Scrollbar ────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* AI Studio thin scrollbar used in sidebar + tab strips */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.dark .custom-scrollbar {
+  scrollbar-color: #334155 transparent;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* ─── Scroll Container Utilities ──────────────────────────────────────── */
+
+/* Independent scroll container with GPU acceleration */
+@utility scroll-container {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  contain: strict;
+}
+
+/* Independent scroll container for content areas (less strict containment) */
+@utility scroll-content {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  contain: layout paint;
+}
+
+/* Performance-optimized scroll container */
+@utility scroll-performance {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  content-visibility: auto;
+  contain-intrinsic-size: 500px;
+}
+
+/* Hide scrollbar but keep scrollable */
+@utility scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Smooth scrolling */
+@utility scroll-smooth {
+  scroll-behavior: smooth;
+}
+
+/* Sticky top bar area */
+@utility sticky-top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+/* 3-column layout for ticket pages */
+@utility ticket-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  height: calc(100vh - var(--topbar-height));
+  overflow: hidden;
+
+  @media (min-width: 1024px) {
+    grid-template-columns: 1fr var(--right-panel-width);
+  }
+}
+
+@utility ticket-list-container {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+  height: 100%;
+  min-height: 0;
+}
+
+@utility ticket-right-panel {
+  display: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-left: 1px solid var(--border);
+  background: var(--background);
+
+  @media (min-width: 1024px) {
+    display: block;
+  }
+}
+
+/* ─── Status Color Badges (AI Studio palette) ─────────────────────────── */
+@utility status-open {
+  background: #EFF6FF;
+  color: #2563EB;
+  border: 1px solid #BFDBFE;
+}
+
+.dark .status-open {
+  background: rgba(37, 99, 235, 0.15);
+  color: #93C5FD;
+  border: 1px solid rgba(37, 99, 235, 0.35);
+}
+
+@utility status-in-progress {
+  background: #FFFBEB;
+  color: #F59E0B;
+  border: 1px solid #FDE68A;
+}
+
+.dark .status-in-progress {
+  background: rgba(245, 158, 11, 0.15);
+  color: #FCD34D;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+@utility status-resolved {
+  background: #F0FDF4;
+  color: #16A34A;
+  border: 1px solid #BBF7D0;
+}
+
+.dark .status-resolved {
+  background: rgba(34, 197, 94, 0.15);
+  color: #6EE7B7;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+}
+
+@utility status-closed {
+  background: #F1F5F9;
+  color: #64748B;
+  border: 1px solid #E2E8F0;
+}
+
+.dark .status-closed {
+  background: rgba(100, 116, 139, 0.15);
+  color: #94A3B8;
+  border: 1px solid rgba(100, 116, 139, 0.35);
+}
+
+@utility priority-low {
+  background: #F1F5F9;
+  color: #64748B;
+}
+
+.dark .priority-low {
+  background: rgba(100, 116, 139, 0.15);
+  color: #94A3B8;
+}
+
+@utility priority-medium {
+  background: #EFF6FF;
+  color: #2563EB;
+}
+
+.dark .priority-medium {
+  background: rgba(37, 99, 235, 0.15);
+  color: #93C5FD;
+}
+
+@utility priority-high {
+  background: #FFFBEB;
+  color: #F59E0B;
+}
+
+.dark .priority-high {
+  background: rgba(245, 158, 11, 0.15);
+  color: #FCD34D;
+}
+
+@utility priority-critical {
+  background: #FEF2F2;
+  color: #EF4444;
+}
+
+.dark .priority-critical {
+  background: rgba(239, 68, 68, 0.15);
+  color: #FCA5A5;
+}
+
+/* ─── Card shadow utilities ────────────────────────────────────────────── */
+@utility card-shadow {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+@utility card-shadow-hover {
+  &:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+    transform: translateY(-1px);
+  }
+}
+
+/* ─── Focus ring utility ──────────────────────────────────────────────── */
+@utility focus-ring {
+  outline: none;
+  &:focus-visible {
+    box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--ring);
+    border-radius: var(--radius);
+  }
+}
+
+/* ─── Responsive Right Panel ──────────────────────────────────────────── */
+@utility right-panel-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+}
+
+@utility right-panel-drawer {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 340px;
+  z-index: 50;
+  background: var(--card);
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.08);
+}
+
+/* ============================================================================
+ * AI Studio entrance animations
+ * ============================================================================ */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out both;
+}
+
+.animate-fadeInUp {
+  animation: fadeInUp 0.35s ease-out both;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.35s ease-out both;
+  will-change: transform, opacity;
+}
+
+.animate-fade-in-down {
+  animation: fade-in-down 0.3s ease-out both;
+  will-change: transform, opacity;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.25s ease-out both;
+  will-change: opacity;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out both;
+  will-change: transform, opacity;
+}
+
+/* ============================================================================
+ * Product Tour — driver.js popover (SupportHub design system)
+ * ============================================================================ */
+
+/* Highlighted element ring */
+.driver-popover .driver-stage {
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.55), 0 8px 32px rgba(2, 6, 23, 0.35);
+}
+
+/* Popover card */
+.sh-tour-popover.driver-popover {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow:
+    0 24px 60px rgba(2, 6, 23, 0.22),
+    0 8px 24px rgba(2, 6, 23, 0.12),
+    0 2px 6px rgba(2, 6, 23, 0.06);
+  padding: 20px 20px 16px;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  max-width: min(340px, calc(100vw - 2rem));
+  animation: scale-in 0.18s ease-out both;
+}
+
+.sh-tour-popover .driver-popover-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+  line-height: 1.3;
+}
+
+.sh-tour-popover .driver-popover-description {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted-foreground);
+  margin-top: 6px;
+}
+
+.sh-tour-popover .driver-popover-progress-text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+}
+
+.sh-tour-popover .driver-popover-footer {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sh-tour-popover .driver-popover-navigation-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.sh-tour-popover .driver-popover-footer-btn {
+  border: none;
+  border-radius: 9px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.sh-tour-popover .driver-popover-prev-btn {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+}
+
+.sh-tour-popover .driver-popover-prev-btn:hover {
+  filter: brightness(0.97);
+}
+
+.sh-tour-popover .driver-popover-next-btn,
+.sh-tour-popover .driver-popover-done-btn {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: 0 1px 2px rgba(2, 6, 23, 0.2);
+}
+
+.sh-tour-popover .driver-popover-next-btn:hover,
+.sh-tour-popover .driver-popover-done-btn:hover {
+  filter: brightness(1.12);
+}
+
+.sh-tour-popover .driver-popover-btn-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.sh-tour-popover .driver-popover-close-btn {
+  color: var(--muted-foreground);
+  font-size: 20px;
+  line-height: 1;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.sh-tour-popover .driver-popover-close-btn:hover {
+  color: var(--foreground);
+  background: var(--accent);
+}
+
+/* Arrow color to match the popover background */
+.sh-tour-popover.driver-popover .driver-popover-arrow {
+  border-color: var(--card);
+}
+
+/* Dark mode */
+.dark .sh-tour-popover.driver-popover {
+  background: var(--card);
+  border-color: var(--border);
+}
+
+.dark .sh-tour-popover.driver-popover .driver-popover-arrow {
+  border-color: var(--card);
+}
+
+/* Skip tour button (injected into the popover footer) */
+.sh-tour-popover .driver-popover-skip-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px 10px;
+}
+
+.sh-tour-popover .driver-popover-skip-btn:hover {
+  color: var(--foreground);
+  background: var(--accent);
+}
+
+/*
+ * Popover hidden while a cross-page step loads (see `hideTourPopover` in
+ * tour-provider.tsx). driver.js re-creates the popover DOM on every step, so
+ * this class is only ever present on the previous step's (removed) popover.
+ */
+.sh-tour-popover-hidden {
+  display: none !important;
+}
+
+/* Injected progress bar along the popover's top edge */
+.sh-tour-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  border-radius: 14px 14px 0 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.sh-tour-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #10b981, #14b8a6);
+  transition: width 0.35s ease;
+}
+
