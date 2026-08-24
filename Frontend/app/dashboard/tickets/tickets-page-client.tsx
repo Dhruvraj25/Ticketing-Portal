@@ -192,52 +192,50 @@ export function TicketsPageClient({
         />
       </div>
 
-      {/* ── SECTION 3: Ticket Container ── */}
-<div className="w-full">
-  <div className="flex w-full min-w-0">
-    
-    {/* Center: Ticket List — 78% width with internal scroll */}
-    <div
-      data-tour="ticket-list"
-      className="w-full lg:w-[78%] lg:flex-[0_0_78%] min-w-0 max-h-[calc(100dvh-300px)] overflow-y-auto overscroll-behavior-contain scroll-smooth px-4 lg:px-6 py-4"
-    >
-      {viewMode === 'list' ? (
-        <TicketList
-          tickets={tickets as any}
-          showClient={user.role !== 'client'}
-          showAssignee={user.role !== 'developer'}
-          developers={developers}
-          userRole={user.role}
-          onAssignmentComplete={onAssignmentComplete}
-          emptyMessage={
-            user.role === 'client'
-              ? "You haven't submitted any tickets yet. Create your first ticket to get started!"
-              : user.role === 'developer'
-              ? "No tickets assigned to you yet."
-              : "No tickets found matching your filters."
-          }
-        />
-      ) : (
-        <TicketGrid
-          tickets={tickets as any}
-          showClient={user.role !== 'client'}
-          showAssignee={user.role !== 'developer'}
-          developers={developers}
-          userRole={user.role}
-          onAssignmentComplete={onAssignmentComplete}
-          emptyMessage={
-            user.role === 'client'
-              ? "You haven't submitted any tickets yet."
-              : user.role === 'developer'
-              ? "No tickets assigned to you yet."
-              : "No tickets found matching your filters."
-          }
-        />
-      )}
-    </div>
+      {/* ── SECTION 3: Ticket Container — ticket list uses max-height for internal scroll ── */}
+      <div className="w-full">
+        <div className="flex w-full min-w-0">
 
-  </div>
-</div>
+          {/* Main Ticket Area */}
+          <div className="flex-1 min-w-0">
+
+            {/* Ticket List — only this area has internal scrolling */}
+            <div
+              data-tour="ticket-list"
+              className="w-full max-h-[calc(100dvh-300px)] overflow-y-auto overscroll-behavior-contain scroll-smooth px-4 lg:px-6 py-4"></div>
+                {viewMode === 'list' ? (
+                <TicketList
+                  tickets={tickets as any}
+                  showClient={user.role !== 'client'}
+                  showAssignee={user.role !== 'developer'}
+                  developers={developers}
+                  userRole={user.role}
+                  onAssignmentComplete={onAssignmentComplete}
+                  emptyMessage={
+                    user.role === 'client'
+                      ? "You haven't submitted any tickets yet. Create your first ticket to get started!"
+                      : user.role === 'developer'
+                      ? "No tickets assigned to you yet."
+                      : "No tickets found matching your filters."
+                  }
+                />
+              ) : (
+                <TicketGrid
+                  tickets={tickets as any}
+                  showClient={user.role !== 'client'}
+                  showAssignee={user.role !== 'developer'}
+                  developers={developers}
+                  userRole={user.role}
+                  onAssignmentComplete={onAssignmentComplete}
+                  emptyMessage={
+                    user.role === 'client'
+                      ? "You haven't submitted any tickets yet."
+                      : user.role === 'developer'
+                      ? "No tickets assigned to you yet."
+                      : "No tickets found matching your filters."
+                  }
+                />
+              )}
 
               {/* ── Server-side Pagination — always reserves space to prevent CLS ── */}
               <div data-tour="ticket-pagination" style={{ minHeight: 40 }} className="flex items-center justify-between mt-4 px-1 pb-4">
