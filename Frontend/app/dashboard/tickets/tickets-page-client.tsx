@@ -267,7 +267,7 @@ export function TicketsPageClient({
             </div>
 
             {/* Right Panel (independent scroll) */}
-            <div data-tour="tickets-right-panel" className="hidden lg:block w-[300px] xl:w-[340px] shrink-0 border-l border-border/50 overflow-y-auto overscroll-behavior-contain bg-background/50">
+            <div data-tour="tickets-right-panel" className="hidden lg:block w-[240px] xl:w-[280px] shrink-0 border-l border-border/50 overflow-y-auto overscroll-behavior-contain bg-background/50">
               <div className="p-4">
                 <TicketRightPanel userRole={user.role} />
               </div>
