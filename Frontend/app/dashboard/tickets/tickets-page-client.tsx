@@ -192,44 +192,52 @@ export function TicketsPageClient({
         />
       </div>
 
-      {/* ── SECTION 3: Ticket Container — ticket list uses max-height for internal scroll ── */}
-      <div>
-          <div className="flex">
-            {/* Center: Ticket List (scrolls) */}
-            <div data-tour="ticket-list" className="flex-1 max-h-[calc(100dvh-300px)] overflow-y-auto overscroll-behavior-contain scroll-smooth px-4 lg:px-6 py-4">
-              {viewMode === 'list' ? (
-                <TicketList
-                  tickets={tickets as any}
-                  showClient={user.role !== 'client'}
-                  showAssignee={user.role !== 'developer'}
-                  developers={developers}
-                  userRole={user.role}
-                  onAssignmentComplete={onAssignmentComplete}
-                  emptyMessage={
-                    user.role === 'client'
-                      ? "You haven't submitted any tickets yet. Create your first ticket to get started!"
-                      : user.role === 'developer'
-                      ? "No tickets assigned to you yet."
-                      : "No tickets found matching your filters."
-                  }
-                />
-              ) : (
-                <TicketGrid
-                  tickets={tickets as any}
-                  showClient={user.role !== 'client'}
-                  showAssignee={user.role !== 'developer'}
-                  developers={developers}
-                  userRole={user.role}
-                  onAssignmentComplete={onAssignmentComplete}
-                  emptyMessage={
-                    user.role === 'client'
-                      ? "You haven't submitted any tickets yet."
-                      : user.role === 'developer'
-                      ? "No tickets assigned to you yet."
-                      : "No tickets found matching your filters."
-                  }
-                />
-              )}
+      {/* ── SECTION 3: Ticket Container ── */}
+<div className="w-full">
+  <div className="flex w-full min-w-0">
+    
+    {/* Center: Ticket List — 78% width with internal scroll */}
+    <div
+      data-tour="ticket-list"
+      className="w-full lg:w-[78%] lg:flex-[0_0_78%] min-w-0 max-h-[calc(100dvh-300px)] overflow-y-auto overscroll-behavior-contain scroll-smooth px-4 lg:px-6 py-4"
+    >
+      {viewMode === 'list' ? (
+        <TicketList
+          tickets={tickets as any}
+          showClient={user.role !== 'client'}
+          showAssignee={user.role !== 'developer'}
+          developers={developers}
+          userRole={user.role}
+          onAssignmentComplete={onAssignmentComplete}
+          emptyMessage={
+            user.role === 'client'
+              ? "You haven't submitted any tickets yet. Create your first ticket to get started!"
+              : user.role === 'developer'
+              ? "No tickets assigned to you yet."
+              : "No tickets found matching your filters."
+          }
+        />
+      ) : (
+        <TicketGrid
+          tickets={tickets as any}
+          showClient={user.role !== 'client'}
+          showAssignee={user.role !== 'developer'}
+          developers={developers}
+          userRole={user.role}
+          onAssignmentComplete={onAssignmentComplete}
+          emptyMessage={
+            user.role === 'client'
+              ? "You haven't submitted any tickets yet."
+              : user.role === 'developer'
+              ? "No tickets assigned to you yet."
+              : "No tickets found matching your filters."
+          }
+        />
+      )}
+    </div>
+
+  </div>
+</div>
 
               {/* ── Server-side Pagination — always reserves space to prevent CLS ── */}
               <div data-tour="ticket-pagination" style={{ minHeight: 40 }} className="flex items-center justify-between mt-4 px-1 pb-4">
@@ -267,7 +275,7 @@ export function TicketsPageClient({
             </div>
 
             {/* Right Panel (independent scroll) */}
-            <div data-tour="tickets-right-panel" className="hidden lg:block w-[540px] xl:w-[280px] shrink-0 border-l border-border/50 overflow-y-auto overscroll-behavior-contain bg-background/50">
+            <div data-tour="tickets-right-panel" className="hidden lg:block w-[240px] xl:w-[280px] shrink-0 border-l border-border/50 overflow-y-auto overscroll-behavior-contain bg-background/50">
               <div className="p-4">
                 <TicketRightPanel userRole={user.role} />
               </div>
