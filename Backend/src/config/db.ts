@@ -7,7 +7,19 @@ import { recordSqlTiming } from '../lib/performance-profiler'
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 })
-
+console.log('[DB] DATABASE_URL configured:', !!process.env.DATABASE_URL)
+console.log(
+  '[DB] DATABASE_HOST:',
+  process.env.DATABASE_URL
+    ? new URL(process.env.DATABASE_URL).hostname
+    : 'MISSING'
+)
+console.log(
+  '[DB] DATABASE_NAME:',
+  process.env.DATABASE_URL
+    ? new URL(process.env.DATABASE_URL).pathname
+    : 'MISSING'
+)
 // ── SQL Query Timing ──────────────────────────────────────────────────────
 // Wrap pool.query to measure execution time of every SQL statement.
 

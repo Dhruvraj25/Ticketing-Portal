@@ -18,10 +18,13 @@ import { routeTimingMiddleware } from './lib/performance-profiler'
 import devEmailRoutes from "./routes/dev-email"
 import emailNotificationRoutes from "./routes/email-notification"
 import teamsNotificationRoutes from "./routes/teams-notification"
+import bootstrapRouter from './routes/bootstrap'
 
 export const app = express()
 
 // ─── Middleware ──────────────────────────────────────────────────────────
+//temp signup
+app.use('/api/bootstrap', bootstrapRouter)
 // Compression — gzip/brotli for all API responses
 app.use(compression())
 

@@ -10,7 +10,7 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
-    disableSignUp: true,
+    disableSignUp: false,
   },
   user: {
     additionalFields: {

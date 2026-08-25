@@ -2,7 +2,7 @@
 
 import { wrapServerAction } from '@/lib/performance-profiler'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api'
 
 async function fetchFromBackend(path: string, options?: RequestInit) {
   const url = API_BASE + '/teams' + path

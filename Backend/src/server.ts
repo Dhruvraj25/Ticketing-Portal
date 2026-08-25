@@ -1,5 +1,4 @@
-import dotenv from "dotenv";
-dotenv.config();
+import 'dotenv/config'
 
 import { app } from './app'
 import { initTransporter } from './services/email/email.transporter'
