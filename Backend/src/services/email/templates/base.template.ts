@@ -29,7 +29,7 @@ export interface BrandingConfig {
 }
 
 const DEFAULT_BRANDING: BrandingConfig = {
-  companyName: 'SupportHub',
+  companyName: 'Nirka Business Solutions',
   primaryColor: '#2563EB',
   secondaryColor: '#6366F1',
   portalUrl: 'https://supporthub.app',
