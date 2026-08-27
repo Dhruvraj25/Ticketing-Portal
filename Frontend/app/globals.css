@@ -759,13 +759,10 @@
   border-radius: inherit;
   background: linear-gradient(90deg, #10b981, #14b8a6);
   transition: width 0.35s ease;
-}
-
-/* ============================================================================
- * Loading Screen — inspired by Ryan Roehl's Dribbble "Loading Screen"
- * Two animated dots bouncing in sequence on a solid background.
- * Adapted to SupportHub branding colors.
- * @see https://dribbble.com/shots/1745129-Loading-Screen
+}/* ============================================================================
+ * Loading Screen — three balls continuously swapping positions.
+ * Theme-aware: light mode uses light background with muted colors,
+ * dark mode preserves original dark background with white dots.
  * ============================================================================ */
 
 .loading-screen {
@@ -793,10 +790,12 @@
   transition: none;
 }
 
+/* ─── Backdrop (light mode default) ────────────────────────────────────── */
+
 .loading-screen__backdrop {
   position: absolute;
   inset: 0;
-  background: var(--primary);
+  background: var(--background);
 }
 
 .dark .loading-screen__backdrop {
@@ -809,80 +808,86 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 28px;
 }
 
-/* ─── Animated Dots ─────────────────────────────────────────────────────── */
+/* ─── Three Dots Container ─────────────────────────────────────────────── */
 
 .loading-screen__dots {
+  position: relative;
+  width: 80px;
+  height: 14px;
   display: flex;
   align-items: center;
-  gap: 16px;
+  justify-content: center;
 }
 
+/* ─── Individual Dots ──────────────────────────────────────────────────── */
+
 .loading-screen__dot {
-  display: block;
+  position: absolute;
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #FFFFFF;
-  opacity: 0.9;
   will-change: transform;
 }
 
+/* Light mode dot colors */
+.loading-screen__dot--1 { background: var(--primary); }
+.loading-screen__dot--2 { background: var(--muted-foreground); }
+.loading-screen__dot--3 { background: var(--border); }
+
+/* Dark mode dot colors — keep original white */
+.dark .loading-screen__dot--1 { background: #FFFFFF; }
+.dark .loading-screen__dot--2 { background: #FFFFFF; }
+.dark .loading-screen__dot--3 { background: #FFFFFF; }
+
+/* ─── Position-Swapping Animation ──────────────────────────────────────── */
+/*
+ * Three dots sit at positions left (-33px), center (0), right (+33px).
+ * Over 3 steps they cyclically rotate:
+ *   step 1 (33%): left→center, center→right, right→left
+ *   step 2 (67%): left→right, center→left,  right→center
+ *   step 3 (100%): back to start
+ */
+
 .loading-screen__dot--1 {
-  animation: loadingDotBounce 1.2s ease-in-out infinite;
+  animation: dotSwap1 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 .loading-screen__dot--2 {
-  animation: loadingDotBounce 1.2s ease-in-out 0.3s infinite;
+  animation: dotSwap2 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-@keyframes loadingDotBounce {
-  0%,
-  50%,
-  100% {
-    transform: translateY(0) scale(1);
-    opacity: 0.9;
-  }
-  25% {
-    transform: translateY(-20px) scale(1.15);
-    opacity: 1;
-  }
-  75% {
-    transform: translateY(8px) scale(0.85);
-    opacity: 0.6;
-  }
+.loading-screen__dot--3 {
+  animation: dotSwap3 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-/* ─── Brand Name ────────────────────────────────────────────────────────── */
-
-.loading-screen__brand {
-  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.6);
-  user-select: none;
+@keyframes dotSwap1 {
+  0%   { transform: translateX(-33px); }
+  33%  { transform: translateX(0); }
+  67%  { transform: translateX(33px); }
+  100% { transform: translateX(-33px); }
 }
 
-/* ─── Optional Message ──────────────────────────────────────────────────── */
+@keyframes dotSwap2 {
+  0%   { transform: translateX(0); }
+  33%  { transform: translateX(33px); }
+  67%  { transform: translateX(-33px); }
+  100% { transform: translateX(0); }
+}
 
-.loading-screen__message {
-  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
-  font-size: 12px;
-  font-weight: 400;
-  color: rgba(255, 255, 255, 0.35);
-  margin-top: -12px;
-  letter-spacing: 0.02em;
+@keyframes dotSwap3 {
+  0%   { transform: translateX(33px); }
+  33%  { transform: translateX(-33px); }
+  67%  { transform: translateX(0); }
+  100% { transform: translateX(33px); }
 }
 
 /* ─── Responsive Adjustments ────────────────────────────────────────────── */
 
 @media (max-width: 640px) {
   .loading-screen__dots {
-    gap: 12px;
+    width: 64px;
   }
 
   .loading-screen__dot {
@@ -890,12 +895,25 @@
     height: 11px;
   }
 
-  .loading-screen__brand {
-    font-size: 11px;
+  @keyframes dotSwap1 {
+    0%   { transform: translateX(-26px); }
+    33%  { transform: translateX(0); }
+    67%  { transform: translateX(26px); }
+    100% { transform: translateX(-26px); }
   }
 
-  .loading-screen__message {
-    font-size: 11px;
+  @keyframes dotSwap2 {
+    0%   { transform: translateX(0); }
+    33%  { transform: translateX(26px); }
+    67%  { transform: translateX(-26px); }
+    100% { transform: translateX(0); }
+  }
+
+  @keyframes dotSwap3 {
+    0%   { transform: translateX(26px); }
+    33%  { transform: translateX(-26px); }
+    67%  { transform: translateX(0); }
+    100% { transform: translateX(26px); }
   }
 }
 
@@ -913,8 +931,7 @@
 }
 
 @keyframes loadingDotPulse {
-  0%,
-  100% {
+  0%, 100% {
     opacity: 0.5;
     transform: scale(0.85);
   }
