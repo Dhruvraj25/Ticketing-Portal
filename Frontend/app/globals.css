@@ -761,3 +761,166 @@
   transition: width 0.35s ease;
 }
 
+/* ============================================================================
+ * Loading Screen — inspired by Ryan Roehl's Dribbble "Loading Screen"
+ * Two animated dots bouncing in sequence on a solid background.
+ * Adapted to SupportHub branding colors.
+ * @see https://dribbble.com/shots/1745129-Loading-Screen
+ * ============================================================================ */
+
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: all;
+}
+
+.loading-screen--visible {
+  opacity: 1;
+  transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.loading-screen--hidden {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.loading-screen--instant.loading-screen--hidden {
+  transition: none;
+}
+
+.loading-screen__backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--primary);
+}
+
+.dark .loading-screen__backdrop {
+  background: #020617;
+}
+
+.loading-screen__content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+}
+
+/* ─── Animated Dots ─────────────────────────────────────────────────────── */
+
+.loading-screen__dots {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.loading-screen__dot {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  opacity: 0.9;
+  will-change: transform;
+}
+
+.loading-screen__dot--1 {
+  animation: loadingDotBounce 1.2s ease-in-out infinite;
+}
+
+.loading-screen__dot--2 {
+  animation: loadingDotBounce 1.2s ease-in-out 0.3s infinite;
+}
+
+@keyframes loadingDotBounce {
+  0%,
+  50%,
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 0.9;
+  }
+  25% {
+    transform: translateY(-20px) scale(1.15);
+    opacity: 1;
+  }
+  75% {
+    transform: translateY(8px) scale(0.85);
+    opacity: 0.6;
+  }
+}
+
+/* ─── Brand Name ────────────────────────────────────────────────────────── */
+
+.loading-screen__brand {
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+  user-select: none;
+}
+
+/* ─── Optional Message ──────────────────────────────────────────────────── */
+
+.loading-screen__message {
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.35);
+  margin-top: -12px;
+  letter-spacing: 0.02em;
+}
+
+/* ─── Responsive Adjustments ────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .loading-screen__dots {
+    gap: 12px;
+  }
+
+  .loading-screen__dot {
+    width: 11px;
+    height: 11px;
+  }
+
+  .loading-screen__brand {
+    font-size: 11px;
+  }
+
+  .loading-screen__message {
+    font-size: 11px;
+  }
+}
+
+/* ─── Reduced Motion Preference ─────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-screen__dot {
+    animation: loadingDotPulse 1.6s ease-in-out infinite;
+  }
+
+  .loading-screen--visible,
+  .loading-screen--hidden {
+    transition-duration: 0.01s;
+  }
+}
+
+@keyframes loadingDotPulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+

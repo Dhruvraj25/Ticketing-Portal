@@ -1,15 +1,19 @@
-import { Loader2Icon } from 'lucide-react'
+'use client'
 
-import { cn } from '@/lib/utils'
+import { LoadingScreen } from '@/components/ui/loading-screen'
 
-function Spinner({ className, ...props }: React.ComponentProps<'svg'>) {
+/**
+ * @deprecated Use `LoadingScreen` directly for full-screen loading states.
+ * This component now renders the LoadingScreen as an inline overlay.
+ *
+ * For button-level loading, continue using `Loader2` from lucide-react
+ * with `animate-spin`.
+ */
+function Spinner({ className, ...props }: React.ComponentProps<'div'>) {
   return (
-    <Loader2Icon
-      role="status"
-      aria-label="Loading"
-      className={cn('size-4 animate-spin', className)}
-      {...props}
-    />
+    <div className={className} {...props}>
+      <LoadingScreen visible />
+    </div>
   )
 }
 

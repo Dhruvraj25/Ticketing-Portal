@@ -6,6 +6,7 @@ import { TopHeader } from '@/components/dashboard/top-header'
 import { BrandingFetcher } from '@/components/dashboard/branding-fetcher'
 import { NotificationProvider } from '@/components/dashboard/notification-provider'
 import { KeyboardShortcutsProvider } from '@/components/dashboard/keyboard-shortcuts-provider'
+import { LoadingProvider } from '@/components/loading-provider'
 import { TourProvider } from '@/components/tour/tour-provider'
 import { getCurrentUser } from '@/lib/auth-utils'
 import { getNotifications } from '@/app/actions/notifications'
@@ -46,6 +47,7 @@ export default async function DashboardLayout({
 
   return (
     <BrandingProvider initialBranding={null}>
+      <LoadingProvider>
       {/* Background branding fetch — doesn't block layout rendering */}
       <Suspense fallback={null}>
         <BrandingFetcher />
@@ -84,6 +86,7 @@ export default async function DashboardLayout({
           </TourProvider>
         </SidebarProvider>
       </NotificationProvider>
+      </LoadingProvider>
     </BrandingProvider>
   )
 }
