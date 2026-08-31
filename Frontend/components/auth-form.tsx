@@ -189,10 +189,10 @@ function AuthIllustration() {
 }
 
 const FEATURES = [
-  { icon: Ticket, label: 'Ticket management' },
-  { icon: FolderKanban, label: 'Project tracking' },
-  { icon: Clock, label: 'Support hours' },
-  { icon: MessagesSquare, label: 'Client communication' },
+  { icon: Ticket, label: 'Ticket Status Tracking' },
+  { icon: FolderKanban, label: 'Project Tracking' },
+  { icon: Clock, label: 'Support Hours Tracking' },
+  { icon: MessagesSquare, label: 'Centralized Communication' },
 ]
 
 export function AuthForm({ mode }: AuthFormProps) {

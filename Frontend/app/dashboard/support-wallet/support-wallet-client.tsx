@@ -432,9 +432,9 @@ export function SupportWalletClient({ user, wallet, transactions }: SupportWalle
                     </td>
                     <td className={cn(
                       'p-3 text-right text-sm font-semibold',
-                      t.hours > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+                      t.transactionType === 'Deduct Hours' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'
                     )}>
-                      {t.hours > 0 ? '+' : ''}{t.hours}
+                      {t.transactionType === 'Deduct Hours' ? `-${Math.abs(t.hours)}` : `+${Math.abs(t.hours)}`}
                     </td>
                     <td className="p-3 text-right text-sm font-semibold text-foreground">{t.newBalance}</td>
                     <td className="p-3 text-sm text-muted-foreground">
