@@ -21,8 +21,8 @@ export async function getWalletTransactions(walletId: number) {
 export async function getWalletTicketConsumption(walletId: number) {
   const w = await walletRepo.findById(walletId)
   assertFound(w, 'Wallet not found')
-  if (w.projectId === null) return []
-  return walletRepo.findTicketsByProjectAndClient(w.projectId, w.clientId)
+  // One wallet per client — fetch all tickets for this client
+  return walletRepo.findTicketsByClient(w.clientId)
 }
 
 export async function addWalletHours(data: any, currentUser: any) {

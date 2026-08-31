@@ -387,10 +387,10 @@ export const clientApproveTicket = wrapServerAction('clientApproveTicket', async
     ticketId, userId: currentUser.id, action: 'client_approved', newValue: 'closed',
   })
 
-  // Wallet deduction
-  if (t.projectId) {
+  // Wallet deduction — one wallet per client
+  if (t.clientId) {
     try {
-      const [wallet] = await db.select().from(supportWallet).where(eq(supportWallet.projectId, t.projectId)).limit(1)
+      const [wallet] = await db.select().from(supportWallet).where(eq(supportWallet.clientId, t.clientId)).limit(1)
       if (wallet) {
         const estimatedHours = t.estimatedHours || 0
         const additionalHours = t.additionalHoursApproved ? (t.additionalHoursRequested || 0) : 0
@@ -422,7 +422,7 @@ export const clientApproveTicket = wrapServerAction('clientApproveTicket', async
             const [projectRow] = await db
               .select({ projectName: project.projectName })
               .from(project)
-              .where(eq(project.id, wallet.projectId!))
+              .where(eq(project.id, t.projectId!))
               .limit(1)
             const projectName = projectRow?.projectName || 'Support Wallet'
             const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = [
@@ -442,11 +442,11 @@ export const clientApproveTicket = wrapServerAction('clientApproveTicket', async
               },
             ]
 
-            if (wallet.projectId) {
+            if (t.projectId) {
               const [managerRow] = await db
                 .select({ managerId: project.managerId })
                 .from(project)
-                .where(eq(project.id, wallet.projectId))
+                .where(eq(project.id, t.projectId))
                 .limit(1)
               if (managerRow?.managerId) {
                 recipients.push({
@@ -480,7 +480,7 @@ export const clientApproveTicket = wrapServerAction('clientApproveTicket', async
             const [projectRow] = await db
               .select({ projectName: project.projectName })
               .from(project)
-              .where(eq(project.id, wallet.projectId!))
+              .where(eq(project.id, t.projectId!))
               .limit(1)
             const projectName = projectRow?.projectName || 'Support Wallet'
             const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = [
@@ -500,11 +500,11 @@ export const clientApproveTicket = wrapServerAction('clientApproveTicket', async
               },
             ]
 
-            if (wallet.projectId) {
+            if (t.projectId) {
               const [managerRow] = await db
                 .select({ managerId: project.managerId })
                 .from(project)
-                .where(eq(project.id, wallet.projectId))
+                .where(eq(project.id, t.projectId))
                 .limit(1)
               if (managerRow?.managerId) {
                 recipients.push({

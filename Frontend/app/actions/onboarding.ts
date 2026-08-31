@@ -143,7 +143,7 @@ export const createCustomerOnboarding = wrapServerAction(
       throw new Error('Duplicate email addresses found in client users.')
     }
     // Check all emails against DB (batch query)
-    const allEmails = data.clientUsers.map((u) => u.email.trim())
+    const allEmails = data.clientUsers.map((u) => u.email.trim().toLowerCase())
     const existingEmails = await db
       .select({ email: user.email })
       .from(user)
@@ -185,7 +185,7 @@ export const createCustomerOnboarding = wrapServerAction(
         const [primaryUser] = await tx.insert(user).values({
           id: primaryUserId,
           name: primaryUserFullName,
-          email: firstUser.email.trim(),
+          email: firstUser.email.trim().toLowerCase(),
           role: 'client',
           userType: firstUser.userType,
           emailVerified: false,
@@ -215,10 +215,10 @@ export const createCustomerOnboarding = wrapServerAction(
           const [newUser] = await tx.insert(user).values({
             id: newUserId,
             name: userFullName,
-            email: cu.email.trim(),
-            role: 'client',
-            userType: cu.userType,
-            emailVerified: false,
+          email: cu.email.trim().toLowerCase(),
+          role: 'client',
+          userType: cu.userType,
+          emailVerified: false,
             phone: cu.phoneNumber?.trim() || null,
             countryCode: cu.countryCode?.trim() || null,
             enableTeamsNotifications: !!data.enableTeamsNotifications,
@@ -235,7 +235,7 @@ export const createCustomerOnboarding = wrapServerAction(
           })
 
           createdUserIds.push(newUser.id)
-          createdUserEmails.push(cu.email.trim())
+          createdUserEmails.push(cu.email.trim().toLowerCase())
         }
 
         const [newProject] = await tx.insert(project).values({
@@ -296,7 +296,7 @@ export const createCustomerOnboarding = wrapServerAction(
           // Hypercare: create minimal wallet record (no hours, no transactions)
           const [newWallet] = await tx.insert(supportWallet).values({
             clientId: primaryUser.id,
-            projectId: newProject.id,
+            projectId: null,
             totalPurchasedHours: 0,
             reservedHours: 0,
             consumedHours: 0,
@@ -312,7 +312,7 @@ export const createCustomerOnboarding = wrapServerAction(
           // Standard support: create wallet + initial transaction
           const [newWallet] = await tx.insert(supportWallet).values({
             clientId: primaryUser.id,
-            projectId: newProject.id,
+            projectId: null,
             totalPurchasedHours: data.supportWallet.supportHours,
             reservedHours: 0,
             consumedHours: 0,
@@ -663,17 +663,8 @@ export const checkProjectHasApprover = wrapServerAction('checkProjectHasApprover
 
   if (!projectInfo) throw new Error('Project not found')
 
-  // Also check support_wallet entries to find all client users linked to this project
-  const walletClients = await db
-    .select({ clientId: supportWallet.clientId })
-    .from(supportWallet)
-    .where(eq(supportWallet.projectId, projectId))
-
-  const clientIds = [
-    projectInfo.clientId,
-    ...walletClients.map((w) => w.clientId),
-  ]
-  const uniqueClientIds = [...new Set(clientIds)]
+  // One wallet per client — use project.clientId directly
+  const uniqueClientIds = [projectInfo.clientId]
 
   if (uniqueClientIds.length === 0) return false
 
@@ -758,7 +749,7 @@ export const addClientUsersToExistingProject = wrapServerAction(
     }
 
     // Check all emails against DB
-    const allEmails = data.clientUsers.map((u) => u.email.trim())
+    const allEmails = data.clientUsers.map((u) => u.email.trim().toLowerCase())
     const existingEmails = await db
       .select({ email: user.email })
       .from(user)
@@ -781,10 +772,10 @@ export const addClientUsersToExistingProject = wrapServerAction(
           const [newUser] = await tx.insert(user).values({
             id: newUserId,
             name: userFullName,
-            email: cu.email.trim(),
-            role: 'client',
-            userType: cu.userType,
-            emailVerified: false,
+          email: cu.email.trim().toLowerCase(),
+          role: 'client',
+          userType: cu.userType,
+          emailVerified: false,
             phone: cu.phoneNumber?.trim() || null,
             countryCode: cu.countryCode?.trim() || null,
             enableTeamsNotifications: !!data.enableTeamsNotifications,
@@ -801,7 +792,7 @@ export const addClientUsersToExistingProject = wrapServerAction(
           })
 
           createdUserIds.push(newUser.id)
-          createdUserEmails.push(cu.email.trim())
+          createdUserEmails.push(cu.email.trim().toLowerCase())
           createdUserNames.push(userFullName)
         }
         // Link ALL created client users to the project (so they can see it in create ticket page)

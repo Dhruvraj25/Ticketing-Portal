@@ -18,9 +18,8 @@ export default async function SupportWalletPage() {
     redirect('/dashboard')
   }
 
+  // One wallet per client — fetch directly by clientId
   const wallets = await getWallets()
-
-  // If the client has wallets, grab the first one (or primary)
   const wallet = wallets.length > 0 ? wallets[0] : null
   let transactions: any[] = []
 

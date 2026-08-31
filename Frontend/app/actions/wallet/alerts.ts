@@ -19,7 +19,15 @@ export async function generateAlertsForWallet(walletId: number, remainingHours: 
 
   if (!w) return
 
-  const { projectId: wProjectId, clientId: wClientId } = w
+  const { clientId: wClientId } = w
+
+  // Find projects for this client via tickets
+  const clientProjects = await db
+    .select({ projectId: ticket.projectId })
+    .from(ticket)
+    .where(eq(ticket.clientId, wClientId))
+    .groupBy(ticket.projectId)
+  const clientProjectIds = clientProjects.map((p: any) => p.projectId).filter((id: any): id is number => id !== null)
 
   const existingAlerts = await db
     .select()
@@ -37,25 +45,27 @@ export async function generateAlertsForWallet(walletId: number, remainingHours: 
       alertType: 'low_balance_warning',
       message: `Support hour balance is low (${remainingHours} hours remaining). Please consider recharging.`,
     })
-    if (wProjectId) {
-      const [p] = await db
+    notifications.push({
+      userId: wClientId,
+      title: 'Support Hours Low',
+      message: `Your support hour balance is low (${remainingHours} hours remaining). Please contact your account manager.`,
+      link: `/dashboard/wallets/${walletId}`,
+    })
+    // Notify managers of projects this client has tickets on
+    if (clientProjectIds.length > 0) {
+      const managers = await db
         .select({ managerId: project.managerId })
         .from(project)
-        .where(eq(project.id, wProjectId))
-        .limit(1)
-      notifications.push({
-        userId: wClientId,
-        title: 'Support Hours Low',
-        message: `Your support hour balance is low (${remainingHours} hours remaining). Please contact your account manager.`,
-        link: `/dashboard/wallets/${walletId}`,
-      })
-      if (p?.managerId) {
-        notifications.push({
-          userId: p.managerId,
-          title: 'Client Support Hours Low',
-          message: `Client wallet (ID: ${walletId}) has only ${remainingHours} hours remaining.`,
-          link: `/dashboard/wallets/${walletId}`,
-        })
+        .where(inArray(project.id, clientProjectIds))
+      for (const m of managers) {
+        if (m.managerId) {
+          notifications.push({
+            userId: m.managerId,
+            title: 'Client Support Hours Low',
+            message: `Client wallet (ID: ${walletId}) has only ${remainingHours} hours remaining.`,
+            link: `/dashboard/wallets/${walletId}`,
+          })
+        }
       }
     }
   }
@@ -67,25 +77,26 @@ export async function generateAlertsForWallet(walletId: number, remainingHours: 
       alertType: 'low_balance_restricted',
       message: `Support hour balance is critically low (${remainingHours} hours remaining). Ticket creation is restricted.`,
     })
-    if (wProjectId) {
-      const [p] = await db
+    notifications.push({
+      userId: wClientId,
+      title: 'Support Hours Critically Low',
+      message: `Your support hour balance is critically low (${remainingHours} hours). Ticket creation has been restricted. Please contact your account manager.`,
+      link: `/dashboard/wallets/${walletId}`,
+    })
+    if (clientProjectIds.length > 0) {
+      const managers = await db
         .select({ managerId: project.managerId })
         .from(project)
-        .where(eq(project.id, wProjectId))
-        .limit(1)
-      notifications.push({
-        userId: wClientId,
-        title: 'Support Hours Critically Low',
-        message: `Your support hour balance is critically low (${remainingHours} hours). Ticket creation has been restricted. Please contact your account manager.`,
-        link: `/dashboard/wallets/${walletId}`,
-      })
-      if (p?.managerId) {
-        notifications.push({
-          userId: p.managerId,
-          title: 'Critical: Client Support Hours Exhausted',
-          message: `Client wallet (ID: ${walletId}) has only ${remainingHours} hours remaining. Ticket creation is restricted.`,
-          link: `/dashboard/wallets/${walletId}`,
-        })
+        .where(inArray(project.id, clientProjectIds))
+      for (const m of managers) {
+        if (m.managerId) {
+          notifications.push({
+            userId: m.managerId,
+            title: 'Critical: Client Support Hours Exhausted',
+            message: `Client wallet (ID: ${walletId}) has only ${remainingHours} hours remaining. Ticket creation is restricted.`,
+            link: `/dashboard/wallets/${walletId}`,
+          })
+        }
       }
     }
   }
@@ -183,16 +194,12 @@ export const getActiveWalletAlerts = async function getActiveWalletAlerts() {
       .select({ id: project.id, clientId: project.clientId })
       .from(project)
       .where(eq(project.managerId, currentUser.id))
-    const managedIds = projectRows.map(p => p.id)
     const managedClientIds = [...new Set(projectRows.map(p => p.clientId))]
-    if (managedIds.length > 0) {
+    if (managedClientIds.length > 0) {
       const walletRows = await db
         .select({ id: supportWallet.id })
         .from(supportWallet)
-        .where(or(
-          inArray(supportWallet.projectId, managedIds),
-          and(isNull(supportWallet.projectId), inArray(supportWallet.clientId, managedClientIds))
-        ))
+        .where(inArray(supportWallet.clientId, managedClientIds))
       walletIdFilter = walletRows.map(w => w.id)
     } else {
       return []

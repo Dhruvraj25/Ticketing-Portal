@@ -919,6 +919,57 @@
 
 /* ─── Reduced Motion Preference ─────────────────────────────────────────── */
 
+/* ─── Loading Text ─────────────────────────────────────────────────────── */
+
+.loading-screen__text {
+  margin-top: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: baseline;
+  color: var(--muted-foreground);
+}
+
+/* Dark mode */
+.dark .loading-screen__text {
+  color: #94a3b8;
+}
+
+/* ─── Animated Dots After "Loading" ───────────────────────────────────── */
+
+.loading-screen__text-dots {
+  display: inline-flex;
+  width: 24px;
+  overflow: hidden;
+}
+
+.loading-screen__text-dots span {
+  opacity: 0;
+  animation: dotFade 1.4s ease-in-out infinite;
+}
+
+.loading-screen__text-dots span:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.loading-screen__text-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.loading-screen__text-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes dotFade {
+  0%, 20% {
+    opacity: 0;
+  }
+  40%, 100% {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .loading-screen__dot {
     animation: loadingDotPulse 1.6s ease-in-out infinite;
@@ -927,6 +978,11 @@
   .loading-screen--visible,
   .loading-screen--hidden {
     transition-duration: 0.01s;
+  }
+
+  .loading-screen__text-dots span {
+    animation: none;
+    opacity: 1;
   }
 }
 

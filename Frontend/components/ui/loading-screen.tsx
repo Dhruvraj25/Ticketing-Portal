@@ -33,6 +33,14 @@ export function LoadingScreen({ visible = true, instant = false }: LoadingScreen
           <span className="loading-screen__dot loading-screen__dot--2" />
           <span className="loading-screen__dot loading-screen__dot--3" />
         </div>
+
+        {/* Loading text with animated dots */}
+        <div className="loading-screen__text">
+          <span>Loading</span>
+          <span className="loading-screen__text-dots">
+            <span>.</span><span>.</span><span>.</span>
+          </span>
+        </div>
       </div>
     </div>
   )

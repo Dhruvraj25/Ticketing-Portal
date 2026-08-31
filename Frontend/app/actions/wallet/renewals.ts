@@ -138,15 +138,11 @@ export const logRenewalReminderActivity = async function logRenewalReminderActiv
 export const checkClientCanCreateTicket = async function checkClientCanCreateTicket(
   clientId: string, projectId?: number | null
 ) {
-  const conditions = [eq(supportWallet.clientId, clientId)]
-  if (projectId) {
-    conditions.push(eq(supportWallet.projectId, projectId))
-  }
-
+  // One wallet per client — always fetch by clientId, ignore projectId
   const wallets = await db
     .select()
     .from(supportWallet)
-    .where(and(...conditions))
+    .where(eq(supportWallet.clientId, clientId))
     .limit(1)
 
   if (wallets.length === 0) {

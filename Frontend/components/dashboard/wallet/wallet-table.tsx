@@ -62,15 +62,11 @@ const WalletTableRow = memo(function WalletTableRow({
       <TableCell>
         <Link href={`/dashboard/wallets/${wallet.id}`} className="block group/cell">
           <p className="text-sm font-medium text-foreground group-hover/cell:text-primary transition-colors truncate max-w-[150px]">
-            {wallet.projectName || (
-              <span className="text-muted-foreground italic">General Client Wallet</span>
+            {wallet.clientEmail || (
+              <span className="text-muted-foreground italic">Client Wallet</span>
             )}
           </p>
-          {wallet.projectCode ? (
-            <code className="text-xs font-mono text-muted-foreground">{wallet.projectCode}</code>
-          ) : (
-            <span className="text-xs text-muted-foreground italic">No project linked</span>
-          )}
+          <span className="text-xs text-muted-foreground">Client Wallet</span>
         </Link>
       </TableCell>
       <TableCell className="text-center">

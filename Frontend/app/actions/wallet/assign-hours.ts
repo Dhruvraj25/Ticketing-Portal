@@ -319,7 +319,7 @@ export const autoCreateWalletForClient = async function autoCreateWalletForClien
   const [existing] = await db
     .select()
     .from(supportWallet)
-    .where(and(eq(supportWallet.clientId, clientId), isNull(supportWallet.projectId)))
+    .where(eq(supportWallet.clientId, clientId))
     .limit(1)
 
   if (existing) return existing
@@ -337,25 +337,8 @@ export const autoCreateWalletForClient = async function autoCreateWalletForClien
   return newWallet
 }
 
-// ─── Auto-create wallet for project ────────────────────────────────────
+// ─── Auto-create wallet for project (redirects to client-level wallet) ──
 export const autoCreateWalletForProject = async function autoCreateWalletForProject(projectId: number, clientId: string) {
-  const [existing] = await db
-    .select()
-    .from(supportWallet)
-    .where(eq(supportWallet.projectId, projectId))
-    .limit(1)
-
-  if (existing) return existing
-
-  const [newWallet] = await db
-    .insert(supportWallet)
-    .values({
-      clientId, projectId,
-      totalPurchasedHours: 0, reservedHours: 0, consumedHours: 0, remainingHours: 0,
-      status: 'inactive',
-    })
-    .returning()
-
-  console.log(`[SupportHub] Auto-created support wallet #${newWallet.id} for project #${projectId}`)
-  return newWallet
+  // One wallet per client — just ensure the client has a wallet
+  return autoCreateWalletForClient(clientId)
 }

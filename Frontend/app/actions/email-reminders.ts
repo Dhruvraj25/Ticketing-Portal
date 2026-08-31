@@ -1,8 +1,8 @@
 'use server'
 
 import { db } from '@/lib/db'
-import { supportWallet, notificationLog, user, project } from '@/lib/db/schema'
-import { and, eq, lte, gte, isNotNull, or, count } from 'drizzle-orm'
+import { supportWallet, notificationLog, user, project, ticket } from '@/lib/db/schema'
+import { and, eq, lte, gte, isNotNull, or, count, inArray } from 'drizzle-orm'
 import { dispatchNotification } from '@/lib/notify-all'
 import { wrapServerAction } from '@/lib/performance-profiler'
 
@@ -125,32 +125,40 @@ export const processRenewalReminders = wrapServerAction('processRenewalReminders
       ],
     })
 
-    // Also notify the project manager about renewal (Teams)
-    if (wallet.projectId) {
-      const [projectRow] = await db
+    // Also notify project managers about renewal (Teams)
+    // Find projects this client has tickets on
+    const clientProjects = await db
+      .select({ projectId: ticket.projectId })
+      .from(ticket)
+      .where(eq(ticket.clientId, wallet.clientId))
+      .groupBy(ticket.projectId)
+    const projectIds = clientProjects.map(p => p.projectId).filter((id): id is number => id !== null)
+    if (projectIds.length > 0) {
+      const managerRows = await db
         .select({ managerId: project.managerId })
         .from(project)
-        .where(eq(project.id, wallet.projectId))
-        .limit(1)
-      if (projectRow?.managerId) {
-        await dispatchNotification({
-          eventType: 'support_renewal_reminder',
-          triggeredBy: 'system',
-          dedup: false,
-          recipients: [
-            {
-              userId: projectRow.managerId,
-              channels: ['teams'],
-              teams: {
-                payload: {
-                  remainingHours: wallet.remainingHours,
-                  expiryDate: wallet.contractEndDate || undefined,
-                  clientId: wallet.clientId,
+        .where(inArray(project.id, projectIds))
+      for (const projectRow of managerRows) {
+        if (projectRow?.managerId) {
+          await dispatchNotification({
+            eventType: 'support_renewal_reminder',
+            triggeredBy: 'system',
+            dedup: false,
+            recipients: [
+              {
+                userId: projectRow.managerId,
+                channels: ['teams'],
+                teams: {
+                  payload: {
+                    remainingHours: wallet.remainingHours,
+                    expiryDate: wallet.contractEndDate || undefined,
+                    clientId: wallet.clientId,
+                  },
                 },
               },
-            },
-          ],
-        })
+            ],
+          })
+        }
       }
     }
 

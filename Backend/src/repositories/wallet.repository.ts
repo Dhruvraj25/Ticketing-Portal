@@ -106,7 +106,7 @@ export async function findActiveAlerts() {
     .limit(20)
 }
 
-export async function findTicketsByProjectAndClient(projectId: number, clientId: string) {
+export async function findTicketsByClient(clientId: string) {
   const { ticket } = await import('../models/schema')
   const { desc: d } = await import('drizzle-orm')
   return db
@@ -116,6 +116,6 @@ export async function findTicketsByProjectAndClient(projectId: number, clientId:
       createdAt: ticket.createdAt,
     })
     .from(ticket)
-    .where(and(eq(ticket.projectId, projectId), eq(ticket.clientId, clientId)))
+    .where(eq(ticket.clientId, clientId))
     .orderBy(d(ticket.createdAt))
 }

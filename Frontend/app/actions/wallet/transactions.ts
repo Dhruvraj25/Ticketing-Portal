@@ -94,25 +94,23 @@ export async function _getWalletTicketConsumptionImpl(currentUser: { id: string;
     throw new Error('Access denied')
   }
 
-  let tickets: any[] = []
-  if (w.projectId !== null) {
-    tickets = await db
-      .select({
-        id: ticket.id,
-        ticketNumber: ticket.ticketNumber,
-        title: ticket.title,
-        estimatedHours: ticket.estimatedHours,
-        reservedHours: ticket.reservedHours,
-        consumedHours: ticket.consumedHours,
-        status: ticket.status,
-        resolvedAt: ticket.resolvedAt,
-        completedAt: ticket.closedAt,
-        createdAt: ticket.createdAt,
-      })
-      .from(ticket)
-      .where(and(eq(ticket.projectId, w.projectId), eq(ticket.clientId, w.clientId)))
-      .orderBy(desc(ticket.createdAt))
-  }
+  // One wallet per client — fetch all tickets for this client
+  const tickets = await db
+    .select({
+      id: ticket.id,
+      ticketNumber: ticket.ticketNumber,
+      title: ticket.title,
+      estimatedHours: ticket.estimatedHours,
+      reservedHours: ticket.reservedHours,
+      consumedHours: ticket.consumedHours,
+      status: ticket.status,
+      resolvedAt: ticket.resolvedAt,
+      completedAt: ticket.closedAt,
+      createdAt: ticket.createdAt,
+    })
+    .from(ticket)
+    .where(eq(ticket.clientId, w.clientId))
+    .orderBy(desc(ticket.createdAt))
 
   return tickets.map(t => ({
     ...t,

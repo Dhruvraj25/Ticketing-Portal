@@ -284,14 +284,14 @@ export function WalletDetailClient({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <span className="px-2.5 py-0.5 rounded-lg text-xs font-medium border bg-green-50 dark:bg-green-500/15 text-green-600 dark:text-green-400 border-green-200 dark:border-green-500/30">
-                {wallet.projectCode}
+                Support Wallet
               </span>
               <span className={cn('inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium border', statusInfo?.color)}>
                 {statusInfo?.label || wallet.status}
               </span>
             </div>
             <h1 className="text-2xl font-bold text-foreground tracking-tight">
-              {wallet.projectName} — Support Wallet
+              {wallet.clientName} — Support Wallet
             </h1>
           </div>
           <div className="flex items-center gap-3">
@@ -400,10 +400,10 @@ export function WalletDetailClient({
                 </div>
                 <div className="flex items-center justify-between py-2 border-b border-border/50">
                   <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-                    <FolderKanban className="h-3.5 w-3.5" />
-                    Project Name
+                    <User className="h-3.5 w-3.5" />
+                    Client Email
                   </span>
-                  <span className="text-sm font-medium text-foreground">{wallet.projectName}</span>
+                  <span className="text-sm font-medium text-foreground">{wallet.clientEmail}</span>
                 </div>
                 <div className="flex items-center justify-between py-2 border-b border-border/50">
                   <span className="text-xs text-muted-foreground flex items-center gap-1.5">

@@ -27,18 +27,12 @@ async function getVisibleWalletIds(currentUser: { id: string; role: string }): P
       .select({ id: project.id, clientId: project.clientId })
       .from(project)
       .where(eq(project.managerId, currentUser.id))
-    const managedIds = projectRows.map(r => r.id)
     const managedClientIds = [...new Set(projectRows.map(r => r.clientId))]
-    if (managedIds.length === 0 && managedClientIds.length === 0) return []
+    if (managedClientIds.length === 0) return []
     const walletRows = await db
       .select({ id: supportWallet.id })
       .from(supportWallet)
-      .where(
-        or(
-          inArray(supportWallet.projectId, managedIds),
-          and(isNull(supportWallet.projectId), inArray(supportWallet.clientId, managedClientIds))
-        )
-      )
+      .where(inArray(supportWallet.clientId, managedClientIds))
     return walletRows.map(r => r.id)
   }
   return []
@@ -72,9 +66,7 @@ async function _getWalletsImpl(
   if (filters?.clientId && currentUser.role !== 'client') {
     conditions.push(eq(supportWallet.clientId, filters.clientId))
   }
-  if (filters?.projectId) {
-    conditions.push(eq(supportWallet.projectId, filters.projectId))
-  }
+  // projectId filter removed — one wallet per client
   if (filters?.status) {
     conditions.push(eq(supportWallet.status, filters.status))
   }
@@ -160,16 +152,6 @@ async function _getWalletByIdImpl(currentUser: { id: string; role: string }, wal
     .where(eq(user.id, w.clientId))
     .limit(1)
 
-  let projectData = null
-  if (w.projectId !== null) {
-    const [pd] = await db
-      .select({ projectName: project.projectName, projectCode: project.projectCode })
-      .from(project)
-      .where(eq(project.id, w.projectId))
-      .limit(1)
-    projectData = pd
-  }
-
   const alerts = await db
     .select()
     .from(walletAlert)
@@ -181,8 +163,6 @@ async function _getWalletByIdImpl(currentUser: { id: string; role: string }, wal
     status: w.status as WalletStatus,
     clientName: clientData?.name || 'Unknown',
     clientEmail: clientData?.email || '',
-    projectName: projectData?.projectName || 'Unknown',
-    projectCode: projectData?.projectCode || '',
     alerts,
   }
 }
@@ -318,10 +298,17 @@ const getCachedLowBalanceWallets = unstable_cache(
 // ─── Get wallet by project (no getCurrentUser needed) ───────────────────
 export const getWalletByProject = unstable_cache(
   async function getWalletByProject(projectId: number) {
+    // One wallet per client — find wallet via the project's clientId
+    const [proj] = await db
+      .select({ clientId: project.clientId })
+      .from(project)
+      .where(eq(project.id, projectId))
+      .limit(1)
+    if (!proj) return null
     const [w] = await db
       .select()
       .from(supportWallet)
-      .where(eq(supportWallet.projectId, projectId))
+      .where(eq(supportWallet.clientId, proj.clientId))
       .limit(1)
     return w || null
   },
