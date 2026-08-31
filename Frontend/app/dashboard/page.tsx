@@ -186,12 +186,6 @@ export default async function DashboardPage() {
         actions={
           <>
             <CurrentDate />
-            <Button asChild size="sm" data-tour="new-ticket-button" className="h-9 rounded-xl px-4 font-mono font-bold text-xs">
-              <Link href="/dashboard/tickets/new">
-                <Plus className="mr-1.5 h-3.5 w-3.5" />
-                New Ticket
-              </Link>
-            </Button>
           </>
         }
       />
