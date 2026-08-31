@@ -161,12 +161,14 @@ export function TicketsPageClient({
               <Calendar size={14} className="text-slate-400" />
               <span>{currentDate}</span>
             </div>
-            <Link href="/dashboard/tickets/new">
-              <Button size="sm" data-tour="tickets-new-ticket" className="h-9 rounded-xl px-4 font-mono font-bold text-xs shadow-sm">
-                <Plus className="mr-1 h-3.5 w-3.5" />
-                New Ticket
-              </Button>
-            </Link>
+            {user.role !== 'developer' && (
+              <Link href="/dashboard/tickets/new">
+                <Button size="sm" data-tour="tickets-new-ticket" className="h-9 rounded-xl px-4 font-mono font-bold text-xs shadow-sm">
+                  <Plus className="mr-1 h-3.5 w-3.5" />
+                  New Ticket
+                </Button>
+              </Link>
+            )}
           </div>
           </div>
           </div>
