@@ -156,8 +156,8 @@ export function TicketsPageClient({
               <span>Track, manage and review support tickets</span>
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3 self-start sm:self-center">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-mono border bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-800/80 dark:border-slate-700 dark:text-slate-300">
+          <div className="flex flex-wrap items-center gap-3 self-start sm:self-center shrink-0">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-mono border bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-800/80 dark:border-slate-700 dark:text-slate-300">
               <Calendar size={14} className="text-slate-400" />
               <span>{currentDate}</span>
             </div>
@@ -171,9 +171,9 @@ export function TicketsPageClient({
             )}
           </div>
           </div>
-          </div>
         </div>
       </div>
+    </div>
 
       {/* ── SECTION 2: KPI & Filters — scrolls away naturally ── */}
       <div className="space-y-5" data-tour="ticket-filters">
