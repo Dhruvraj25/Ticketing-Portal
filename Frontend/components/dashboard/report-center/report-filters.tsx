@@ -60,8 +60,8 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
   const [status, setStatus] = useState(initialFilters?.status || '')
   const [priority, setPriority] = useState(initialFilters?.priority || '')
 
-  function handleApply() {
-    const filters: ReportFiltersType = { reportType }
+  function handleApply(typeOverride?: ReportType) {
+    const filters: ReportFiltersType = { reportType: typeOverride ?? reportType }
     if (dateFrom) filters.dateFrom = dateFrom
     if (dateTo) filters.dateTo = dateTo
     if (projectId) filters.projectId = Number(projectId)
@@ -93,7 +93,7 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
       <div className="flex items-start gap-4">
         <div className="flex-1 space-y-1.5">
           <Label htmlFor="report-type">Report Type</Label>
-          <Select value={reportType} onValueChange={(v) => { setReportType(v as ReportType); setTimeout(handleApply, 0) }}>
+          <Select value={reportType} onValueChange={(v) => { setReportType(v as ReportType); handleApply(v as ReportType) }}>
             <SelectTrigger id="report-type" className="h-11 rounded-xl bg-white dark:bg-slate-900 border-border">
               <SelectValue placeholder="Select report type" />
             </SelectTrigger>
@@ -128,7 +128,7 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
         </Button>
 
         <div className="mt-6">
-          <Button onClick={handleApply} size="sm" className="rounded-xl h-11 bg-black text-white hover:bg-black/80">
+          <Button onClick={() => handleApply()} size="sm" className="rounded-xl h-11 bg-black text-white hover:bg-black/80">
             <Search className="mr-2 h-4 w-4" />
             Generate
           </Button>
