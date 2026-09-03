@@ -28,6 +28,7 @@ export const REPORT_CACHE_TAGS = {
   ESTIMATE_APPROVAL: 'report-estimate-approval',
   ESTIMATE_ADDITIONAL_HOURS: 'report-estimate-additional-hours',
   CUSTOMER_REVIEW: 'report-customer-review',
+  ACTUAL_VS_ESTIMATED: 'report-actual-vs-estimated',
   // Generic fallback
   ALL_REPORT_DATA: 'report-data',
 } as const

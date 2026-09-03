@@ -1,6 +1,7 @@
 'use server'
 
 import { getCurrentUser as getUser } from '@/lib/auth-utils'
+import { getPortalUrl } from '@/lib/urls'
 import { unstable_cache } from 'next/cache'
 import { db } from '@/lib/db'
 import { ticket, timeLog, user, account, session, project, module as moduleTable, projectDeveloper, projectClient, supportWallet, walletTransaction } from '@/lib/db/schema'
@@ -254,11 +255,16 @@ export const createUser = wrapServerAction('createUser', async function createUs
   const currentUser = await getUser()
   if (currentUser.role !== 'admin') throw new Error('Access denied')
 
+  // Emails are compared and stored lowercase so USER@X.COM and user@x.com are
+  // the same account (case-insensitive email handling).
+  const normalizedEmail = data.email.trim().toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) throw new Error('Please enter a valid email address')
+
   // Check email uniqueness
   const [existing] = await db
     .select({ id: user.id })
     .from(user)
-    .where(eq(user.email, data.email))
+    .where(eq(user.email, normalizedEmail))
     .limit(1)
   if (existing) throw new Error('A user with this email already exists')
 
@@ -278,7 +284,7 @@ export const createUser = wrapServerAction('createUser', async function createUs
     await db.insert(user).values({
       id: userId,
       name: data.name,
-      email: data.email,
+      email: normalizedEmail,
       emailVerified: true,
       role: data.role,
       banned: false,
@@ -331,7 +337,7 @@ export const createUser = wrapServerAction('createUser', async function createUs
   }
 
   // Send Customer Created notification via the unified dispatcher (fire-and-forget)
-  const portalUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const portalUrl = getPortalUrl()
   dispatchNotification({
     eventType: 'customer_created',
     triggeredBy: currentUser.id,
@@ -364,7 +370,7 @@ export const createUser = wrapServerAction('createUser', async function createUs
   revalidateTag('admin-users-paginated', { expire: 120 })
   revalidateTag('admin-user-role-counts', { expire: 120 })
   revalidateTag('auth-user', { expire: 300 })
-  return { id: userId, name: data.name, email: data.email, role: data.role }
+  return { id: userId, name: data.name, email: normalizedEmail, role: data.role }
 })
 
 export const deleteUser = wrapServerAction('deleteUser', async function deleteUser(userId: string) {
@@ -536,7 +542,7 @@ export const resetUserPassword = wrapServerAction('resetUserPassword', async fun
         userId,
         inApp: {
           title: 'Password changed',
-          message: `Your SupportHub password was reset by ${currentUser.name || actorLabel}. If you did not request this change, contact Support immediately.`,
+          message: `Your Support Hero password was reset by ${currentUser.name || actorLabel}. If you did not request this change, contact Support immediately.`,
         },
       },
     ],
@@ -575,7 +581,7 @@ export const toggleUserBanned = wrapServerAction('toggleUserBanned', async funct
       .limit(1)
 
     if (activatedUser) {
-      const loginUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      const loginUrl = getPortalUrl()
       dispatchNotification({
         eventType: 'account_activated',
         triggeredBy: currentUser.id,

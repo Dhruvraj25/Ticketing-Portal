@@ -5,7 +5,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import { useNotifications } from '@/components/dashboard/notification-provider'
 import { PageHeaderIcon } from '@/components/dashboard/page-header-icon'
-import { formatDistanceToNow, format } from 'date-fns'
+import { formatDistanceToNow } from 'date-fns'
+import { fmtTz } from '@/lib/datetime'
+import { useUserTimezone } from '@/components/timezone-provider'
 import { categorizeNotification, NOTIFICATION_TABS } from '@/lib/notification-types'
 import type { NotificationType } from '@/lib/notification-types'
 import {
@@ -62,6 +64,7 @@ function getNotificationIcon(title: string, message: string) {
 }
 
 export function NotificationsClient({ user }: NotificationsClientProps) {
+  const userTimezone = useUserTimezone()
   // Read notification state from global NotificationProvider context.
   // Initial data was fetched once in the dashboard layout and seeded into the provider.
   // Provider refreshes every 60 seconds via SWR.
@@ -169,7 +172,7 @@ export function NotificationsClient({ user }: NotificationsClientProps) {
     setShowDetailDrawer(true)
   }
 
-  const currentDate = format(new Date(), 'EEEE, MMMM d, yyyy')
+  const currentDate = fmtTz(new Date(), 'EEEE, MMMM d, yyyy', userTimezone)
 
   return (
     <div className="-mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 space-y-6" data-tour="notifications-list">
@@ -612,7 +615,7 @@ export function NotificationsClient({ user }: NotificationsClientProps) {
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Received</span>
                       <span className="text-xs text-foreground">
-                        {format(new Date(detailNotification.createdAt), 'MMM d, yyyy \'at\' h:mm a')}
+                        {fmtTz(detailNotification.createdAt, "MMM d, yyyy 'at' h:mm a", userTimezone)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-sm">

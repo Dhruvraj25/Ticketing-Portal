@@ -30,6 +30,8 @@ export type {
 
 export {
   updateTicketStatus,
+  updateTicketPriority,
+  updateTicketDates,
   assignTicket,
   managerForwardToClient,
   managerReassignDeveloper,

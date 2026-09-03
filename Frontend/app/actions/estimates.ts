@@ -1,6 +1,7 @@
 'use server'
 
 import { cache } from 'react'
+import { getPortalUrl } from '@/lib/urls'
 import { getCurrentUser as getUser } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
 import { ticket, ticketHistory, comment, user, project, revisionHistory } from '@/lib/db/schema'
@@ -65,7 +66,7 @@ export const submitEstimate = wrapServerAction('submitEstimate', async function 
   })
 
   // Notify client: In-App + Email + Teams (estimate requires approval)
-  const ticketLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/tickets/' + ticketId
+  const ticketLink = (getPortalUrl()) + '/dashboard/tickets/' + ticketId
   await dispatchNotification({
     eventType: 'estimate_requested',
     triggeredBy: currentUser.id,
@@ -144,7 +145,7 @@ export const approveEstimate = wrapServerAction('approveEstimate', async functio
     .from(project)
     .where(eq(project.id, t.projectId!))
     .limit(1)
-  const ticketLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/tickets/' + ticketId
+  const ticketLink = (getPortalUrl()) + '/dashboard/tickets/' + ticketId
   const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = []
   if (p) {
     recipients.push({
@@ -208,10 +209,15 @@ export const approveEstimate = wrapServerAction('approveEstimate', async functio
   }
 
   if (recipients.length > 0) {
+    // Requirement #9 — approval email on EVERY distinct approval cycle. The
+    // dedup scope is keyed to THIS estimate submission (estimateSubmittedAt),
+    // so a later re-submission after rework/revision is a NEW cycle and emails
+    // again, while duplicate retries of the SAME cycle are still suppressed.
+    const estimateCycleKey = t.estimateSubmittedAt ? new Date(t.estimateSubmittedAt).getTime() : t.id
     await dispatchNotification({
       eventType: 'estimate_approved',
       triggeredBy: currentUser.id,
-      dedup: { scope: `ticket:${ticketId}` },
+      dedup: { scope: `ticket:${ticketId}:est:${estimateCycleKey}` },
       recipients,
     })
   }
@@ -261,7 +267,7 @@ export const rejectEstimate = wrapServerAction('rejectEstimate', async function 
     .from(project)
     .where(eq(project.id, t.projectId!))
     .limit(1)
-  const ticketLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/tickets/' + ticketId
+  const ticketLink = (getPortalUrl()) + '/dashboard/tickets/' + ticketId
   const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = []
   if (p) {
     recipients.push({
@@ -515,7 +521,7 @@ export const requestAdditionalHours = wrapServerAction('requestAdditionalHours',
   })
 
   // Notify client: In-App + Email + Teams
-  const ticketLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/tickets/' + ticketId
+  const ticketLink = (getPortalUrl()) + '/dashboard/tickets/' + ticketId
   await dispatchNotification({
     eventType: 'additional_hours_requested',
     triggeredBy: currentUser.id,
@@ -595,7 +601,7 @@ export const approveAdditionalHours = wrapServerAction('approveAdditionalHours',
     .from(project)
     .where(eq(project.id, t.projectId!))
     .limit(1)
-  const ticketLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/tickets/' + ticketId
+  const ticketLink = (getPortalUrl()) + '/dashboard/tickets/' + ticketId
   const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = []
   if (p) {
     recipients.push({
@@ -659,10 +665,14 @@ export const approveAdditionalHours = wrapServerAction('approveAdditionalHours',
   }
 
   if (recipients.length > 0) {
+    // Requirement #9 — a NEW additional-hours request (new deadline) is a
+    // distinct approval cycle and must email again; exact retries of the same
+    // request are still suppressed by the shared dedup key.
+    const hoursCycleKey = t.additionalHoursDeadline ? new Date(t.additionalHoursDeadline).getTime() : t.id
     await dispatchNotification({
       eventType: 'additional_hours_approved',
       triggeredBy: currentUser.id,
-      dedup: { scope: `ticket:${ticketId}` },
+      dedup: { scope: `ticket:${ticketId}:hours:${hoursCycleKey}` },
       recipients,
     })
   }
@@ -705,7 +715,7 @@ export const declineAdditionalHours = wrapServerAction('declineAdditionalHours',
     .from(project)
     .where(eq(project.id, t.projectId!))
     .limit(1)
-  const ticketLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/tickets/' + ticketId
+  const ticketLink = (getPortalUrl()) + '/dashboard/tickets/' + ticketId
   const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = []
   if (p) {
     // Resolve project name for the email template

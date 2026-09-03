@@ -3,6 +3,7 @@
 
 import { cache } from 'react'
 import { getCurrentUser as getUser } from '@/lib/auth-utils'
+import { getPortalUrl } from '@/lib/urls'
 import { db } from '@/lib/db'
 import { ticket, ticketHistory, user, project, revisionHistory } from '@/lib/db/schema'
 import { and, eq, desc, sql, isNull, isNotNull, inArray, count, gte, or } from 'drizzle-orm'
@@ -71,7 +72,7 @@ export const approveRevision = wrapServerAction('approveRevision', async functio
   })
 
   // Notify the requester (In-App + Email + Teams) that revision was approved
-  const ticketLink = process.env.NEXT_PUBLIC_APP_URL + '/dashboard/tickets/' + rev.ticketId
+  const ticketLink = getPortalUrl() + '/dashboard/tickets/' + rev.ticketId
   const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = [
     {
       userId: rev.requestedById,
@@ -195,7 +196,7 @@ export const rejectRevision = wrapServerAction('rejectRevision', async function 
   })
 
   // Notify the requester (In-App + Email + Teams) that revision was rejected
-  const ticketLink = process.env.NEXT_PUBLIC_APP_URL + '/dashboard/tickets/' + rev.ticketId
+  const ticketLink = getPortalUrl() + '/dashboard/tickets/' + rev.ticketId
   await dispatchNotification({
     eventType: 'revision_rejected',
     triggeredBy: currentUser.id,
@@ -266,19 +267,25 @@ export const requestRevision = wrapServerAction('requestRevision', async functio
 
   // Execute all operations inside a SINGLE TRANSACTION to ensure atomicity
   const result = await db.transaction(async (tx) => {
-    // For client requests, don't change ticket status immediately — manager/admin must approve first
-    // For manager/admin requests, update ticket status directly
     const ticketUpdate: Record<string, unknown> = {
       revisionCount: newRevisionNumber,
       updatedAt: new Date(),
     }
-    
+
     if (currentUser.role !== 'client') {
-      // Manager/admin requested — immediately update status
+      // Manager/admin rework — the completed work is sent back to the resource.
+      // This is its OWN status (R18): "Rework", never merged with the client's
+      // "Requested for Revision" ('request_for_revision') state.
+      ticketUpdate.status = 'rework'
+      ticketUpdate.resolvedAt = null
+    } else {
+      // Client requested a revision — surface it as "Requested for Revision"
+      // (R18) while the manager/admin decides. The revision record stays
+      // 'pending_approval' until approved (→ in_progress) or rejected
+      // (→ back to client_review).
       ticketUpdate.status = 'request_for_revision'
       ticketUpdate.resolvedAt = null
     }
-    // For client requests: keep current ticket status, revision is 'pending' until manager approves
     
     await tx
       .update(ticket)
@@ -302,7 +309,9 @@ export const requestRevision = wrapServerAction('requestRevision', async functio
       .returning()
 
     // Log to activity history
-    const actionLabel = currentUser.role === 'client' ? 'Revision requested by client (pending manager approval)' : 'Revision requested'
+    const actionLabel = currentUser.role === 'client'
+      ? 'Revision requested by client (pending manager approval)'
+      : `Sent back for rework by ${currentUser.role === 'project_manager' ? 'manager' : 'admin'}`
     await tx.insert(ticketHistory).values({
       ticketId: data.ticketId,
       userId: currentUser.id,
@@ -319,7 +328,7 @@ export const requestRevision = wrapServerAction('requestRevision', async functio
       .from(project)
       .where(eq(project.id, t.projectId!))
       .limit(1)
-    const ticketLink = process.env.NEXT_PUBLIC_APP_URL + '/dashboard/tickets/' + data.ticketId
+    const ticketLink = getPortalUrl() + '/dashboard/tickets/' + data.ticketId
     const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = []
     if (p) {
       recipients.push({
@@ -385,14 +394,14 @@ export const requestRevision = wrapServerAction('requestRevision', async functio
       recipients,
     })
   } else {
-    // Manager or admin requested revision — notify the assigned developer and client
-    const ticketLink = process.env.NEXT_PUBLIC_APP_URL + '/dashboard/tickets/' + data.ticketId
+    // Manager or admin rework — notify the assigned developer and client
+    const ticketLink = getPortalUrl() + '/dashboard/tickets/' + data.ticketId
     const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = [
       {
         userId: t.clientId,
         inApp: {
-          title: `Revision #${newRevisionNumber} Requested`,
-          message: `${currentUser.name} requested Revision #${newRevisionNumber} for ticket #${t.ticketNumber}: ${data.revisionNotes.substring(0, 100)}`,
+          title: `Rework Requested (Revision #${newRevisionNumber})`,
+          message: `${currentUser.name} sent ticket #${t.ticketNumber} back for rework: ${data.revisionNotes.substring(0, 100)}`,
           link: `/dashboard/tickets/${data.ticketId}`,
           ticketId: data.ticketId,
         },
@@ -418,8 +427,8 @@ export const requestRevision = wrapServerAction('requestRevision', async functio
       recipients.push({
         userId: t.assignedToId,
         inApp: {
-          title: `Revision #${newRevisionNumber} Requested`,
-          message: `${currentUser.name} requested Revision #${newRevisionNumber} for ticket #${t.ticketNumber}`,
+          title: `Rework Requested (Revision #${newRevisionNumber})`,
+          message: `${currentUser.name} sent ticket #${t.ticketNumber} back for rework: ${data.revisionNotes.substring(0, 100)}`,
           link: `/dashboard/tickets/${data.ticketId}`,
           ticketId: data.ticketId,
         },

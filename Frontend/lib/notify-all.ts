@@ -27,6 +27,10 @@ import { eq, and, gte } from 'drizzle-orm'
 import { createNotification } from '@/app/actions/notifications'
 import { sendNotification } from '@/lib/email-backend'
 import { sendTeamsNotificationToUser } from '@/lib/teams-backend'
+import {
+  canonicalNotificationEvent,
+  loadDisabledInAppEvents,
+} from '@/lib/notification-preferences'
 
 // ─── Pure types & helpers ────────────────────────────────────────────────────
 // They live in ./notification-utils (a zero-import module) so the logic is
@@ -108,6 +112,13 @@ export async function dispatchNotification(
     console.error('[NotifyDispatcher] User resolution failed:', err instanceof Error ? err.message : err)
   }
 
+  // Requirement #14 — per-event In-App preferences. The frontend CREATES the
+  // in-app rows, so it enforces the In-App channel here; Email and Teams are
+  // enforced server-side on the backend bridge routes. Recipients who
+  // explicitly disabled this event on the In-App channel are skipped.
+  const disabledInApp = await loadDisabledInAppEvents(userIds)
+  const canonicalEvent = canonicalNotificationEvent(eventType)
+
   const results: DispatchResult[] = []
 
   for (const recipient of uniqueRecipients) {
@@ -175,17 +186,24 @@ export async function dispatchNotification(
       teams: 'not_requested',
     }
 
+    const inAppDisabled = canonicalEvent !== null
+      && (disabledInApp.get(recipient.userId)?.has(canonicalEvent) ?? false)
+
     if (channels.includes('inApp') && recipient.inApp) {
-      await createNotification({
-        userId: recipient.userId,
-        title: recipient.inApp.title,
-        message: recipient.inApp.message,
-        link: recipient.inApp.link,
-        ticketId: recipient.inApp.ticketId,
-      }).catch((err: Error) => {
-        console.error(`[NotifyDispatcher] in-app failed for ${eventType} → ${recipient.userId}:`, err.message)
-      })
-      channelResults.inApp = 'sent'
+      if (inAppDisabled) {
+        channelResults.inApp = 'skipped'
+      } else {
+        await createNotification({
+          userId: recipient.userId,
+          title: recipient.inApp.title,
+          message: recipient.inApp.message,
+          link: recipient.inApp.link,
+          ticketId: recipient.inApp.ticketId,
+        }).catch((err: Error) => {
+          console.error(`[NotifyDispatcher] in-app failed for ${eventType} → ${recipient.userId}:`, err.message)
+        })
+        channelResults.inApp = 'sent'
+      }
     }
 
     if (channels.includes('email') && recipient.email) {

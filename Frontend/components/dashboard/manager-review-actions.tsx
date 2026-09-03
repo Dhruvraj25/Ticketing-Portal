@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { managerForwardToClient, managerReassignDeveloper } from '@/app/actions/tickets'
 import { requestRevision } from '@/app/actions/revisions'
+import { toast } from 'sonner'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -40,6 +42,7 @@ interface ManagerReviewActionsProps {
 }
 
 export function ManagerReviewActions({ ticketId, developers, ticketNumber, revisionCount = 0 }: ManagerReviewActionsProps) {
+  const router = useRouter()
   const [loading, setLoading] = useState<'forward' | 'reassign' | 'revision' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -47,7 +50,8 @@ export function ManagerReviewActions({ ticketId, developers, ticketNumber, revis
   const [reassignDialogOpen, setReassignDialogOpen] = useState(false)
   const [selectedDeveloperId, setSelectedDeveloperId] = useState('')
 
-  // Revision dialog
+  // Rework dialog — replaces the old "Request For Revision" manager action.
+  // Sends the ticket back to the assigned resource for further work.
   const [revisionDialogOpen, setRevisionDialogOpen] = useState(false)
   const [revisionNotes, setRevisionNotes] = useState('')
   const [revisionPriority, setRevisionPriority] = useState('')
@@ -138,8 +142,13 @@ export function ManagerReviewActions({ ticketId, developers, ticketNumber, revis
       setRevisionPriority('')
       setRevisionAttachmentIds([])
       setRevisionUploadedFiles([])
+      toast.success('Ticket sent back for rework')
+      // Refresh the ticket so the new status (and the next available action)
+      // reflects what the backend actually returned/saved.
+      router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to request revision')
+      setError(err instanceof Error ? err.message : 'Failed to send ticket back for rework')
+      toast.error(err instanceof Error ? err.message : 'Failed to send ticket back for rework')
     } finally {
       setLoading(null)
     }
@@ -179,7 +188,7 @@ export function ManagerReviewActions({ ticketId, developers, ticketNumber, revis
             variant="outline"
             className="gap-2 border-orange-500/50 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-500/10"
           >
-            <RefreshCw className="h-4 w-4" />Request For Revision</Button>
+            <RefreshCw className="h-4 w-4" />Rework</Button>
           <Button
             onClick={() => setReassignDialogOpen(true)}
             disabled={loading !== null}
@@ -246,18 +255,19 @@ export function ManagerReviewActions({ ticketId, developers, ticketNumber, revis
         </DialogContent>
       </Dialog>
 
-      {/* Revision Dialog */}
+      {/* Rework Dialog — confirmation required before sending back */}
       <Dialog open={revisionDialogOpen} onOpenChange={setRevisionDialogOpen}>
         <DialogContent className="bg-card border-border/50 sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Request For Revision #{revisionCount + 1}</DialogTitle>
+            <DialogTitle>Confirm Rework</DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              Request a revision if additional changes are required. The ticket will be returned to the assigned resource for further work.
+              Send this ticket back to the assigned resource for changes instead of forwarding it to the
+              client. A rework note is required so the resource knows what to fix.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="revision-notes">Request For Revision Reason *</Label>
+              <Label htmlFor="revision-notes">Rework Instructions *</Label>
             <Textarea
               id="revision-notes"
               placeholder="QA issues, missing requirements, testing failures, internal review feedback..."
@@ -347,7 +357,7 @@ export function ManagerReviewActions({ ticketId, developers, ticketNumber, revis
               className="gap-2 bg-orange-600 text-white hover:bg-orange-700"
             >
               {loading === 'revision' && <Loader2 className="h-4 w-4 animate-spin" />}
-              Request For Revision
+              {loading === 'revision' ? 'Sending back...' : 'Confirm Rework'}
             </Button>
           </DialogFooter>
         </DialogContent>

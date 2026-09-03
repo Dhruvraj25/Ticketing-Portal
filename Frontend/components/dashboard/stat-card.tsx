@@ -179,6 +179,8 @@ interface KpiCardProps {
   colorTheme?: KpiColorTheme
   reportLink?: string
   className?: string
+  /** Overrides the default text-3xl font-bold value styling (e.g. name fields). */
+  valueClassName?: string
 }
 
 export const KpiCard = memo(function KpiCard({
@@ -188,6 +190,7 @@ export const KpiCard = memo(function KpiCard({
   colorTheme,
   reportLink,
   className,
+  valueClassName,
 }: KpiCardProps) {
 
   const theme = colorTheme ? THEME_MAP[colorTheme] || THEME_MAP.blue : getTheme(title)
@@ -218,7 +221,10 @@ export const KpiCard = memo(function KpiCard({
       </div>
       {/* Value + report arrow */}
       <div className="flex items-end justify-between gap-1">
-        <h3 className="text-3xl font-bold text-slate-900 dark:text-slate-100 leading-none tracking-tight">
+        <h3 className={cn(
+          'text-slate-900 dark:text-slate-100',
+          valueClassName ?? 'text-3xl font-bold leading-none tracking-tight',
+        )}>
           {value}
         </h3>
         {reportLink && (
@@ -249,6 +255,8 @@ interface StatCardProps {
   className?: string
   href?: string
   delay?: number
+  /** Overrides the default text-3xl font-bold value styling. */
+  valueClassName?: string
   children?: ReactNode
 }
 
@@ -259,6 +267,7 @@ export const StatCard = memo(function StatCard({
   colorTheme,
   href,
   className,
+  valueClassName,
 }: StatCardProps) {
   return (
     <KpiCard
@@ -268,6 +277,7 @@ export const StatCard = memo(function StatCard({
       colorTheme={colorTheme}
       reportLink={href}
       className={className}
+      valueClassName={valueClassName}
     />
   )
 })

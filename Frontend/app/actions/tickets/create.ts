@@ -2,6 +2,7 @@
 'use server'
 
 import { getCurrentUser as getUser } from '@/lib/auth-utils'
+import { getPortalUrl } from '@/lib/urls'
 import { db } from '@/lib/db'
 import { ticket, ticketHistory, user, project, supportWallet } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -134,7 +135,7 @@ async function sendTicketCreatedNotification(
   data: any,
   actualClientId: string,
 ): Promise<void> {
-  const ticketLink = process.env.NEXT_PUBLIC_APP_URL + '/dashboard/tickets/' + newTicket.id
+  const ticketLink = getPortalUrl() + '/dashboard/tickets/' + newTicket.id
   const createdDate = new Date().toISOString().split('T')[0]
   const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = []
 

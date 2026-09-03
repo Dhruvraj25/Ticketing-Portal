@@ -3,9 +3,10 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react'
 import { getPaginatedWorklogs } from '@/app/actions/tickets'
 import { Skeleton } from '@/components/ui/skeleton'
-import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { fmtDuration, stripHtml } from '@/lib/format'
+import { fmtTz } from '@/lib/datetime'
+import { useUserTimezone } from '@/components/timezone-provider'
 import { Badge } from '@/components/ui/badge'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { ClipboardList, Activity, ChevronDown, Timer } from 'lucide-react'
@@ -47,6 +48,7 @@ function LogRowSkeleton() {
 }
 
 function LogRow({ log }: { log: LogEntry }) {
+  const userTimezone = useUserTimezone()
   return (
     <div className="flex items-center gap-3 px-4 py-3 border-b border-border/20 hover:bg-muted/20 transition-colors group">
       <div className="h-7 w-7 rounded-lg bg-accent flex items-center justify-center shrink-0">
@@ -75,7 +77,7 @@ function LogRow({ log }: { log: LogEntry }) {
       <div className="flex flex-col items-end gap-0.5 shrink-0">
         <div className="flex items-center gap-1.5">
           <span className="text-[11px] text-muted-foreground/60 tabular-nums">
-            {format(new Date(log.startTime), 'MMM d, HH:mm')}
+            {fmtTz(log.startTime, 'MMM d, HH:mm', userTimezone)}
           </span>
         </div>
         <span className="text-xs font-semibold text-foreground tabular-nums">

@@ -26,7 +26,7 @@ export async function sendTeamsNotification(
     const cookieHeader = await headers()
     const sessionCookie = cookieHeader.get('cookie') || ''
 
-    const response = await fetch(`${BACKEND_URL}/teams/notification`, {
+    const response = await fetch(`${BACKEND_URL}/api/teams/notification`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

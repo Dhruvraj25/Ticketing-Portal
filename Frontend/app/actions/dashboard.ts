@@ -37,6 +37,10 @@ export interface ConsolidatedStats {
   autoApprovedEstimates: number
   awaitingApproval: number
   recentlyApproved: number
+  reworkCount: number
+  revisionRequestedCount: number
+  closedCount: number
+  clientReviewCount: number
 }
 
 export interface SidebarDataResult {
@@ -94,10 +98,18 @@ const RECENT_TICKETS_CACHE_TTL = 30 // Recent tickets stale-by-30s is fine for d
 // lived here. Both implementations were identical — same FILTER query, same return shape.
 // The shared version uses cache tag 'consolidated-dashboard-stats' (60s TTL).
 
-async function _getRecentTicketsImpl(userId: string, role: string, limit = 5) {
+async function _getRecentTicketsImpl(userId: string, role: string, limit = 5, userType?: string | null) {
   const conditions: any[] = []
-  if (role === 'client') conditions.push(eq(ticket.clientId, userId))
-  else if (role === 'developer') conditions.push(eq(ticket.assignedToId, userId))
+  if (role === 'client') {
+    // Client Approver org scope — own + standard accounts of the same client.
+    const { getClientOrgUserIds } = await import('@/app/actions/tickets/queries')
+    const orgIds = await getClientOrgUserIds(userId, userType ?? null)
+    if (orgIds && orgIds.length > 1) {
+      conditions.push(inArray(ticket.clientId, orgIds))
+    } else {
+      conditions.push(eq(ticket.clientId, userId))
+    }
+  } else if (role === 'developer') conditions.push(eq(ticket.assignedToId, userId))
 
   // For LIMIT 5, correlated subqueries are MORE efficient than CTEs.
   // Each subquery is a targeted PK index seek (~0.1ms each, 5 rows = ~0.5ms total).
@@ -140,8 +152,8 @@ async function _getRecentTicketsImpl(userId: string, role: string, limit = 5) {
 // Keyed by userId+role so each user gets their own cache entry.
 const getCachedRecentTickets = unstable_cache(
   async (cacheKey: string) => {
-    const { userId, role, limit } = JSON.parse(cacheKey)
-    return _getRecentTicketsImpl(userId, role, limit)
+    const { userId, role, limit, userType } = JSON.parse(cacheKey)
+    return _getRecentTicketsImpl(userId, role, limit, userType)
   },
   undefined,
   { revalidate: RECENT_TICKETS_CACHE_TTL, tags: ['recent-tickets'] },
@@ -433,10 +445,10 @@ export const getDashboardCriticalData = wrapServerAction('getDashboardCriticalDa
   await waitForDb()
 
   const currentUser = await getCurrentUser()
-  const { id: userId, name, email, role } = currentUser
+  const { id: userId, name, email, role, userType } = currentUser
 
   // Recent tickets now cached (30s TTL) to avoid redundant queries on every dashboard load
-  const recentTicketsKey = JSON.stringify({ userId, role, limit: 5 })
+  const recentTicketsKey = JSON.stringify({ userId, role, limit: 5, userType })
 
   // Use shared getConsolidatedDashboardData from tickets/queries.ts instead of
   // the local duplicate implementation. This eliminates one redundant SQL query

@@ -24,6 +24,7 @@ export type ReportType =
   | 'estimate_additional_hours'
   | 'wallet_history'
   | 'customer_review'
+  | 'actual_vs_estimated'
 
 export const REPORT_TYPE_OPTIONS: { value: ReportType; label: string; category: string }[] = [
   // Tickets
@@ -31,6 +32,7 @@ export const REPORT_TYPE_OPTIONS: { value: ReportType; label: string; category: 
   { value: 'ticket_status', label: 'Ticket Status Report', category: 'Tickets' },
   { value: 'ticket_aging', label: 'Ticket Aging Report', category: 'Tickets' },
   { value: 'ticket_resolution', label: 'Ticket Resolution Report', category: 'Tickets' },
+  { value: 'actual_vs_estimated', label: 'Actual vs Estimated Time Report', category: 'Tickets' },
 
   // Projects
   { value: 'project_summary', label: 'Project Summary Report', category: 'Projects' },

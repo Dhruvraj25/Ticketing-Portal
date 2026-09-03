@@ -19,6 +19,8 @@ import { getTicketResolutionReport } from './ticket-reports'
 import { getEstimateApprovalReport } from './ticket-reports'
 import { getAdditionalHoursReport } from './ticket-reports'
 
+import { getActualVsEstimatedReport } from './actual-vs-estimated'
+
 import { getDeveloperProductivityReport } from './developer-reports'
 import { getDeveloperWorkloadReport } from './developer-reports'
 import { getWorklogReport } from './developer-reports'
@@ -74,6 +76,7 @@ const REPORT_TYPE_TAG_MAP: Record<string, string> = {
   estimate_approval: REPORT_CACHE_TAGS.ESTIMATE_APPROVAL,
   estimate_additional_hours: REPORT_CACHE_TAGS.ESTIMATE_ADDITIONAL_HOURS,
   customer_review: REPORT_CACHE_TAGS.CUSTOMER_REVIEW,
+  actual_vs_estimated: REPORT_CACHE_TAGS.ACTUAL_VS_ESTIMATED,
 }
 
 // ─── Module-level handler registry ─────────────────────────────────────
@@ -103,6 +106,7 @@ const REPORT_HANDLERS: Record<string, (filters: ReportFilters, currentUser: Curr
   estimate_additional_hours: getAdditionalHoursReport,
   wallet_history: getWalletHistoryReport,
   customer_review: getCustomerReviewReport,
+  actual_vs_estimated: getActualVsEstimatedReport,
 }
 
 // ─── Internal implementation (no getCurrentUser — accepts role and userId) ─

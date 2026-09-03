@@ -14,6 +14,7 @@ export const TicketStatus = {
   RESOLVED: 'resolved',
   CLIENT_REVIEW: 'client_review',
   CLOSED: 'closed',
+  REWORK: 'rework',
   REQUEST_FOR_REVISION: 'request_for_revision',
 } as const
 
@@ -137,15 +138,36 @@ export interface ManagerStats {
 
 export const TICKET_STATUS_CONFIG: Record<TicketStatus, { label: string; color: string }> = {
   [TicketStatus.NEW]: { label: 'New Request', color: 'bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/30' },
-  [TicketStatus.MANAGER_REVIEW]: { label: 'Under Review', color: 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/30' },
+  // 'manager_review' = new ticket under manager triage (legacy status, kept for
+  // historical records). Distinct from 'resolved', which is the work-completed
+  // state awaiting MANAGER review (see R13/R16 label audit).
+  [TicketStatus.MANAGER_REVIEW]: { label: 'Under Manager Review', color: 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/30' },
   [TicketStatus.ESTIMATE_PENDING]: { label: 'Awaiting Estimate Approval', color: 'bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-200 dark:border-sky-500/30' },
   [TicketStatus.ESTIMATE_APPROVED]: { label: 'Estimate Approved', color: 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/30' },
   [TicketStatus.ASSIGNED]: { label: 'Assigned to Resource', color: 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/30' },
   [TicketStatus.IN_PROGRESS]: { label: 'Work in Progress', color: 'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/30' },
-  [TicketStatus.RESOLVED]: { label: 'Ready for Client Review', color: 'bg-green-50 dark:bg-green-500/15 text-green-600 dark:text-green-400 border-green-200 dark:border-green-500/30' },
+  // Work completed by the developer → next action is the MANAGER's review.
+  // Previously labeled "Ready for Client Review", which mismatched the actual
+  // state (the ticket has NOT been forwarded to the client yet).
+  [TicketStatus.RESOLVED]: { label: 'Manager Review', color: 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/30' },
   [TicketStatus.CLIENT_REVIEW]: { label: 'Awaiting Client Review', color: 'bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-200 dark:border-sky-500/30' },
   [TicketStatus.CLOSED]: { label: 'Completed', color: 'bg-gray-50 text-gray-500 border-gray-200' },
-  [TicketStatus.REQUEST_FOR_REVISION]: { label: 'Revision Requested', color: 'bg-orange-50 dark:bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-500/30' },
+  // Manager sent the completed work back to the resource for further work.
+  // Kept DISTINCT from 'request_for_revision' (R18) — the latter is set when a
+  // CLIENT requests a revision (estimate rejected / work revision request).
+  [TicketStatus.REWORK]: { label: 'Rework', color: 'bg-orange-50 dark:bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-500/30' },
+  [TicketStatus.REQUEST_FOR_REVISION]: { label: 'Requested for Revision', color: 'bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-500/30' },
+}
+
+/**
+ * Centralized status label lookup used by every badge/filter/report.
+ * Falls back to a humanized version of the raw status value.
+ */
+export function ticketStatusLabel(status: string): string {
+  return (
+    TICKET_STATUS_CONFIG[status as TicketStatus]?.label ??
+    (status ? status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ') : 'Unknown')
+  )
 }
 
 export const TICKET_PRIORITY_CONFIG: Record<TicketPriority, { label: string; color: string }> = {

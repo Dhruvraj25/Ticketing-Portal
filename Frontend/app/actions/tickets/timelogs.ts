@@ -1,6 +1,7 @@
 'use server'
 
 import { getCurrentUser as getUser } from '@/lib/auth-utils'
+import { getPortalUrl } from '@/lib/urls'
 import { db } from '@/lib/db'
 import { timeLog, ticketHistory, user, ticket, project } from '@/lib/db/schema'
 import { eq, and, desc, isNull, inArray } from 'drizzle-orm'
@@ -59,7 +60,7 @@ export const startTimer = wrapServerAction('startTimer', async function startTim
     },
   ]
 
-  const ticketLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/tickets/' + ticketId
+  const ticketLink = (getPortalUrl()) + '/dashboard/tickets/' + ticketId
   if (ticketRow) {
     if (ticketRow.clientId) {
       recipients.push({
@@ -183,7 +184,7 @@ export const stopTimer = wrapServerAction('stopTimer', async function stopTimer(
     },
   ]
 
-  const ticketLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/tickets/' + log.ticketId
+  const ticketLink = (getPortalUrl()) + '/dashboard/tickets/' + log.ticketId
   if (ticketRow) {
     if (ticketRow.clientId) {
       recipients.push({

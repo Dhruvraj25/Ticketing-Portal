@@ -37,10 +37,7 @@ function SidebarSkeleton() {
 // ─── Critical Content (renders immediately, data pre-fetched) ───────────────
 
 function StatsSection({ consolidatedStats, userRole }: { consolidatedStats: ConsolidatedStats; userRole: string }) {
-  // Pending Revisions is only shown to internal roles (developer/resource, manager, admin).
-  // The stats query is already role-filtered, so developers see their assigned revisions
-  // while managers/admins see all revision-requested tickets. Clients never see this KPI.
-  const canViewRevisions = userRole !== 'client'
+  const isManagerOrAdmin = userRole === 'project_manager' || userRole === 'admin'
 
   const cards: { title: string; value: number; href: string; iconName?: string; colorTheme?: KpiColorTheme }[] = [
     { title: 'Total Tickets', value: consolidatedStats.totalTickets, href: '/dashboard/reports/view?report=ticket_summary' },
@@ -48,15 +45,37 @@ function StatsSection({ consolidatedStats, userRole }: { consolidatedStats: Cons
     { title: 'In Progress', value: consolidatedStats.inProgressTickets, href: '/dashboard/reports/view?report=ticket_status&status=in_progress' },
     { title: 'Resolved', value: consolidatedStats.resolvedTickets, href: '/dashboard/reports/view?report=ticket_resolution' },
   ]
-  // Always rendered for eligible roles — displays 0 when nothing is pending, never hidden.
-  if (canViewRevisions) {
+
+  // R19 — Manager/Admin KPI cards for the two DISTINCT revision-style states.
+  // 'Rework' = manager sent completed work back to the resource; 'Requested
+  // for Revision' = client asked for changes (work revision / rejected
+  // estimate). Cards render ONLY when the count is above zero.
+  if (isManagerOrAdmin) {
+    if (consolidatedStats.reworkCount > 0) {
+      cards.push({
+        title: 'Rework',
+        value: consolidatedStats.reworkCount,
+        href: `/dashboard/reports/view?report=ticket_summary&status=${TicketStatus.REWORK}`,
+        iconName: 'RefreshCw',
+        colorTheme: 'orange',
+      })
+    }
+    if (consolidatedStats.revisionRequestedCount > 0) {
+      cards.push({
+        title: 'Requested for Revision',
+        value: consolidatedStats.revisionRequestedCount,
+        href: `/dashboard/reports/view?report=ticket_summary&status=${TicketStatus.REQUEST_FOR_REVISION}`,
+        iconName: 'RefreshCw',
+        colorTheme: 'violet',
+      })
+    }
+  }
+  // Developers — keep visibility of their revision-state tickets (zero-hidden).
+  if (userRole === 'developer' && consolidatedStats.openRevisions > 0) {
     cards.push({
       title: 'Pending Revisions',
       value: consolidatedStats.openRevisions,
-      // Arrow relocates to the Report Center — revision-requests report
-      // (ticket_summary honors the status filter and lists exactly the
-      // revision-requested tickets; role filtering matches the KPI value).
-      href: `/dashboard/reports/view?report=ticket_summary&status=${TicketStatus.REQUEST_FOR_REVISION}`,
+      href: `/dashboard/tickets?status=${TicketStatus.REQUEST_FOR_REVISION}`,
       iconName: 'RefreshCw',
       colorTheme: 'violet',
     })
@@ -87,6 +106,44 @@ function StatsSection({ consolidatedStats, userRole }: { consolidatedStats: Cons
           colorTheme={card.colorTheme}
         />
       ))}
+    </div>
+  )
+}
+
+// ─── Client Reports Section (R22) ──────────────────────────────────────────
+// Counts come from the role-scoped consolidated stats query (never derived
+// from the paginated recent-tickets list), so totals are always complete and
+// limited to the logged-in client / approver org's accessible tickets.
+
+function ClientReportsSection({ stats, userRole }: { stats: ConsolidatedStats; userRole: string }) {
+  const cards: { title: string; value: number; href: string; colorTheme?: KpiColorTheme }[] = [
+    { title: 'Total Tickets', value: stats.totalTickets, href: '/dashboard/tickets' },
+    { title: 'In Progress', value: stats.inProgressTickets, href: '/dashboard/tickets?status=in_progress', colorTheme: 'indigo' },
+    { title: 'Pending for Approval', value: stats.clientReviewCount, href: '/dashboard/tickets?status=client_review', colorTheme: 'amber' },
+    { title: 'Closed', value: stats.closedCount, href: '/dashboard/tickets?status=closed', colorTheme: 'emerald' },
+  ]
+
+  if (userRole !== 'client') return null
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-foreground">Reports</h2>
+        <Link href="/dashboard/reports" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+          Open Report Center
+        </Link>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {cards.map((card) => (
+          <StatCard
+            key={card.title}
+            title={card.title}
+            value={card.value}
+            href={card.href}
+            colorTheme={card.colorTheme}
+          />
+        ))}
+      </div>
     </div>
   )
 }
@@ -125,7 +182,8 @@ function RecentTicketsSection({
       <TicketList
         tickets={recentTickets}
         showClient={userRole !== 'client'}
-        showAssignee={userRole !== 'developer'}
+        // Assignee (developer) is internal — never surfaced to clients (R15).
+        showAssignee={userRole !== 'developer' && userRole !== 'client'}
         emptyMessage={userRole === 'client' ? "You haven't submitted any tickets yet" : "No tickets in your queue"}
       />
     </div>
@@ -193,6 +251,9 @@ export default async function DashboardPage() {
       <div className="space-y-4">
         {/* ── CRITICAL PATH: KPI cards — data already loaded ───────── */}
         <StatsSection consolidatedStats={consolidatedStats} userRole={user.role} />
+
+        {/* Client Reports card area — server-computed, org-scoped counts */}
+        <ClientReportsSection stats={consolidatedStats} userRole={user.role} />
 
         {/* Admin Project Metrics — already loaded in critical data
         {user.role === 'admin' && projectMetrics && (

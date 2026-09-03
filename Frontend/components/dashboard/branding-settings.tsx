@@ -176,7 +176,7 @@ export function BrandingSettings() {
     try {
       await resetDefaultBranding()
       await refreshBranding()
-      setCompanyName('SupportHub')
+      setCompanyName('Support Hero')
       setLogoPreview(null)
       setFaviconPreview(null)
       setSaveSuccess(true)
@@ -211,7 +211,7 @@ export function BrandingSettings() {
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
                 className="h-10 rounded-lg bg-muted/20 border-border/50 flex-1 max-w-md"
-                placeholder="SupportHub"
+                placeholder="Support Hero"
               />
               <Button
                 onClick={handleSaveName}

@@ -87,7 +87,7 @@ export function ReportsExport({ analytics, devStats, productivity, totalWorkMinu
 
         case 'txt': {
           const lines = [
-            '=== SupportHub Report ===',
+            '=== Support Hero Report ===',
             `Generated: ${new Date().toLocaleString()}`,
             '',
             '=== Ticket Analytics ===',
@@ -111,7 +111,7 @@ export function ReportsExport({ analytics, devStats, productivity, totalWorkMinu
           // Generate a print-friendly HTML report
           const html = `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><title>SupportHub Report</title>
+<head><meta charset="UTF-8"><title>Support Hero Report</title>
 <style>
   body { font-family: -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem; color: #1e293b; }
   h1 { font-size: 1.5rem; border-bottom: 2px solid #6366f1; padding-bottom: 0.5rem; }
@@ -126,7 +126,7 @@ export function ReportsExport({ analytics, devStats, productivity, totalWorkMinu
   .footer { margin-top: 2rem; font-size: 0.75rem; color: #94a3b8; text-align: center; }
 </style></head>
 <body>
-  <h1>SupportHub Analytics Report</h1>
+  <h1>Support Hero Analytics Report</h1>
   <p>Generated: ${new Date().toLocaleString()}</p>
 
   <div class="kpis">
@@ -151,7 +151,7 @@ export function ReportsExport({ analytics, devStats, productivity, totalWorkMinu
     ${productivity.map((e: any) => `<tr><td>${e.name}</td><td>${e.role}</td><td>${Math.round(e.totalMinutes / 60 * 10) / 10}</td><td>${e.ticketsWorked}</td><td>${e.resolvedTickets}</td></tr>`).join('')}
   </table>
 
-  <div class="footer">SupportHub — Generated automatically</div>
+  <div class="footer">Support Hero — Generated automatically</div>
 </body></html>`
           downloadFile(html, 'report.html', 'text/html')
           break
@@ -165,7 +165,7 @@ export function ReportsExport({ analytics, devStats, productivity, totalWorkMinu
   xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
   <Worksheet ss:Name="Summary">
     <Table>
-      <Row><Cell><Data ss:Type="String">SupportHub Report</Data></Cell></Row>
+      <Row><Cell><Data ss:Type="String">Support Hero Report</Data></Cell></Row>
       <Row><Cell><Data ss:Type="String">Generated: ${new Date().toLocaleString()}</Data></Cell></Row>
       <Row/>
       <Row><Cell><Data ss:Type="String">Metric</Data></Cell><Cell><Data ss:Type="String">Value</Data></Cell></Row>

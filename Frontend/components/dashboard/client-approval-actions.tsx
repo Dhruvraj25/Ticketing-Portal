@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { clientApproveTicket, clientReopenTicket } from '@/app/actions/tickets'
 import { requestRevision } from '@/app/actions/revisions'
 import { Card } from '@/components/ui/card'
@@ -33,6 +34,7 @@ interface ClientApprovalActionsProps {
 }
 
 export function ClientApprovalActions({ ticketId, currentStatus, revisionCount = 0, closedAt }: ClientApprovalActionsProps) {
+  const router = useRouter()
   const [loading, setLoading] = useState<'approve' | 'reject' | 'reopen' | 'revision' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -54,6 +56,7 @@ export function ClientApprovalActions({ ticketId, currentStatus, revisionCount =
     setLoading('approve')
     try {
       await clientApproveTicket(ticketId)
+      router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to approve ticket')
     } finally {
@@ -69,6 +72,7 @@ export function ClientApprovalActions({ ticketId, currentStatus, revisionCount =
       await clientReopenTicket(ticketId, reopenReason.trim())
       setReopenDialogOpen(false)
       setReopenReason('')
+      router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reopen ticket')
     } finally {
@@ -92,6 +96,7 @@ export function ClientApprovalActions({ ticketId, currentStatus, revisionCount =
       setRevisionPriority('')
       setRevisionAttachmentIds([])
       setRevisionUploadedFiles([])
+      router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to request revision')
     } finally {

@@ -14,7 +14,7 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: 'SupportHub - Enterprise Ticket Management',
+  title: 'Support Hero - Enterprise Ticket Management',
   description: 'Premium enterprise ticketing platform for modern support teams',
   generator: 'v0.app',
 }

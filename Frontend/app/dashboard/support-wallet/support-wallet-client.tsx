@@ -11,8 +11,6 @@ import {
   CheckCircle2,
   Clock,
   Calendar,
-  TrendingUp,
-  BarChart3,
   XCircle,
   Plus,
   RefreshCw,
@@ -64,45 +62,6 @@ function TransactionTypeBadge({ type }: { type: string }) {
     <span className={cn('inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border', c.color)}>
       {c.label}
     </span>
-  )
-}
-
-// ─── Progress Bar ─────────────────────────────────────────────────────────
-
-function WalletProgressBar({ remaining, total }: { remaining: number; total: number }) {
-  const pct = total > 0 ? Math.round((remaining / total) * 100) : 0
-  const usedPct = total > 0 ? Math.round(((total - remaining) / total) * 100) : 0
-
-  return (
-    <div className="space-y-2">
-      <div className="h-3 rounded-full bg-muted overflow-hidden">
-        <motion.div
-          className={cn(
-            'h-full rounded-full transition-all',
-            pct <= 0 ? 'bg-red-500' :
-            pct <= 25 ? 'bg-amber-500' :
-            pct <= 50 ? 'bg-blue-500' :
-            'bg-emerald-500'
-          )}
-          initial={{ width: 0 }}
-          animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.8, ease: 'easeOut' }}
-        />
-      </div>
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">
-          {usedPct}% used
-        </span>
-        <span className={cn(
-          'font-semibold',
-          pct <= 0 ? 'text-red-600 dark:text-red-400' :
-          pct <= 25 ? 'text-amber-600 dark:text-amber-400' :
-          'text-emerald-600 dark:text-emerald-400'
-        )}>
-          {pct}% available
-        </span>
-      </div>
-    </div>
   )
 }
 
@@ -229,7 +188,7 @@ export function SupportWalletClient({ user, wallet, transactions }: SupportWalle
       )}
 
       {/* Wallet Summary Cards */}
-      <div data-tour="wallet-summary" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div data-tour="wallet-summary" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -291,42 +250,7 @@ export function SupportWalletClient({ user, wallet, transactions }: SupportWalle
           </div>
         </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="rounded-xl bg-white dark:bg-slate-900 border border-border p-5 shadow-sm"
-        >
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Available</p>
-          <p className={cn(
-            'text-2xl font-bold mt-1',
-            isExhausted ? 'text-red-600 dark:text-red-400' :
-            isLowBalance ? 'text-amber-600 dark:text-amber-400' :
-            'text-emerald-600 dark:text-emerald-400'
-          )}>{remainingPct}%</p>
-          <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
-            <TrendingUp className="h-3 w-3" />
-            {wallet.totalPurchasedHours > 0
-              ? `${wallet.totalPurchasedHours - wallet.remainingHours} of ${wallet.totalPurchasedHours} hours used`
-              : 'No hours purchased'}
-          </div>
-        </motion.div>
       </div>
-
-      {/* Usage Progress Bar */}
-      <motion.div
-        data-tour="wallet-usage"
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.15 }}
-        className="rounded-xl bg-white dark:bg-slate-900 border border-border p-5 shadow-sm"
-      >
-        <div className="flex items-center gap-2 mb-4">
-          <BarChart3 className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold text-foreground">Hour Usage</h3>
-        </div>
-        <WalletProgressBar remaining={wallet.remainingHours} total={wallet.totalPurchasedHours} />
-      </motion.div>
 
       {/* Ticket Creation Info */}
       {isExhausted && (

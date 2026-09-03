@@ -1,6 +1,7 @@
 'use server'
 
 import { getCurrentUser } from '@/lib/auth-utils'
+import { getPortalUrl } from '@/lib/urls'
 import { db } from '@/lib/db'
 import { ticketReview, ticket, user, project } from '@/lib/db/schema'
 import { eq, and, count, sql, desc, asc, avg, gte, lte } from 'drizzle-orm'
@@ -195,7 +196,7 @@ export const submitReview = wrapServerAction('submitReview', async function subm
   // Notify the assigned resource (In-App + Teams). No email: the backend email
   // bridge has no review_submitted case — adding one here would silently drop.
   if (t.assignedToId) {
-    const reviewLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/tickets/' + data.ticketId
+    const reviewLink = (getPortalUrl()) + '/dashboard/tickets/' + data.ticketId
     await dispatchNotification({
       eventType: 'review_submitted',
       triggeredBy: currentUser.id,

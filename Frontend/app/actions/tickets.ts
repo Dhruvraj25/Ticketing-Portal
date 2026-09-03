@@ -25,6 +25,8 @@ export {
   getTicketHistoryCount,
   // Update
   updateTicketStatus,
+  updateTicketPriority,
+  updateTicketDates,
   assignTicket,
   managerForwardToClient,
   managerReassignDeveloper,

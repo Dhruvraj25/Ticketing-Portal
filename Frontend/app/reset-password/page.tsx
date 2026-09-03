@@ -106,7 +106,7 @@ function ResetPasswordForm() {
                 <path d="M11.5 17.5L20.5 22.5" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
               </svg>
             </div>
-            <span className="text-2xl font-extrabold tracking-tight text-white font-sans">SupportHub</span>
+            <span className="text-2xl font-extrabold tracking-tight text-white font-sans">Support Hero</span>
           </div>
         </div>
 
@@ -120,7 +120,7 @@ function ResetPasswordForm() {
         </div>
 
         <div className="relative z-10 font-mono text-xs text-slate-500">
-          © 2024 SupportHub Enterprise. Global technical infrastructure.
+          © 2024 Support Hero. Global technical infrastructure.
         </div>
       </div>
 

@@ -48,7 +48,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { TicketStatus, WALLET_STATUS_CONFIG } from '@/lib/types'
+import { TicketStatus, TICKET_STATUS_CONFIG, WALLET_STATUS_CONFIG } from '@/lib/types'
 import type { SupportWallet, WalletTransaction, UserRole, WalletTransactionType } from '@/lib/types'
 import { getWalletContractStatus } from '@/lib/wallet-utils'
 import { SupportValidityPicker } from '@/components/ui/support-validity-picker'
@@ -137,20 +137,14 @@ function AlertTypeBadge({ type }: { type: string }) {
   )
 }
 
-// Ticket consumption status badge
+// Ticket consumption status badge — single source of truth is TICKET_STATUS_CONFIG
 function TicketStatusBadgeSmall({ status }: { status: string }) {
-  const config: Record<string, { label: string; color: string }> = {
-    [TicketStatus.NEW]: { label: 'New Request', color: 'bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/30' },
-    [TicketStatus.ASSIGNED]: { label: 'Assigned to Resource', color: 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/30' },
-    [TicketStatus.IN_PROGRESS]: { label: 'Work in Progress', color: 'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/30' },
-    [TicketStatus.RESOLVED]: { label: 'Ready for Client Review', color: 'bg-green-50 dark:bg-green-500/15 text-green-600 dark:text-green-400 border-green-200 dark:border-green-500/30' },
-    [TicketStatus.CLOSED]: { label: 'Completed', color: 'bg-gray-50 dark:bg-slate-800/50 text-gray-500 border-gray-200 dark:border-slate-800' },
-    [TicketStatus.CLIENT_REVIEW]: { label: 'Awaiting Client Review', color: 'bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-200 dark:border-sky-500/30' },
-  }
-  const c = config[status] || { label: status, color: 'bg-gray-50 dark:bg-slate-800/50 text-gray-600 dark:text-slate-400 border-gray-200 dark:border-slate-800' }
+  const c = TICKET_STATUS_CONFIG[status as keyof typeof TICKET_STATUS_CONFIG]
+  const fallback = { label: status, color: 'bg-gray-50 dark:bg-slate-800/50 text-gray-600 dark:text-slate-400 border-gray-200 dark:border-slate-800' }
+  const { label, color } = c ?? fallback
   return (
-    <span className={cn('inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border', c.color)}>
-      {c.label}
+    <span className={cn('inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border', color)}>
+      {label}
     </span>
   )
 }

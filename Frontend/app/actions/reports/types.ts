@@ -58,12 +58,12 @@ export function checkAccess(userRole: UserRole, reportType: ReportType): boolean
     'project_summary', 'project_progress', 'module_report',
     'developer_productivity', 'developer_workload', 'worklog',
     'billable_hours', 'non_billable_hours', 'assignment', 'analytics',
-    'team_performance', 'sla_compliance', 'sla_breach',
+    'team_performance', 'sla_compliance', 'sla_breach', 'actual_vs_estimated',
   ]
   const devReports: ReportType[] = [
     'ticket_summary', 'ticket_status', 'ticket_aging', 'ticket_resolution',
     'developer_productivity', 'developer_workload', 'worklog',
-    'billable_hours', 'non_billable_hours',
+    'billable_hours', 'non_billable_hours', 'actual_vs_estimated',
   ]
   const clientReports: ReportType[] = [
     'ticket_summary', 'ticket_status', 'ticket_aging', 'ticket_resolution',

@@ -29,15 +29,15 @@ interface ReportFiltersProps {
 
 const STATUS_OPTIONS = [
   { value: TicketStatus.NEW, label: 'New Request' },
-  { value: TicketStatus.MANAGER_REVIEW, label: 'Under Review' },
+  { value: TicketStatus.MANAGER_REVIEW, label: 'Under Manager Review' },
   { value: TicketStatus.ESTIMATE_PENDING, label: 'Awaiting Estimate Approval' },
   { value: TicketStatus.ESTIMATE_APPROVED, label: 'Estimate Approved' },
   { value: TicketStatus.ASSIGNED, label: 'Assigned to Resource' },
   { value: TicketStatus.IN_PROGRESS, label: 'Work in Progress' },
-  { value: TicketStatus.RESOLVED, label: 'Ready for Client Review' },
+  { value: TicketStatus.RESOLVED, label: 'Manager Review' },
   { value: TicketStatus.CLIENT_REVIEW, label: 'Awaiting Client Review' },
   { value: TicketStatus.CLOSED, label: 'Completed' },
-  { value: TicketStatus.REQUEST_FOR_REVISION, label: 'Revision Requested' },
+  { value: TicketStatus.REQUEST_FOR_REVISION, label: 'Requested for Revision' },
 ]
 
 const PRIORITY_OPTIONS = [

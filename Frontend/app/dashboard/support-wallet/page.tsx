@@ -5,7 +5,7 @@ import { getWallets, getWalletTransactions } from '@/app/actions/wallets'
 import { SupportWalletClient } from './support-wallet-client'
 
 export const metadata = {
-  title: 'Support Wallet — SupportHub',
+  title: 'Support Wallet — Support Hero',
 }
 
 export default async function SupportWalletPage() {

@@ -15,6 +15,7 @@ import { and, asc, eq, inArray, ne } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { revalidatePath } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth-utils'
+import { getPortalUrl } from '@/lib/urls'
 import { wrapServerAction } from '@/lib/performance-profiler'
 import type {
   OnboardingFormData,
@@ -445,7 +446,7 @@ export const createCustomerOnboarding = wrapServerAction(
         const welcomeMsg = isHypercare
           ? `Your account has been created. Project "${result.projectName}" is ready with Hypercare support for ${data.supportWallet.hypercareDuration} days.`
           : `Your account has been created. Project "${result.projectName}" is ready. You have ${data.supportWallet.supportHours} support hours allocated.`
-        inAppNotifications.push({ userId: result.clientId, channels: ['inApp'], inApp: { title: 'Welcome to SupportHub', message: welcomeMsg, link: `/dashboard/projects/${result.projectId}` } })
+        inAppNotifications.push({ userId: result.clientId, channels: ['inApp'], inApp: { title: 'Welcome to Support Hero', message: welcomeMsg, link: `/dashboard/projects/${result.projectId}` } })
       }
       if (result.userEmail) {
         const [clientUserRecord] = await db.select({ id: user.id }).from(user).where(eq(user.email, result.userEmail)).limit(1)
@@ -483,7 +484,7 @@ export const createCustomerOnboarding = wrapServerAction(
                   customerName: result.clientName,
                   customerEmail: result.userEmail,
                   createdBy: currentUser.name || 'Admin',
-                  portalUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+                  portalUrl: getPortalUrl(),
                   projectName: result.projectName,
                 },
               },
@@ -504,7 +505,7 @@ export const createCustomerOnboarding = wrapServerAction(
       // Wires up the "Send login credentials via email" checkbox from the
       // onboarding wizard. Only users with sendEmail=true receive the email;
       // credentials are sensitive, so the channel is email-only (no Teams).
-      const credentialsPortalUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      const credentialsPortalUrl = getPortalUrl()
       for (const cu of data.clientUsers) {
         if (!cu.sendEmail) continue
         const [createdUser] = await db
@@ -858,7 +859,7 @@ export const addClientUsersToExistingProject = wrapServerAction(
           if (newUser) {
             notifications.push({
               userId: newUser.id,
-              title: 'Welcome to SupportHub',
+              title: 'Welcome to Support Hero',
               message: `Your account has been created and linked to project "${result.projectName}".`,
               link: `/dashboard/projects/${result.projectId}`,
             })
@@ -874,7 +875,7 @@ export const addClientUsersToExistingProject = wrapServerAction(
                       customerName: `${cu.firstName} ${cu.lastName}`,
                       customerEmail: cu.email.trim(),
                       createdBy: currentUser.name || 'Admin',
-                      portalUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+                      portalUrl: getPortalUrl(),
                       projectName: result.projectName,
                     },
                   },
@@ -894,7 +895,7 @@ export const addClientUsersToExistingProject = wrapServerAction(
             // Wires up the "Send login credentials via email" checkbox from the
             // onboarding wizard for users added to an existing project.
             if (cu.sendEmail) {
-              const credentialsPortalUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+              const credentialsPortalUrl = getPortalUrl()
               dispatchNotification({
                 eventType: 'login_credentials',
                 triggeredBy: currentUser.id,

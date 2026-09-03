@@ -212,7 +212,7 @@ export function DashboardSidebar({ userRole, userName, userEmail, userAvatarUrl 
             {brandTile}
             {!collapsed && (
               <span className="font-bold text-lg leading-none tracking-tight flex items-center gap-1">
-                {branding.companyName || (isClientRole ? 'Nirka' : 'SupportHub')}
+                {branding.companyName || (isClientRole ? 'Nirka' : 'Support Hero')}
               </span>
             )}
           </Link>

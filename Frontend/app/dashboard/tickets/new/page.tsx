@@ -145,15 +145,37 @@ export default function NewTicketPage() {
           console.warn('[CreateTicket] Failed to load clients:', e)
         }
 
-        const projs = await getTicketFormProjects()
+        // A saved draft takes precedence over URL/default auto-selection so
+        // every dropdown selection survives a refresh (Save Draft requirement).
+        let draft: {
+          clientId?: string
+          projectId?: string
+          moduleId?: string
+        } | null = null
+        try {
+          const raw = localStorage.getItem('ticket-draft')
+          if (raw) draft = JSON.parse(raw)
+        } catch {}
+
+        const draftClientId = draft?.clientId && clients.some((c) => String(c.id) === String(draft.clientId))
+          ? draft.clientId
+          : ''
+        if (draftClientId) setSelectedClientId(draftClientId)
+
+        const projs = draftClientId
+          ? await getTicketFormProjects(draftClientId)
+          : await getTicketFormProjects()
         console.log('[CreateTicket] Projects loaded:', projs.length, JSON.stringify(projs.map(p => ({ id: p.id, name: p.projectName }))))
         setProjects(projs)
 
-        // Check for projectId search param first, then look for project named 'Support' (case-insensitive)
+        // Prefer the draft's project, then the projectId search param, then the 'Support' project
         const projectParam = searchParams.get('projectId')
         let selectedProjId: string | null = null
 
-        if (projectParam && projs.find((p) => String(p.id) === projectParam)) {
+        if (draft?.projectId && projs.find((p) => String(p.id) === String(draft.projectId))) {
+          selectedProjId = String(draft.projectId)
+          console.log('[CreateTicket] Restored project from draft:', selectedProjId)
+        } else if (projectParam && projs.find((p) => String(p.id) === projectParam)) {
           selectedProjId = projectParam
           console.log('[CreateTicket] Auto-selected project from URL param:', selectedProjId)
         } else {
@@ -179,20 +201,25 @@ export default function NewTicketPage() {
               console.warn('[CreateTicket] No modules found for project:', selectedProjId)
             }
 
-            // Check for moduleId search param first, then look for module named 'Support'
+            // Prefer the draft's module, then the moduleId search param, then the 'Support' module
             const moduleParam = searchParams.get('moduleId')
-            if (moduleParam && mods.find((m) => String(m.id) === moduleParam)) {
-              setSelectedModuleId(moduleParam)
+            let restoredModuleId: string | null = null
+            if (draft?.moduleId && mods.find((m) => String(m.id) === String(draft.moduleId))) {
+              restoredModuleId = String(draft.moduleId)
+              console.log('[CreateTicket] Restored module from draft:', restoredModuleId)
+            } else if (moduleParam && mods.find((m) => String(m.id) === moduleParam)) {
+              restoredModuleId = moduleParam
               console.log('[CreateTicket] Auto-selected module from URL param:', moduleParam)
             } else {
               const supportModule = mods.find((m) =>
                 m.moduleName.toLowerCase().includes('support')
               )
               if (supportModule) {
-                setSelectedModuleId(String(supportModule.id))
-                console.log('[CreateTicket] Auto-selected Support module:', supportModule.id, supportModule.moduleName)
+                restoredModuleId = String(supportModule.id)
+                console.log('[CreateTicket] Auto-selected Support module:', restoredModuleId, supportModule.moduleName)
               }
             }
+            if (restoredModuleId) setSelectedModuleId(restoredModuleId)
           } catch (e) {
             console.error('[CreateTicket] Failed to load modules:', e)
           } finally {
@@ -206,7 +233,9 @@ export default function NewTicketPage() {
     load()
   }, [])
 
-  // Restore draft from localStorage
+  // Restore simple fields from a saved draft.
+  // Project / Module / Client are restored inside load() so the restored
+  // dropdown values always resolve against freshly loaded option lists.
   useEffect(() => {
     try {
       const saved = localStorage.getItem('ticket-draft')
@@ -218,11 +247,6 @@ export default function NewTicketPage() {
         if (draft.category) setCategory(draft.category)
         if (draft.environment) setEnvironment(draft.environment)
         if (draft.additionalInfo) setAdditionalInfo(draft.additionalInfo)
-
-        if (draft.projectId) {
-          setSelectedProjectId(draft.projectId)
-          if (draft.moduleId) setSelectedModuleId(draft.moduleId)
-        }
       }
     } catch {}
   }, [])
@@ -296,6 +320,7 @@ export default function NewTicketPage() {
       environment,
       additionalInfo,
 
+      clientId: selectedClientId,
       projectId: selectedProjectId,
       moduleId: selectedModuleId,
     }

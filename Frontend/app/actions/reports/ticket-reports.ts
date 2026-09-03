@@ -68,7 +68,7 @@ export async function getTicketSummaryReport(filters: ReportFilters, currentUser
         'Total Tickets': totalCount,
         'Open': openCount,
         'Work in Progress': inProgressCount,
-        'Ready for Client Review': resolvedCount,
+        'Awaiting Review': resolvedCount,
         'Completed': closedCount,
         'Completed On Time': onTimeCount,
         'Completed Late': lateCount,
@@ -111,7 +111,7 @@ export async function getTicketSummaryReport(filters: ReportFilters, currentUser
         data: [
           { name: 'Open', value: openCount },
           { name: 'Work in Progress', value: inProgressCount },
-          { name: 'Ready for Client Review', value: resolvedCount },
+          { name: 'Awaiting Review', value: resolvedCount },
           { name: 'Completed', value: closedCount },
         ],
       },

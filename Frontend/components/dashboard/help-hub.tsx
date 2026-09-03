@@ -170,7 +170,7 @@ export function HelpHub({ userRole }: HelpHubProps) {
     {
       id: 'contact',
       label: 'Contact Support',
-      description: 'Get help from the SupportHub team.',
+      description: 'Get help from the Support Hero team.', 
       icon: <Mail className="h-4 w-4" />,
       iconClass: 'bg-gradient-to-br from-slate-600 to-slate-800',
       onSelect: () => goToHelpSection('contact'),
@@ -238,7 +238,7 @@ export function HelpHub({ userRole }: HelpHubProps) {
               <div className="min-w-0">
                 <p className="text-sm font-bold text-white">Help &amp; Support</p>
                 <p className="mt-0.5 text-xs leading-relaxed text-slate-300">
-                  Everything you need to use SupportHub.
+                  Everything you need to use Support Hero.
                 </p>
               </div>
             </div>

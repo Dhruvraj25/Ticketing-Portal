@@ -17,6 +17,8 @@ export { getSupportWalletReport, getWalletTransactionReport, getWalletConsumptio
 
 export { getSlaComplianceReport, getSlaBreachReport } from './sla-reports'
 
+export { getActualVsEstimatedReport } from './actual-vs-estimated'
+
 export { getAnalyticsReport } from './analytics'
 
 export { getCustomerReviewReport, getCustomerReviewDetail } from './customer-review-reports'

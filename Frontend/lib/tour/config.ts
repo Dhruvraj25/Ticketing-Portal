@@ -27,7 +27,7 @@ const DONE_STEP: TourStep = {
   id: 'done',
   title: "You're all set! 🎉",
   description:
-    'You now know your way around SupportHub. Use the Help Center any time — or restart this tour from your profile or the help page.',
+    'You now know your way around Support Hero. Use the Help Center any time — or restart this tour from your profile or the help page.',
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -610,7 +610,7 @@ export const PAGE_TOURS: Record<string, TourStep[]> = {
       ...el('[data-tour="ticket-status-pills"]', 'bottom'),
       title: 'Status shortcuts',
       description:
-        'One-click filters for All, New Request, Work in Progress, Ready for Client Review and Completed — each with its current count.',
+        'One-click filters for All, New Request, Work in Progress, Manager Review and Completed — each with its current count.',
     },
     {
       id: 'page-tickets-view-toggle',

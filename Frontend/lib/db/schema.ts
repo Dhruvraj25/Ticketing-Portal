@@ -321,7 +321,7 @@ export const notification = pgTable('notification', {
 export const branding = pgTable('branding', {
   id: serial('id').primaryKey(),
   companyId: text('companyId').notNull().default('default'),
-  companyName: text('companyName').notNull().default('SupportHub'),
+  companyName: text('companyName').notNull().default('Support Hero'),
   logoUrl: text('logoUrl'),
   logoPublicId: text('logoPublicId'),
   faviconUrl: text('faviconUrl'),

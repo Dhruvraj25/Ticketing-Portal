@@ -16,7 +16,7 @@ interface BrandingContextType {
 }
 
 const defaultBranding: BrandingData = {
-  companyName: 'SupportHub',
+  companyName: 'Support Hero',
   logoUrl: null,
   faviconUrl: null,
 }

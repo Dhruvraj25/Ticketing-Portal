@@ -67,7 +67,7 @@ export const updateBranding = wrapServerAction('updateBranding', async function 
   } else {
     await db
       .insert(branding)
-      .values({ companyId: 'default', companyName: 'SupportHub', ...data })
+      .values({ companyId: 'default', companyName: 'Support Hero', ...data })
   }
 
   revalidatePath('/dashboard/admin')
@@ -184,7 +184,7 @@ export const resetDefaultBranding = wrapServerAction('resetDefaultBranding', asy
   await db
     .update(branding)
     .set({
-      companyName: 'SupportHub',
+      companyName: 'Support Hero',
       logoUrl: null,
       logoPublicId: null,
       faviconUrl: null,

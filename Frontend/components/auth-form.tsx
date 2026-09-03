@@ -276,9 +276,12 @@ export function AuthForm({ mode }: AuthFormProps) {
         <div className="flex items-center gap-2.5 text-slate-900 dark:text-slate-100">
           <LogoMark className="h-7 w-7" />
           <div>
-            <p className="text-lg font-bold tracking-tight leading-none">SupportHub</p>
+            <p className="text-lg font-bold tracking-tight leading-none">Support Hero</p>
             <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
               Enterprise Ticketing Portal
+            </p>
+            <p className="mt-0.5 text-[9px] font-medium uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
+              Product by Infinixo Technologies
             </p>
           </div>
         </div>
@@ -299,10 +302,13 @@ export function AuthForm({ mode }: AuthFormProps) {
           <LogoMark className="h-9 w-9 text-slate-900 dark:text-slate-100" />
           <div>
             <p className="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
-              SupportHub
+              Support Hero
             </p>
             <p className="mt-1.5 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
               Enterprise Ticketing Portal
+            </p>
+            <p className="mt-1 text-[9px] font-medium uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+              Product by Infinixo Technologies
             </p>
           </div>
         </div>
@@ -347,7 +353,7 @@ export function AuthForm({ mode }: AuthFormProps) {
           className="relative z-10 flex items-center justify-between text-xs text-slate-400 dark:text-slate-500 animate-fade-in"
           style={{ animationDelay: '200ms' }}
         >
-          <span>© 2024 SupportHub Enterprise</span>
+          <span>© 2024 Support Hero</span>
           <span className="flex items-center gap-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
             All systems operational
@@ -370,7 +376,7 @@ export function AuthForm({ mode }: AuthFormProps) {
               </h2>
               <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
                 {isSignIn
-                  ? 'Sign in to your SupportHub account'
+                  ? 'Sign in to your Support Hero account'
                   : 'Set up your enterprise workspace access'}
               </p>
             </div>
@@ -518,9 +524,6 @@ export function AuthForm({ mode }: AuthFormProps) {
             </button>
             <button type="button" className="hover:text-slate-600 dark:hover:text-slate-300 transition-colors cursor-pointer">
               Terms of Service
-            </button>
-            <button type="button" className="hover:text-slate-600 dark:hover:text-slate-300 transition-colors cursor-pointer">
-              Infrastructure Status
             </button>
           </div>
         </div>

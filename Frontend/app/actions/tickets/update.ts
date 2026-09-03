@@ -2,6 +2,7 @@
 'use server'
 
 import { getCurrentUser as getUser } from '@/lib/auth-utils'
+import { getPortalUrl } from '@/lib/urls'
 import { db } from '@/lib/db'
 import { ticket, ticketHistory, comment, timeLog, attachment, user, project, module as moduleTable, projectClient, supportWallet, walletTransaction } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
@@ -43,7 +44,7 @@ export const updateTicketStatus = wrapServerAction('updateTicketStatus', async f
 
   // Send Ticket Resolved notification (In-App + Email + Teams) to client and manager
   if (newStatus === 'resolved' && t.clientId) {
-    const ticketLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/tickets/' + ticketId
+    const ticketLink = (getPortalUrl()) + '/dashboard/tickets/' + ticketId
     const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = []
 
     recipients.push({
@@ -130,6 +131,134 @@ export const updateTicketStatus = wrapServerAction('updateTicketStatus', async f
 
 // ── Assignment ─────────────────────────────────────────────────────────────
 
+// ── Admin Ticket Date Editing (Admin only) ─────────────────────────────────
+
+/**
+ * Admin-only correction of a ticket's creation / closing timestamps.
+ * Neither managers, developers nor clients may alter these dates.
+ */
+export const updateTicketDates = wrapServerAction('updateTicketDates', async function updateTicketDates(ticketId: number, dates: { createdAt?: string | null; closedAt?: string | null }) {
+  const currentUser = await getUser()
+  if (currentUser.role !== 'admin') {
+    throw new Error('Only admins can edit ticket dates')
+  }
+
+  const [t] = await db.select().from(ticket).where(eq(ticket.id, ticketId)).limit(1)
+  if (!t) throw new Error('Ticket not found')
+
+  const patch: Record<string, unknown> = { updatedAt: new Date() }
+  let effectiveCreatedAt: Date = t.createdAt
+  let nextClosedAt: Date | null = t.closedAt
+
+  if (dates.createdAt !== undefined && dates.createdAt !== null && dates.createdAt !== '') {
+    const created = new Date(dates.createdAt)
+    if (isNaN(created.getTime())) throw new Error('Invalid creation date')
+    patch.createdAt = created
+    effectiveCreatedAt = created
+  }
+
+  if (dates.closedAt !== undefined) {
+    if (dates.closedAt === null || dates.closedAt === '') {
+      nextClosedAt = null
+      patch.closedAt = null
+    } else {
+      const closed = new Date(dates.closedAt)
+      if (isNaN(closed.getTime())) throw new Error('Invalid closing date')
+      if (closed.getTime() < effectiveCreatedAt.getTime()) {
+        throw new Error('Closing date cannot be earlier than the creation date')
+      }
+      nextClosedAt = closed
+      patch.closedAt = closed
+    }
+  }
+
+  await db.update(ticket).set(patch).where(eq(ticket.id, ticketId))
+
+  await db.insert(ticketHistory).values({
+    ticketId,
+    userId: currentUser.id,
+    action: 'dates_changed',
+    oldValue: `created: ${t.createdAt ? new Date(t.createdAt).toISOString() : ''} | closed: ${t.closedAt ? new Date(t.closedAt).toISOString() : ''}`,
+    newValue: `created: ${effectiveCreatedAt ? new Date(effectiveCreatedAt).toISOString() : ''} | closed: ${nextClosedAt ? new Date(nextClosedAt).toISOString() : ''}`,
+  })
+
+  revalidatePath('/dashboard')
+  revalidatePath(`/dashboard/tickets/${ticketId}`)
+  revalidateTag('consolidated-dashboard-stats', { expire: 60 })
+  revalidateTag('ticket-by-id', { expire: 60 })
+  return { success: true }
+})
+
+// ── Ticket Priority Editing (Manager/Admin only) ───────────────────────────
+
+export const updateTicketPriority = wrapServerAction('updateTicketPriority', async function updateTicketPriority(ticketId: number, priority: string) {
+  const currentUser = await getUser()
+  if (currentUser.role !== 'project_manager' && currentUser.role !== 'admin') {
+    throw new Error('Only project managers and admins can change ticket priority')
+  }
+
+  const valid = ['low', 'medium', 'high', 'urgent', 'critical']
+  if (!valid.includes(priority)) throw new Error('Invalid priority')
+
+  const [t] = await db.select().from(ticket).where(eq(ticket.id, ticketId)).limit(1)
+  if (!t) throw new Error('Ticket not found')
+
+  await db.update(ticket).set({ priority, updatedAt: new Date() }).where(eq(ticket.id, ticketId))
+
+  await db.insert(ticketHistory).values({
+    ticketId,
+    userId: currentUser.id,
+    action: 'priority_changed',
+    oldValue: t.priority,
+    newValue: priority,
+  })
+
+  // Notify the assigned developer + client (in-app) about the priority change.
+  try {
+    const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = []
+    if (t.assignedToId) {
+      recipients.push({
+        userId: t.assignedToId,
+        channels: ['inApp'],
+        inApp: {
+          title: 'Priority Changed',
+          message: `Priority for ticket #${t.ticketNumber} (${t.title}) changed to ${priority}.`,
+          link: `/dashboard/tickets/${ticketId}`,
+          ticketId,
+        },
+      })
+    }
+    if (t.clientId && t.clientId !== t.assignedToId) {
+      recipients.push({
+        userId: t.clientId,
+        channels: ['inApp'],
+        inApp: {
+          title: 'Priority Changed',
+          message: `Priority for ticket #${t.ticketNumber} (${t.title}) changed to ${priority}.`,
+          link: `/dashboard/tickets/${ticketId}`,
+          ticketId,
+        },
+      })
+    }
+    if (recipients.length > 0) {
+      await dispatchNotification({
+        eventType: 'ticket_priority_changed',
+        triggeredBy: currentUser.id,
+        dedup: { scope: `ticket:${ticketId}:${priority}` },
+        recipients,
+      })
+    }
+  } catch (err) {
+    console.error('[Priority] notification failed:', err)
+  }
+
+  revalidatePath('/dashboard')
+  revalidatePath(`/dashboard/tickets/${ticketId}`)
+  revalidateTag('consolidated-dashboard-stats', { expire: 60 })
+  revalidateTag('ticket-by-id', { expire: 60 })
+  return { success: true, priority }
+})
+
 export const assignTicket = wrapServerAction('assignTicket', async function assignTicket(ticketId: number, developerId: string, skipEstimateWorkflow = false) {
   const currentUser = await getUser()
   if (currentUser.role !== 'project_manager' && currentUser.role !== 'admin') {
@@ -155,7 +284,7 @@ export const assignTicket = wrapServerAction('assignTicket', async function assi
   })
 
   if (developer) {
-    const ticketLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/tickets/' + ticketId
+    const ticketLink = (getPortalUrl()) + '/dashboard/tickets/' + ticketId
     const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = []
 
     // Assigned developer: In-App + Email + Teams
@@ -258,7 +387,7 @@ export const managerForwardToClient = wrapServerAction('managerForwardToClient',
   })
 
   // Forwarded for client review: In-App + Email + Teams
-  const forwardTicketLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/tickets/' + ticketId
+  const forwardTicketLink = (getPortalUrl()) + '/dashboard/tickets/' + ticketId
   await dispatchNotification({
     eventType: 'ticket_resolved',
     triggeredBy: currentUser.id,
@@ -323,7 +452,7 @@ export const managerReassignDeveloper = wrapServerAction('managerReassignDevelop
   })
 
   // Ticket Reassigned: In-App + Email + Teams to the new developer
-  const ticketLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/tickets/' + ticketId
+  const ticketLink = (getPortalUrl()) + '/dashboard/tickets/' + ticketId
   await dispatchNotification({
     eventType: 'ticket_reassigned',
     triggeredBy: currentUser.id,
@@ -418,7 +547,7 @@ export const clientApproveTicket = wrapServerAction('clientApproveTicket', async
           // Send Wallet Low alert ONLY when crossing below the threshold.
           // (In-App + Email + Teams to client; Email + Teams to manager.)
           if (shouldNotifyWalletLow(previousRemaining, newRemaining)) {
-            const walletLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/wallets/' + wallet.id
+            const walletLink = (getPortalUrl()) + '/dashboard/wallets/' + wallet.id
             const [projectRow] = await db
               .select({ projectName: project.projectName })
               .from(project)
@@ -476,7 +605,7 @@ export const clientApproveTicket = wrapServerAction('clientApproveTicket', async
 
           // Send Wallet Empty alert ONLY when crossing to zero.
           if (shouldNotifyWalletEmpty(previousRemaining, newRemaining)) {
-            const walletLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/wallets/' + wallet.id
+            const walletLink = (getPortalUrl()) + '/dashboard/wallets/' + wallet.id
             const [projectRow] = await db
               .select({ projectName: project.projectName })
               .from(project)
@@ -539,7 +668,7 @@ export const clientApproveTicket = wrapServerAction('clientApproveTicket', async
   }
 
   // Ticket Closed: In-App + Email + Teams to developer and manager
-  const closeTicketLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/tickets/' + ticketId
+  const closeTicketLink = (getPortalUrl()) + '/dashboard/tickets/' + ticketId
   const closedRecipients: Parameters<typeof dispatchNotification>[0]['recipients'] = []
 
   if (t.assignedToId) {
@@ -654,7 +783,7 @@ export const clientReopenTicket = wrapServerAction('clientReopenTicket', async f
   })
 
   // Ticket Reopened: In-App + Email + Teams to developer and manager
-  const ticketLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/tickets/' + ticketId
+  const ticketLink = (getPortalUrl()) + '/dashboard/tickets/' + ticketId
   const reopenedRecipients: Parameters<typeof dispatchNotification>[0]['recipients'] = []
 
   if (t.assignedToId) {

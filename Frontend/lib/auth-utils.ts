@@ -289,6 +289,25 @@ async function getCurrentUserImpl(): Promise<UserData> {
 }
 
 /**
+ * Purge the in-memory (L1) auth cache entries belonging to a user.
+ *
+ * Profile mutations (name/about/timezone/avatar) and role changes go through
+ * server actions that revalidate the L2 unstable_cache via the 'auth-user'
+ * tag, but the per-process L1 Map would keep serving the OLD user object for
+ * up to 5 minutes. Calling this from the mutation action ensures the very
+ * next render (e.g. router.refresh() after "Save Changes") returns fresh data.
+ */
+export function invalidateAuthUserCache(userId?: string): void {
+  if (!userId) {
+    authCache.clear()
+    return
+  }
+  for (const [token, entry] of authCache.entries()) {
+    if (entry.data.id === userId) authCache.delete(token)
+  }
+}
+
+/**
  * getCurrentUser — returns the authenticated user.
  *
  * - Uses safeCache (React.cache() with guard) so auth runs exactly ONCE per request.

@@ -538,7 +538,7 @@ function HeroSection({ searchQuery, onSearchChange, searchResults, onResultClick
             Help &amp; Support Center
           </h1>
           <p className='mt-3 text-sm sm:text-base text-muted-foreground max-w-lg mx-auto'>
-            Everything you need to learn and use SupportHub efficiently.
+            Everything you need to learn and use Support Hero efficiently.
           </p>
           <div className="mt-5 flex items-center justify-center gap-3 flex-wrap">
             <RestartTourButton size="sm" className="rounded-full h-9 px-4" />
@@ -715,7 +715,7 @@ export function HelpContent(props: HelpContentProps) {
     switch (activeSection) {
       case SECTION_KEYS.gettingStarted:
         return (
-          <Section title="Getting Started" description="Everything you need to begin using SupportHub.">
+          <Section title="Getting Started" description="Everything you need to begin using Support Hero.">
             <GettingStartedSection steps={props.gettingStartedSteps} />
           </Section>
         )

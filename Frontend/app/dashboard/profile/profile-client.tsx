@@ -24,7 +24,6 @@ import {
   AlertCircle,
   Moon,
   Sun,
-  Bell,
   Trash2,
   Upload,
   Sparkles,
@@ -34,6 +33,7 @@ import {
   EyeOff,
 } from 'lucide-react'
 import { RestartTourButton } from '@/components/tour/restart-tour-button'
+import { NotificationPreferencesSection } from '@/components/dashboard/notification-preferences-section'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -139,7 +139,6 @@ export function ProfileClient({ user }: ProfileClientProps) {
   const [language, setLanguage] = useState(user.language ?? 'en')
   const [timeFormat, setTimeFormat] = useState<'12h' | '24h'>((user.timeFormat as '12h' | '24h') || '12h')
   const [dateFormat, setDateFormat] = useState(user.dateFormat ?? 'MM/dd/yyyy')
-  const [emailNotifications, setEmailNotifications] = useState(user.emailNotificationsEnabled ?? true)
 
   // Change Password
   const [currentPassword, setCurrentPassword] = useState('')
@@ -178,7 +177,6 @@ export function ProfileClient({ user }: ProfileClientProps) {
         language,
         timeFormat,
         dateFormat,
-        emailNotificationsEnabled: emailNotifications,
       })
       setSaveSuccess(true)
       toast.success('Changes saved successfully')
@@ -670,34 +668,14 @@ export function ProfileClient({ user }: ProfileClientProps) {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between p-4 rounded-lg bg-muted/20 border border-border/40">
-                <div className="flex items-center gap-3">
-                  <Bell className="h-5 w-5 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Email notifications</p>
-                    <p className="text-xs text-muted-foreground">Receive email notifications for ticket updates</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setEmailNotifications(!emailNotifications)}
-                  aria-pressed={emailNotifications}
-                  aria-label="Toggle email notifications"
-                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
-                    emailNotifications ? 'bg-emerald-500' : 'bg-muted'
-                  }`}
-                >
-                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white dark:bg-slate-900 shadow-sm transition-transform ${
-                    emailNotifications ? 'translate-x-6' : 'translate-x-1'
-                  }`} />
-                </button>
-              </div>
+              <NotificationPreferencesSection />
 
               <div className="flex items-center justify-between p-4 rounded-lg bg-muted/20 border border-border/40">
                 <div className="flex items-center gap-3">
                   <Sparkles className="h-5 w-5 text-muted-foreground" />
                   <div>
                     <p className="text-sm font-medium text-foreground">Product Tour</p>
-                    <p className="text-xs text-muted-foreground">Replay the guided walkthrough of SupportHub</p>
+                    <p className="text-xs text-muted-foreground">Replay the guided walkthrough of Support Hero</p>
                   </div>
                 </div>
                 <RestartTourButton

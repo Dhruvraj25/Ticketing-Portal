@@ -65,8 +65,11 @@ export default async function ProjectDetailPage({
       try { userList = await getUserList() } catch {}
     }
 
-    const clients = userList.filter((u) => u.id !== project.clientId && u.role !== 'developer')
-    const managers = userList.filter((u) => u.id !== project.managerId && u.role !== 'developer')
+    // Reassignment dropdowns must only ever offer role-matching accounts:
+    // Client select = client accounts only; Manager select = managers only.
+    // Developers/admins/other roles are never shown.
+    const clients = userList.filter((u) => u.role === 'client' && u.id !== project.clientId)
+    const managers = userList.filter((u) => u.role === 'project_manager' && u.id !== project.managerId)
 
     pageTimer.mark('Render')
     pageTimer.finish()
@@ -122,12 +125,14 @@ export default async function ProjectDetailPage({
             value={project.clientName || '—'}
             iconName="Users"
             delay={2}
+            valueClassName="text-sm font-normal leading-snug break-words"
           />
           <StatCard
             title="Manager"
             value={project.managerName || '—'}
             iconName="Briefcase"
             delay={3}
+            valueClassName="text-sm font-normal leading-snug break-words"
           />
         </div>
 
@@ -195,11 +200,11 @@ export default async function ProjectDetailPage({
               <div className="space-y-4 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Client</span>
-                  <span className="text-foreground font-medium truncate ml-2 max-w-[160px]">{project.clientName || '—'}</span>
+                  <span className="text-foreground font-normal truncate ml-2 max-w-[160px]">{project.clientName || '—'}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground flex items-center gap-1.5"><Users className="h-3.5 w-3.5 text-purple-400" /> Manager</span>
-                  <span className="text-foreground font-medium truncate ml-2 max-w-[160px]">{project.managerName || '—'}</span>
+                  <span className="text-foreground font-normal truncate ml-2 max-w-[160px]">{project.managerName || '—'}</span>
                 </div>
                 {project.startDate && (
                   <div className="flex items-center justify-between">

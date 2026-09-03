@@ -8,6 +8,7 @@ import { NotificationProvider } from '@/components/dashboard/notification-provid
 import { KeyboardShortcutsProvider } from '@/components/dashboard/keyboard-shortcuts-provider'
 import { LoadingProvider } from '@/components/loading-provider'
 import { TourProvider } from '@/components/tour/tour-provider'
+import { TimezoneProvider } from '@/components/timezone-provider'
 import { getCurrentUser } from '@/lib/auth-utils'
 import { getNotifications } from '@/app/actions/notifications'
 import type { UserRole } from '@/lib/types'
@@ -55,6 +56,8 @@ export default async function DashboardLayout({
       {/* Seeded with real notification data — eliminates initial SWR fetch */}
       <NotificationProvider initialData={notificationData as NotificationResponse | null}>
         <SidebarProvider>
+          <TimezoneProvider timezone={currentUser!.timezone}>
+
           <TourProvider
             userId={currentUser!.id}
             userRole={currentUser!.role as UserRole}
@@ -84,6 +87,7 @@ export default async function DashboardLayout({
             </div>
             </KeyboardShortcutsProvider>
           </TourProvider>
+          </TimezoneProvider>
         </SidebarProvider>
       </NotificationProvider>
       </LoadingProvider>

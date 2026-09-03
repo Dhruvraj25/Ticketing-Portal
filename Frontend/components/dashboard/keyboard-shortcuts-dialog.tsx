@@ -55,7 +55,7 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, userRole }: Keyboa
         <DialogHeader>
           <DialogTitle>Keyboard Shortcuts</DialogTitle>
           <DialogDescription>
-            Move faster around SupportHub with these shortcuts.
+            Move faster around Support Hero with these shortcuts.
           </DialogDescription>
         </DialogHeader>
 

@@ -209,7 +209,8 @@ export function TicketsPageClient({
                 <TicketList
                   tickets={tickets as any}
                   showClient={user.role !== 'client'}
-                  showAssignee={user.role !== 'developer'}
+                  // Developer assignment is internal — never shown to clients (R15).
+                  showAssignee={user.role !== 'developer' && user.role !== 'client'}
                   developers={developers}
                   userRole={user.role}
                   onAssignmentComplete={onAssignmentComplete}
@@ -225,7 +226,8 @@ export function TicketsPageClient({
                 <TicketGrid
                   tickets={tickets as any}
                   showClient={user.role !== 'client'}
-                  showAssignee={user.role !== 'developer'}
+                  // Developer assignment is internal — never shown to clients (R15).
+                  showAssignee={user.role !== 'developer' && user.role !== 'client'}
                   developers={developers}
                   userRole={user.role}
                   onAssignmentComplete={onAssignmentComplete}

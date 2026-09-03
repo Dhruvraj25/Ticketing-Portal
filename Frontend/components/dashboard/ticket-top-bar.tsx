@@ -127,7 +127,7 @@ export const TicketTopBar = memo(function TicketTopBar({
                   { value: 'all', label: 'All', count: stats.totalCount },
                   { value: TicketStatus.NEW, label: 'New Request', count: stats.openCount },
                   { value: TicketStatus.IN_PROGRESS, label: 'Work in Progress', count: stats.inProgressCount },
-                  { value: TicketStatus.RESOLVED, label: 'Ready for Client Review', count: stats.resolvedCount },
+                  { value: TicketStatus.RESOLVED, label: 'Manager Review', count: stats.resolvedCount },
                   { value: TicketStatus.CLOSED, label: 'Completed', count: stats.closedCount },
                 ].map((tab) => (
                   <button
@@ -204,11 +204,13 @@ export const TicketTopBar = memo(function TicketTopBar({
               )}
             </div>
 
-            {/* Expanded Filters — fixed-height container prevents CLS on toggle */}
+            {/* Expanded Filters — grid-rows collapse so the container grows with its
+                content (wrap on small screens) instead of clipping the controls */}
             <div className={cn(
-              'overflow-hidden transition-all duration-200',
-              showFilters ? 'opacity-100' : 'opacity-0'
-            )} style={{ height: showFilters ? 44 : 0 }}>
+              'grid transition-all duration-200',
+              showFilters ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+            )}>
+              <div className="overflow-hidden min-h-0">
               <div className="flex items-center gap-2 pt-3 mt-3 border-t border-border/50 flex-wrap">
                     <div className="flex items-center gap-1.5">
                       <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
@@ -253,6 +255,7 @@ export const TicketTopBar = memo(function TicketTopBar({
                       </SelectContent>
                     </Select>
                   </div>
+              </div>
             </div>
           </div>
         </div>

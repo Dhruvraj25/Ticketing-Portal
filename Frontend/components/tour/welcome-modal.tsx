@@ -44,7 +44,7 @@ export function WelcomeModal({
           className="fixed inset-0 z-[110] flex items-center justify-center p-4"
           role="dialog"
           aria-modal="true"
-          aria-label="Welcome to SupportHub"
+          aria-label="Welcome to Support Hero"
         >
           {/* Backdrop */}
           <div
@@ -83,7 +83,7 @@ export function WelcomeModal({
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
-                    Welcome to SupportHub
+                    Welcome to Support Hero
                   </h2>
                   <span className="inline-flex items-center gap-1.5 mt-1 text-[11px] font-mono font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20">
                     {roleLabel}

@@ -36,7 +36,7 @@ export async function sendNotification(
     const cookieHeader = await headers()
     const sessionCookie = cookieHeader.get('cookie') || ''
 
-    const response = await fetch(`${BACKEND_URL}/email/notification`, {
+    const response = await fetch(`${BACKEND_URL}/api/email/notification`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

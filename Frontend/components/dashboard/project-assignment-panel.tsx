@@ -85,7 +85,7 @@ export function ProjectAssignmentPanel({
     <Card className="p-5 bg-card/50 backdrop-blur-sm border-border/50">
       <div className="flex items-center gap-2 mb-4">
         <UserCheck className="h-4 w-4 text-primary" />
-        <h3 className="font-semibold text-foreground">Assignments</h3>
+        <h3 className="font-semibold text-foreground">Reassignment</h3>
       </div>
 
       {error && (

@@ -1,6 +1,7 @@
 import { betterAuth } from 'better-auth'
 import { nextCookies } from 'better-auth/next-js'
 import { pool } from '@/lib/db'
+import { getPortalUrl } from '@/lib/urls'
 import { db } from '@/lib/db'
 import { user as userTable } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
@@ -72,7 +73,7 @@ export const auth = betterAuth({
         // (?token=...), while better-auth builds path-based URLs of the form
         // /reset-password/{token}?callbackURL=... — rewrite the link so the
         // emailed button lands on a route the app actually serves.
-        const portalUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+        const portalUrl = getPortalUrl()
         const match = url.match(/\/reset-password\/([^/?]+)/)
         const appResetUrl = match
           ? `${portalUrl}/reset-password?token=${encodeURIComponent(match[1])}`
@@ -167,7 +168,6 @@ export const auth = betterAuth({
   },
   trustedOrigins: [
     'http://localhost:3000',
-    'http://localhost:3000',
     'http://localhost:3001',
     ...(process.env.V0_RUNTIME_URL ? [process.env.V0_RUNTIME_URL] : []),
     ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
@@ -238,7 +238,7 @@ async function sendWelcomeEmailForUser(userId: string, userName: string, userEma
     }
 
     // Welcome notification via the unified dispatcher (In-App + Email + Teams)
-    const portalUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const portalUrl = getPortalUrl()
     try {
       // Dynamic import keeps the better-auth config free of module-load cycles.
       const { dispatchNotification } = await import('@/lib/notify-all')
@@ -250,7 +250,7 @@ async function sendWelcomeEmailForUser(userId: string, userName: string, userEma
           {
             userId,
             inApp: {
-              title: 'Welcome to SupportHub',
+              title: 'Welcome to Support Hero',
               message: `Welcome, ${userName}! Your account is ready.`,
               link: '/dashboard',
             },
@@ -260,7 +260,7 @@ async function sendWelcomeEmailForUser(userId: string, userName: string, userEma
                 recipientName: userName,
                 recipientEmail: userEmail,
                 loginUrl: `${portalUrl}/sign-in`,
-                companyName: process.env.COMPANY_NAME || 'SupportHub',
+                companyName: process.env.COMPANY_NAME || 'Support Hero',
                 portalUrl,
               },
             },
@@ -268,7 +268,7 @@ async function sendWelcomeEmailForUser(userId: string, userName: string, userEma
               payload: {
                 recipientName: userName,
                 userEmail,
-                companyName: process.env.COMPANY_NAME || 'SupportHub',
+                companyName: process.env.COMPANY_NAME || 'Support Hero',
                 portalUrl,
               },
             },

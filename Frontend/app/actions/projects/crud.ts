@@ -5,6 +5,7 @@ import { project } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { VALIDATION, validateField } from '@/lib/types'
+import { getPortalUrl } from '@/lib/urls'
 import type { ProjectStatus } from '@/lib/types'
 import { wrapServerAction } from '@/lib/performance-profiler'
 import { getCurrentUser } from '@/lib/auth-utils'
@@ -86,7 +87,7 @@ export const createProject = wrapServerAction('createProject', async function cr
   }
 
   // Notifications for project creation via the unified dispatcher
-  const projectLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/projects/' + newProject.id
+  const projectLink = (getPortalUrl()) + '/dashboard/projects/' + newProject.id
   const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = [
     {
       userId: data.managerId,

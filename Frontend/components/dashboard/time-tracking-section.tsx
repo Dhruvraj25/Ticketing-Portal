@@ -1,7 +1,8 @@
 'use client'
 
-import { format } from 'date-fns'
 import { Card } from '@/components/ui/card'
+import { fmtTz } from '@/lib/datetime'
+import { useUserTimezone } from '@/components/timezone-provider'
 import { stripHtml } from '@/lib/format'
 import { Clock, User } from 'lucide-react'
 import type { TimeLogWithUser } from '@/lib/types'
@@ -12,6 +13,7 @@ interface TimeTrackingSectionProps {
 }
 
 export function TimeTrackingSection({ ticketId, timeLogs }: TimeTrackingSectionProps) {
+  const userTimezone = useUserTimezone()
   const totalMinutes = timeLogs
     .filter(log => log.durationMinutes)
     .reduce((sum, log) => sum + (log.durationMinutes || 0), 0)
@@ -61,7 +63,7 @@ export function TimeTrackingSection({ ticketId, timeLogs }: TimeTrackingSectionP
                     {Math.floor((log.durationMinutes || 0) / 60)}h {(log.durationMinutes || 0) % 60}m
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {format(new Date(log.startTime), 'MMM d')}
+                    {fmtTz(log.startTime, 'MMM d', userTimezone)}
                   </p>
                 </div>
               </div>

@@ -6,6 +6,7 @@ import { supportWallet, walletTransaction, walletAlert, project } from '@/lib/db
 import { and, eq, isNull } from 'drizzle-orm'
 import { revalidateTag } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth-utils'
+import { getPortalUrl } from '@/lib/urls'
 import { dispatchNotification, resetNotificationState } from '@/lib/notify-all'
 import { WALLET_CACHE_TAGS } from './constants'
 
@@ -84,7 +85,7 @@ export const addWalletHours = async function addWalletHours(data: {
   })
 
   // ── Notifications via the unified dispatcher ────────────────────────────
-  const walletLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/wallets/' + data.walletId
+  const walletLink = (getPortalUrl()) + '/dashboard/wallets/' + data.walletId
   const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = [
     {
       userId: w.clientId,

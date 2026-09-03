@@ -1,6 +1,7 @@
 'use server'
 
-import { getCurrentUser } from '@/lib/auth-utils'
+import { getCurrentUser, invalidateAuthUserCache } from '@/lib/auth-utils'
+import { getPortalUrl } from '@/lib/urls'
 import { db } from '@/lib/db'
 import { user, passwordResetRequest, verification } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
@@ -92,6 +93,10 @@ export const updateProfile = wrapServerAction('updateProfile', async function up
       updatedAt: new Date(),
     })
     .where(eq(user.id, currentUser.id))
+
+  // Drop the stale in-memory auth entry so the next render (router.refresh,
+  // page reload) reflects the newly saved about/timezone/name immediately.
+  invalidateAuthUserCache(currentUser.id)
 
   revalidatePath('/dashboard/profile')
   revalidateTag('auth-user', { expire: 300 })
@@ -307,7 +312,7 @@ export const requestPasswordReset = wrapServerAction('requestPasswordReset', asy
 
   const reference = 'SUP-' + crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
   const requestedAt = new Date()
-  const portalUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const portalUrl = getPortalUrl()
 
   // ── Recipients: every Admin + Project Manager (+ SUPPORT_EMAIL if set) ─
   const staff = await db

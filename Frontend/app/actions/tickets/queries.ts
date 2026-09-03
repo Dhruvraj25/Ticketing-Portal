@@ -3,9 +3,10 @@
 import { unstable_cache, revalidateTag } from 'next/cache'
 import { getCurrentUser as getUser } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
-import { ticket, comment, timeLog, ticketHistory, attachment, user, project, module as moduleTable, revisionHistory } from '@/lib/db/schema'
+import { ticket, comment, timeLog, ticketHistory, attachment, user, project, module as moduleTable, revisionHistory, projectClient } from '@/lib/db/schema'
 import { and, eq, desc, asc, sql, isNull, isNotNull, ne, count, inArray, gte, lte, sum, or, like } from 'drizzle-orm'
 import type { TicketStatus, TicketPriority, TicketCategory } from '@/lib/types'
+import { CLIENT_VISIBLE_HISTORY_ACTIONS } from '@/lib/ticket-history-visibility'
 import { wrapServerAction, recordActionExecution, cached } from '@/lib/performance-profiler'
 
 // ── List Query (minimal fields, server-side pagination, SQL filtering) ─────
@@ -65,6 +66,64 @@ export interface TicketListResult {
 const MAX_LIST_LIMIT = 50
 const DEFAULT_LIST_LIMIT = 25
 
+/**
+ * Client organization scope (Client Approver model).
+ *
+ * A client account/organization has ONE Approver (user_type='approver',
+ * usually the project's primary client) and possibly MANY Standard client
+ * users (user_type='standard') linked to the same projects via project_client.
+ *
+ * The Approver is authorized to see tickets created by the Standard accounts
+ * of the SAME client organization, while standard users only see their own
+ * tickets. Membership is derived from shared projects — never from a
+ * client-submitted value — so a client can never reach another client's data.
+ *
+ * Returns null for non-approver users (callers keep the plain self-only rule).
+ */
+export async function getClientOrgUserIds(clientUserId: string, userType: string | null): Promise<string[] | null> {
+  if (userType !== 'approver') return null
+
+  try {
+    const [primaryProjects, linkedProjects] = await Promise.all([
+      db
+        .select({ id: project.id })
+        .from(project)
+        .where(eq(project.clientId, clientUserId)),
+      db
+        .select({ projectId: projectClient.projectId })
+        .from(projectClient)
+        .where(eq(projectClient.userId, clientUserId)),
+    ])
+
+    const projectIds = new Set<number>([
+      ...primaryProjects.map((p) => p.id),
+      ...linkedProjects.map((l) => l.projectId),
+    ])
+    if (projectIds.size === 0) return [clientUserId]
+
+    const [primaryClients, members] = await Promise.all([
+      db
+        .select({ clientId: project.clientId })
+        .from(project)
+        .where(inArray(project.id, [...projectIds])),
+      db
+        .select({ userId: projectClient.userId })
+        .from(projectClient)
+        .where(inArray(projectClient.projectId, [...projectIds])),
+    ])
+
+    const ids = new Set<string>([
+      clientUserId,
+      ...primaryClients.map((p) => p.clientId).filter((c): c is string => !!c),
+      ...members.map((m) => m.userId),
+    ])
+    return [...ids]
+  } catch (err) {
+    console.error('[ClientScope] Failed to resolve organization members:', err)
+    return [clientUserId]
+  }
+}
+
 // ── React.cache()-wrapped implementation ─────────────────────────────
 // Deduplicates getTicketsList within the same request: if the server
 // component renders multiple times (Suspense boundaries, streaming
@@ -84,7 +143,14 @@ function _getTicketsListImpl(filtersKey: string): Promise<TicketListResult> {
 
   // Role-based filtering
   if (currentUser.role === 'client') {
-    conditions.push(eq(ticket.clientId, currentUser.id))
+    // Client Approver: org scope (own tickets + standard accounts of the same
+    // client organization). Standard clients: their own tickets only.
+    const orgIds = await getClientOrgUserIds(currentUser.id, (currentUser as any).userType ?? null)
+    if (orgIds && orgIds.length > 1) {
+      conditions.push(inArray(ticket.clientId, orgIds))
+    } else {
+      conditions.push(eq(ticket.clientId, currentUser.id))
+    }
   } else if (currentUser.role === 'developer') {
     conditions.push(eq(ticket.assignedToId, currentUser.id))
   }
@@ -379,8 +445,12 @@ export const getTicketById = wrapServerAction('getTicketById', async function ge
   if (!ticketData) throw new Error('Ticket not found')
 
   // Permission check — runs every request (lightweight, can't cache)
-  if (currentUser.role === 'client' && ticketData.clientId !== currentUser.id) {
-    throw new Error('Access denied')
+  if (currentUser.role === 'client') {
+    const orgIds = await getClientOrgUserIds(currentUser.id, (currentUser as any).userType ?? null)
+    const allowed = orgIds ? orgIds.includes(ticketData.clientId) : ticketData.clientId === currentUser.id
+    if (!allowed) {
+      throw new Error('Access denied')
+    }
   }
   if (currentUser.role === 'developer' && ticketData.assignedToId !== currentUser.id) {
     throw new Error('Access denied')
@@ -470,11 +540,17 @@ export const getCachedDevelopers = wrapServerAction('getCachedDevelopers', async
 // Before: ~1700ms | Target: <300ms
 
 /** Internal implementation: runs the FILTER query */
-async function _getConsolidatedDashboardDataImpl(role: string, userId: string) {
+async function _getConsolidatedDashboardDataImpl(role: string, userId: string, userType: string | null = null) {
   // Build role-based filter
   const conditions: any[] = []
   if (role === 'client') {
-    conditions.push(eq(ticket.clientId, userId))
+    // Approver: org-wide counts (own + standard accounts of the same client).
+    const orgIds = await getClientOrgUserIds(userId, userType)
+    if (orgIds && orgIds.length > 1) {
+      conditions.push(inArray(ticket.clientId, orgIds))
+    } else {
+      conditions.push(eq(ticket.clientId, userId))
+    }
   } else if (role === 'developer') {
     conditions.push(eq(ticket.assignedToId, userId))
   }
@@ -506,6 +582,15 @@ async function _getConsolidatedDashboardDataImpl(role: string, userId: string) {
       autoApprovedEstimates: sql<number>`COUNT(*) FILTER (WHERE ${ticket.status} = 'estimate_approved' AND ${ticket.autoApproved} = true)::int`.mapWith(Number),
       approvedEstimates: sql<number>`COUNT(*) FILTER (WHERE ${ticket.status} = 'estimate_approved' AND ${ticket.autoApproved} = false)::int`.mapWith(Number),
       recentlyApproved: sql<number>`COUNT(*) FILTER (WHERE ${ticket.status} = 'estimate_approved' AND ${ticket.autoApproved} = false AND ${ticket.estimateApprovedAt} >= ${weekAgo})::int`.mapWith(Number),
+      // R19: distinct KPI counters for the two revision-style states. Manager
+      // rework = 'rework'; client-requested revision / rejected estimate =
+      // 'request_for_revision'. Each card hides itself at zero.
+      reworkCount: sql<number>`COUNT(*) FILTER (WHERE ${ticket.status} = 'rework')::int`.mapWith(Number),
+      revisionRequestedCount: sql<number>`COUNT(*) FILTER (WHERE ${ticket.status} = 'request_for_revision')::int`.mapWith(Number),
+      // R22: client Reports card counts — client-review (pending client approval)
+      // and closed tickets, scoped to the logged-in client / approver org.
+      closedCount: sql<number>`COUNT(*) FILTER (WHERE ${ticket.status} = 'closed')::int`.mapWith(Number),
+      clientReviewCount: sql<number>`COUNT(*) FILTER (WHERE ${ticket.status} = 'client_review')::int`.mapWith(Number),
     })
     .from(ticket)
     .where(baseFilter)
@@ -523,6 +608,10 @@ async function _getConsolidatedDashboardDataImpl(role: string, userId: string) {
     autoApprovedEstimates: result.autoApprovedEstimates,
     awaitingApproval: role === 'client' ? result.pendingEstimates : 0,
     recentlyApproved: role === 'client' ? result.recentlyApproved : 0,
+    reworkCount: result.reworkCount,
+    revisionRequestedCount: result.revisionRequestedCount,
+    closedCount: result.closedCount,
+    clientReviewCount: result.clientReviewCount,
   }
 }
 
@@ -530,16 +619,16 @@ const CONSOLIDATED_CACHE_TTL = 60
 
 const getCachedConsolidatedData = unstable_cache(
   async (cacheKey: string) => {
-    const { role, userId } = JSON.parse(cacheKey)
-    return _getConsolidatedDashboardDataImpl(role, userId)
+    const { role, userId, userType } = JSON.parse(cacheKey)
+    return _getConsolidatedDashboardDataImpl(role, userId, userType)
   },
   undefined,
   { revalidate: CONSOLIDATED_CACHE_TTL, tags: ['consolidated-dashboard-stats'] },
 )
 
 export const getConsolidatedDashboardData = wrapServerAction('getConsolidatedDashboardData', async function getConsolidatedDashboardData() {
-  const { id: userId, role } = await getUser()
-  return getCachedConsolidatedData(JSON.stringify({ role, userId }))
+  const { id: userId, role, userType } = await getUser()
+  return getCachedConsolidatedData(JSON.stringify({ role, userId, userType }))
 })
 
 // Lightweight wrapper for pages that only need 4 basic stats
@@ -647,7 +736,36 @@ export const getCurrentUser = wrapServerAction('getCurrentUser', async function 
 
 // ── Ticket History (paginated) ─────────────────────────────────────────────
 
+/**
+ * Verify the current user may read a ticket's data (same rules as getTicketById).
+ */
+async function assertCanViewTicket(currentUserId: string, role: string, userType: string | null, ticketId: number): Promise<void> {
+  const [t] = await db
+    .select({ clientId: ticket.clientId, assignedToId: ticket.assignedToId })
+    .from(ticket)
+    .where(eq(ticket.id, ticketId))
+    .limit(1)
+  if (!t) throw new Error('Ticket not found')
+  if (role === 'client') {
+    const orgIds = await getClientOrgUserIds(currentUserId, userType)
+    const allowed = orgIds ? orgIds.includes(t.clientId) : t.clientId === currentUserId
+    if (!allowed) throw new Error('Access denied')
+  } else if (role === 'developer' && t.assignedToId !== currentUserId) {
+    throw new Error('Access denied')
+  }
+}
+
 export const getTicketHistory = wrapServerAction('getTicketHistory', async function getTicketHistory(ticketId: number, limit: number = 20, offset: number = 0) {
+  const currentUser = await getUser()
+  const role = currentUser.role
+  await assertCanViewTicket(currentUser.id, role, (currentUser as any).userType ?? null, ticketId)
+
+  const conditions = [eq(ticketHistory.ticketId, ticketId)]
+  const isClient = role === 'client'
+  if (isClient) {
+    conditions.push(inArray(ticketHistory.action, [...CLIENT_VISIBLE_HISTORY_ACTIONS]))
+  }
+
   const history = await db
     .select({
       id: ticketHistory.id, ticketId: ticketHistory.ticketId, userId: ticketHistory.userId,
@@ -657,19 +775,34 @@ export const getTicketHistory = wrapServerAction('getTicketHistory', async funct
     })
     .from(ticketHistory)
     .leftJoin(user, eq(ticketHistory.userId, user.id))
-    .where(eq(ticketHistory.ticketId, ticketId))
+    .where(and(...conditions))
     .orderBy(desc(ticketHistory.createdAt))
     .limit(limit)
     .offset(offset)
 
-  return history.map((h) => ({ ...h, userName: h.userName || 'Unknown' }))
+  return history.map((h) => {
+    if (!isClient) return { ...h, userName: h.userName || 'Unknown' }
+    // Client-safe: never expose internal employee names. Only the client's own
+    // account keeps a display name; internal actors render as plain events.
+    const isSelf = h.userId === currentUser.id
+    return { ...h, userName: isSelf ? (h.userName || 'You') : '' }
+  })
 })
 
 export const getTicketHistoryCount = wrapServerAction('getTicketHistoryCount', async function getTicketHistoryCount(ticketId: number) {
+  const currentUser = await getUser()
+  const role = currentUser.role
+  await assertCanViewTicket(currentUser.id, role, (currentUser as any).userType ?? null, ticketId)
+
+  const conditions = [eq(ticketHistory.ticketId, ticketId)]
+  if (role === 'client') {
+    conditions.push(inArray(ticketHistory.action, [...CLIENT_VISIBLE_HISTORY_ACTIONS]))
+  }
+
   const [result] = await db
     .select({ count: count() })
     .from(ticketHistory)
-    .where(eq(ticketHistory.ticketId, ticketId))
+    .where(and(...conditions))
   return Number(result?.count) || 0
 })
 

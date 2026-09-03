@@ -1,6 +1,7 @@
 'use server'
 
 import { db } from '@/lib/db'
+import { getPortalUrl } from '@/lib/urls'
 import { supportWallet, notificationLog, user, project, ticket } from '@/lib/db/schema'
 import { and, eq, lte, gte, isNotNull, or, count, inArray } from 'drizzle-orm'
 import { dispatchNotification } from '@/lib/notify-all'
@@ -84,7 +85,7 @@ export const processRenewalReminders = wrapServerAction('processRenewalReminders
     // Scheduled reminders legitimately repeat, so dispatcher-level dedup is
     // disabled here — duplicate protection is the weekly cap enforced above
     // (max 3 reminders per week per client, tracked in notification_log).
-    const walletLink = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/dashboard/wallets/' + wallet.id
+    const walletLink = (getPortalUrl()) + '/dashboard/wallets/' + wallet.id
     await dispatchNotification({
       eventType: 'support_renewal_reminder',
       triggeredBy: 'system',

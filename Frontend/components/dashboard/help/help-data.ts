@@ -147,7 +147,7 @@ export const statusGuides: StatusGuide[] = [
   { status: 'Assigned', meaning: 'A developer has been assigned to work on the ticket.', who: 'Manager assigns the ticket to a developer.', next: 'Developer starts working, status changes to In Progress.', color: 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30' },
   { status: 'In Progress', meaning: 'The developer is actively working on the ticket.', who: 'Developer works on and updates the ticket.', next: 'Moves to Resolved when work is complete.', color: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30' },
   { status: 'Waiting for Client', meaning: 'Waiting on client input, approval, or additional information.', who: 'Client provides feedback or approval.', next: 'Moves to In Progress or Resolved based on client response.', color: 'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-500/30' },
-  { status: 'Revision Requested', meaning: 'Client has requested changes to the completed work.', who: 'Client requests changes; manager reviews and reassigns.', next: 'Ticket goes back to In Progress for revision work.', color: 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-500/30' },
+  { status: 'Requested for Revision', meaning: 'Client has requested changes to the completed work.', who: 'Client requests changes; manager reviews and reassigns.', next: 'Ticket goes back to In Progress for revision work.', color: 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-500/30' },
   { status: 'Resolved', meaning: 'Work is complete and solution is delivered for verification.', who: 'Developer completes work and marks as resolved.', next: 'Client verifies and approves, moving to Closed.', color: 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30' },
   { status: 'Closed', meaning: 'Ticket is complete and approved by the client.', who: 'Client approves the resolved ticket.', next: 'Ticket lifecycle ends. Can be reopened within 7 days.', color: 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-500/30' },
   { status: 'Reopened', meaning: 'A closed ticket has been reopened with the same issue.', who: 'Client reopens within 7 days.', next: 'Goes back to Assigned for the original developer.', color: 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-500/30' },
@@ -183,7 +183,7 @@ export const notificationEvents: NotificationEvent[] = [
   { event: 'Ticket Created', description: 'When a new ticket is submitted by a client or team member.', channels: ['In-App', 'Email', 'Teams'] },
   { event: 'Ticket Assigned', description: 'When a ticket is assigned to a developer or manager.', channels: ['In-App', 'Email', 'Teams'] },
   { event: 'Estimate Approved', description: 'When a client approves a submitted estimate.', channels: ['In-App', 'Email'] },
-  { event: 'Revision Requested', description: 'When a client requests changes to completed work.', channels: ['In-App', 'Email', 'Teams'] },
+  { event: 'Requested for Revision', description: 'When a client requests changes to completed work.', channels: ['In-App', 'Email', 'Teams'] },
   { event: 'Ticket Closed', description: 'When a ticket is approved and closed by the client.', channels: ['In-App', 'Email'] },
   { event: 'Support Hours Added', description: 'When additional support hours are added to a wallet.', channels: ['In-App', 'Email'] },
   { event: 'Wallet Low', description: 'When remaining support hours fall below the defined threshold.', channels: ['In-App', 'Email', 'Teams'] },
@@ -261,11 +261,11 @@ export interface ContactInfo {
 }
 
 export const contactInfo: ContactInfo = {
-  email: 'support@supporthub.com',
+  email: 'support@supporthero.com',
   hours: 'Monday to Friday, 9:00 AM - 6:00 PM (EST)',
-  emergency: 'emergency@supporthub.com (24/7 for Critical issues)',
+  emergency: 'emergency@supporthero.com (24/7 for Critical issues)',
   sla: 'Critical: 4 hours | High: 8 hours | Medium: 24 hours | Low: 48 hours',
-  portal: 'support.supporthub.com',
+  portal: 'support.supporthero.com',
 }
 
 // Release Notes

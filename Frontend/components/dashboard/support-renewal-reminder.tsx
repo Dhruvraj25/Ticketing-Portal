@@ -8,6 +8,7 @@ import { AlertTriangle, XCircle, CheckCircle2, Shield, Clock, Wallet, Calendar, 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { useTour } from '@/components/tour/tour-provider'
 import { logRenewalReminderActivity } from '@/app/actions/wallets'
 
 export type RenewalStatus = {
@@ -38,6 +39,12 @@ function StatusBadge({ config }: { config: BadgeConfig }) {
 
 export function SupportRenewalReminder({ status }: Props) {
   const router = useRouter()
+  // The product-tour welcome modal / an active guided tour must never be
+  // stacked under (or over) this popup — whichever appears last stays the
+  // only visible overlay so it remains fully responsive (no stale backdrop
+  // swallowing pointer events). The low-balance reminder waits its turn.
+  const { welcomeOpen, isActive } = useTour()
+  const tourLayerActive = welcomeOpen || isActive
   const [showPopup, setShowPopup] = useState(false)
   const [dismissedThisSession, setDismissedThisSession] = useState(false)
   const [showBanner, setShowBanner] = useState(true)
@@ -51,15 +58,23 @@ export function SupportRenewalReminder({ status }: Props) {
     }
   }, [])
 
+  // Open the reminder only when the tour layer is out of the way; when the
+  // tour layer appears later it takes over and this popup closes underneath.
   useEffect(() => {
-    if (status.showReminder && !dismissedThisSession) {
-      const t = setTimeout(() => {
-        setShowPopup(true)
-        logRenewalReminderActivity('Reminder Displayed').catch(() => {})
-      }, 800)
-      return () => clearTimeout(t)
-    }
-  }, [status.showReminder, dismissedThisSession])
+    if (tourLayerActive || !status.showReminder || dismissedThisSession || showPopup) return
+    const t = setTimeout(() => {
+      setShowPopup(true)
+      logRenewalReminderActivity('Reminder Displayed').catch(() => {})
+    }, 800)
+    return () => clearTimeout(t)
+  }, [tourLayerActive, status.showReminder, dismissedThisSession, showPopup])
+
+  // An inactive popup overlay must never block the active popup: if the
+  // welcome modal or a tour opens while this dialog is up, close this dialog
+  // (without marking it dismissed) so the newest layer owns the screen.
+  useEffect(() => {
+    if (tourLayerActive && showPopup) setShowPopup(false)
+  }, [tourLayerActive, showPopup])
 
   useEffect(() => {
     if (showPopup) setShowBanner(false)

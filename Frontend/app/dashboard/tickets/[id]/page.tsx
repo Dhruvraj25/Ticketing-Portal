@@ -12,6 +12,9 @@ import { PageHeaderIcon } from '@/components/dashboard/page-header-icon'
 import { TICKET_STATUS_CONFIG, TICKET_PRIORITY_CONFIG, TICKET_CATEGORY_CONFIG } from '@/lib/types'
 import { TicketStatus } from '@/lib/types'
 import { TicketStatusActions } from '@/components/dashboard/ticket-status-actions'
+import { PriorityEditor } from '@/components/dashboard/priority-editor'
+import { TicketAutoRefresh } from '@/components/dashboard/ticket-auto-refresh'
+import { TicketDatesEditor } from '@/components/dashboard/ticket-dates-editor'
 import { PageTimer } from '@/lib/performance-profiler'
 
 // Lazy-loaded heavy interactive components (code-split)
@@ -19,7 +22,6 @@ import { PageTimer } from '@/lib/performance-profiler'
 const CommentSection = dynamic(() => import('@/components/dashboard/comment-section').then(m => ({ default: m.CommentSection })), { loading: () => <div className="animate-pulse rounded-xl bg-white dark:bg-slate-900 border border-border" style={{ height: 520 }} /> })
 const TimeTrackingSection = dynamic(() => import('@/components/dashboard/time-tracking-section').then(m => ({ default: m.TimeTrackingSection })), { loading: () => <div className="animate-pulse rounded-xl bg-white dark:bg-slate-900 border border-border" style={{ height: 280 }} /> })
 const ManagerReviewActions = dynamic(() => import('@/components/dashboard/manager-review-actions').then(m => ({ default: m.ManagerReviewActions })), { loading: () => <div className="animate-pulse rounded-xl bg-white dark:bg-slate-900 border border-border" style={{ height: 180 }} /> })
-const RevisionRequestAction = dynamic(() => import('@/components/dashboard/revision-request-action').then(m => ({ default: m.RevisionRequestAction })), { loading: () => <div className="animate-pulse rounded-xl bg-white dark:bg-slate-900 border border-border" style={{ height: 180 }} /> })
 const RevisionApprovalActions = dynamic(() => import('@/components/dashboard/revision-approval-actions').then(m => ({ default: m.RevisionApprovalActions })), { loading: () => <div className="animate-pulse rounded-xl bg-white dark:bg-slate-900 border border-border" style={{ height: 180 }} /> })
 const ClientApprovalActions = dynamic(() => import('@/components/dashboard/client-approval-actions').then(m => ({ default: m.ClientApprovalActions })), { loading: () => <div className="animate-pulse rounded-xl bg-white dark:bg-slate-900 border border-border" style={{ height: 180 }} /> })
 const AttachmentUploader = dynamic(() => import('@/components/dashboard/attachment-uploader').then(m => ({ default: m.AttachmentUploader })), { loading: () => <div className="animate-pulse rounded-xl bg-white dark:bg-slate-900 border border-border" style={{ height: 480 }} /> })
@@ -203,6 +205,7 @@ export default async function TicketDetailPage({
     ])
 
     const isManagerOrAdmin = user.role === 'project_manager' || user.role === 'admin'
+    const isClientUser = user.role === 'client'
 
     const statusConfig = TICKET_STATUS_CONFIG[ticket.status as keyof typeof TICKET_STATUS_CONFIG] ?? {
       label: ticket.status.charAt(0).toUpperCase() + ticket.status.slice(1),
@@ -248,6 +251,8 @@ export default async function TicketDetailPage({
 
     return (
       <div className="flex flex-col h-full -mx-4 sm:-mx-6 lg:-mx-10">
+        {/* Background refresh — keeps ticket data current while the user is idle */}
+        <TicketAutoRefresh />
         {/* Back navigation */}
         <div data-tour="ticket-back-nav" className="px-4 lg:px-6 pt-3 pb-0">
           <div className="flex items-center gap-2">
@@ -328,15 +333,6 @@ export default async function TicketDetailPage({
               />
             )}
 
-            {/* Revision Request — critical */}
-            {isManagerOrAdmin && ticket.status !== 'resolved' && ticket.status !== 'estimate_pending' && ticket.status !== 'new' && ticket.status !== 'estimate_approved' && (
-              <RevisionRequestAction
-                ticketId={ticket.id}
-                ticketNumber={ticket.ticketNumber}
-                revisionCount={ticket.revisionCount || 0}
-              />
-            )}
-
             {/* Client Review Section — critical */}
             <TicketReviewSection
               ticketId={ticket.id}
@@ -364,10 +360,13 @@ export default async function TicketDetailPage({
               <AttachmentUploaderWrapper ticketId={ticket.id} userId={user.id} userRole={user.role} />
             </Suspense>
 
-            {/* Revision History */}
-            <Suspense fallback={null}>
-              <RevisionHistoryWrapper ticketId={ticket.id} isManagerOrAdmin={isManagerOrAdmin} />
-            </Suspense>
+            {/* Revision History — internal only. Clients never see manager
+                names or internal review/rework activity (R14/R15). */}
+            {!isClientUser && (
+              <Suspense fallback={null}>
+                <RevisionHistoryWrapper ticketId={ticket.id} isManagerOrAdmin={isManagerOrAdmin} />
+              </Suspense>
+            )}
 
             {/* Comments */}
             <Suspense fallback={<SectionSkeleton height={520} />}>
@@ -385,12 +384,16 @@ export default async function TicketDetailPage({
                   <span className="text-xs text-muted-foreground flex items-center gap-1.5"><User className="h-3 w-3" />Submitted by</span>
                   <span className="text-xs text-foreground font-medium">{ticket.clientName}</span>
                 </div>
-                {ticket.assignedToName && (
+                {ticket.assignedToName && user.role !== 'client' && (
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground flex items-center gap-1.5"><User className="h-3 w-3 text-emerald-400" />Assigned to</span>
                     <span className="text-xs text-foreground font-medium">{ticket.assignedToName}</span>
                   </div>
                 )}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground flex items-center gap-1.5"><FileText className="h-3 w-3" />Priority</span>
+                  <PriorityEditor ticketId={ticket.id} currentPriority={ticket.priority} canEdit={isManagerOrAdmin} />
+                </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-muted-foreground flex items-center gap-1.5"><Calendar className="h-3 w-3" />Created</span>
                   <span className="text-xs text-foreground">{format(new Date(ticket.createdAt), 'MMM d, yyyy')}</span>
@@ -427,6 +430,15 @@ export default async function TicketDetailPage({
                 </div>
               )}
             </div>
+
+            {/* Admin-only: edit ticket creation/closing dates (R24) */}
+            {user.role === 'admin' && (
+              <TicketDatesEditor
+                ticketId={ticket.id}
+                createdAt={ticket.createdAt.toISOString()}
+                closedAt={ticket.closedAt ? ticket.closedAt.toISOString() : null}
+              />
+            )}
 
             {/* Sidebar: Attachments (streamed) */}
             <Suspense fallback={<div className="animate-pulse bg-white dark:bg-slate-900 border border-border rounded-xl p-4"><div className="h-3 w-24 bg-muted rounded mb-3" />{[1,2,3].map(i => <div key={i} className="h-8 bg-muted rounded mb-2" />)}</div>}>

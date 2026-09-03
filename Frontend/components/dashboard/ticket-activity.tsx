@@ -6,9 +6,10 @@ import { cn } from '@/lib/utils'
 // ────────────────────────────────────────────────────────────────────────────
 // TicketActivityTimeline — displays the full activity history for a ticket
 // Component is scroll-container-agnostic; the parent controls height & scroll.
-// When 
-// isClient=true, internal time tracking entries (timer_started, timer_stopped,
-// timer_paused, timer_resumed, internal_comment_added) are hidden.
+// Client view (isClient=true) only ever shows client-permitted events — the
+// server (getTicketHistory) already strips internal activity for clients, and
+// this whitelist is the DEFENSIVE second layer so accidental internal data can
+// never render. Internal employee names are suppressed for client views too.
 // No 'use client' needed — this component has no hooks, events, or client state.
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -17,9 +18,32 @@ interface TicketActivityTimelineProps {
   isClient?: boolean
 }
 
+/** Client-safe activity actions (mirror of CLIENT_VISIBLE_HISTORY_ACTIONS). */
+const CLIENT_VISIBLE_ACTIONS = new Set([
+  'created',
+  'client_approved',
+  'client_rejected',
+  'reopened_by_client',
+  'estimate_created',
+  'estimate_sent',
+  'estimate_approved',
+  'estimate_modified',
+  'estimate_rejected',
+  'clarification_requested',
+  'auto_approved',
+  'additional_hours_requested',
+  'additional_hours_approved',
+  'additional_hours_auto_approved',
+  'override_created',
+  'attachment_uploaded',
+  'review_submitted',
+  'review_updated',
+])
+
 const actionConfig: Record<string, { label: string; color: string }> = {
   created: { label: 'New support request created.', color: 'bg-emerald-500' },
   status_changed: { label: 'Changed status', color: 'bg-blue-500' },
+  priority_changed: { label: 'Updated ticket priority', color: 'bg-blue-500' },
   assigned: { label: 'Resource assigned to work on this request.', color: 'bg-purple-500' },
   comment_added: { label: 'Added comment', color: 'bg-gray-50 dark:bg-slate-800/500' },
   internal_comment_added: { label: 'Added internal note', color: 'bg-amber-500' },
@@ -53,9 +77,9 @@ const actionConfig: Record<string, { label: string; color: string }> = {
 }
 
 export const TicketActivityTimeline = memo(function TicketActivityTimeline({ history, isClient }: TicketActivityTimelineProps) {
-  // Filter out internal time tracking entries and internal notes for client view
+  // Defensive filter: clients only ever see whitelisted, client-permitted events.
   const filteredHistory = isClient
-    ? history.filter(item => !['timer_started', 'timer_stopped', 'timer_paused', 'timer_resumed', 'internal_comment_added'].includes(item.action))
+    ? history.filter(item => CLIENT_VISIBLE_ACTIONS.has(item.action))
     : history
 
   if (filteredHistory.length === 0) {
@@ -75,16 +99,23 @@ export const TicketActivityTimeline = memo(function TicketActivityTimeline({ his
           <div key={item.id} className="flex gap-3">
             <div className="relative">
               <div className={cn('w-2 h-2 rounded-full mt-2', config.color)} />
-              {index < history.length - 1 && (
+              {index < filteredHistory.length - 1 && (
                 <div className="absolute top-4 left-0.5 w-0.5 h-full bg-border" />
               )}
             </div>
             <div className="flex-1 pb-3">
               <p className="text-sm text-foreground">
-                <span className="font-medium">{item.userName}</span>{' '}
-                <span className="text-muted-foreground">{config.label.toLowerCase()}</span>
+                {item.userName ? (
+                  <>
+                    <span className="font-medium">{item.userName}</span>{' '}
+                    <span className="text-muted-foreground">{config.label.toLowerCase()}</span>
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">{config.label}</span>
+                )}
               </p>
               {(item.action === 'status_changed' ||
+                item.action === 'priority_changed' ||
                 item.action === 'estimate_created' ||
                 item.action === 'estimate_approved' ||
                 item.action === 'estimate_rejected' ||
