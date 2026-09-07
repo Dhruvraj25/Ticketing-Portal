@@ -137,8 +137,9 @@ export default function NewTicketPage() {
         }
 
         // Load clients for admin/manager
+        let clientList: ClientOption[] = []
         try {
-          const clientList = await getTicketFormClients()
+          clientList = await getTicketFormClients()
           console.log('[CreateTicket] Clients loaded:', clientList.length)
           setClients(clientList)
         } catch (e) {
@@ -157,7 +158,12 @@ export default function NewTicketPage() {
           if (raw) draft = JSON.parse(raw)
         } catch {}
 
-        const draftClientId = draft?.clientId && clients.some((c) => String(c.id) === String(draft.clientId))
+        // NOTE: must check against `clientList` (the value just fetched above),
+        // not the `clients` state var — `clients` is captured from this effect's
+        // render closure (still the initial `[]`) since setClients() hasn't
+        // re-rendered yet. Checking against stale `clients` always fails,
+        // silently dropping the saved Client selection on every draft restore.
+        const draftClientId = draft?.clientId && clientList.some((c) => String(c.id) === String(draft.clientId))
           ? draft.clientId
           : ''
         if (draftClientId) setSelectedClientId(draftClientId)

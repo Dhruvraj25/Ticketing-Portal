@@ -168,6 +168,45 @@ export function fmtTz(date: Date | string | number, pattern: string, timezone?: 
   return formatInTimezone(date, pattern, timezone)
 }
 
+/**
+ * Format an instant as a "YYYY-MM-DDTHH:mm" string suitable for an
+ * <input type="datetime-local"> value, using wall-clock fields in the
+ * resolved display timezone (not the browser's OS timezone) so an editable
+ * date/time field shows the same moment the rest of the UI already renders
+ * via fmtTz/fmtDateTime.
+ */
+export function formatForDateTimeInput(date?: Date | string | number | null, timezone?: string | null): string {
+  if (!date) return ''
+  const wc = wallClock(date, timezone)
+  if (!wc) return ''
+  return `${wc.year}-${pad2(wc.month)}-${pad2(wc.day)}T${pad2(wc.hours)}:${pad2(wc.minutes)}`
+}
+
+/**
+ * Inverse of formatForDateTimeInput: interpret a "YYYY-MM-DDTHH:mm[:ss]"
+ * wall-clock string (as typed into a datetime-local input) as local time in
+ * the resolved display timezone, and return the corresponding UTC instant.
+ * Returns null for an empty/invalid string.
+ */
+export function zonedInputToUtcDate(localDateTime?: string | null, timezone?: string | null): Date | null {
+  if (!localDateTime) return null
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(localDateTime)
+  if (!m) return null
+  const tz = resolveDisplayTimezone(timezone)
+  const [y, mo, d, h, mi, s] = m.slice(1).map((v) => (v === undefined ? 0 : Number(v)))
+  // Anchor: treat the typed digits as if they were already a UTC instant.
+  const anchor = Date.UTC(y, mo - 1, d, h, mi, s)
+  if (isNaN(anchor)) return null
+  // See what that anchor instant actually reads as when displayed in `tz` —
+  // the drift between the two tells us tz's offset at this date (DST-aware),
+  // which we then subtract to recover the real UTC instant. Standard
+  // single-pass wall-clock -> UTC conversion (same trick date-fns-tz uses).
+  const wc = wallClock(new Date(anchor), tz)
+  if (!wc) return null
+  const anchorInTz = Date.UTC(wc.year, wc.month - 1, wc.day, wc.hours, wc.minutes, wc.seconds)
+  return new Date(anchor - (anchorInTz - anchor))
+}
+
 /** Friendly absolute timestamp, e.g. "Sep 3, 2026, 10:30 AM". */
 export function fmtDateTime(date: Date | string | number, timezone?: string | null): string {
   return fmtTz(date, 'MMM d, yyyy, h:mm a', timezone)

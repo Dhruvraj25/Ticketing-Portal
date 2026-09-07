@@ -8,21 +8,12 @@ import { updateTicketDates } from '@/app/actions/tickets'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { fmtTz } from '@/lib/datetime'
+import { fmtTz, formatForDateTimeInput, zonedInputToUtcDate } from '@/lib/datetime'
 
 interface TicketDatesEditorProps {
   ticketId: number
   createdAt: string
   closedAt: string | null
-}
-
-/** Store (UTC ISO) → value for an <input type="datetime-local"> in the browser's zone. */
-function isoToLocalInput(iso?: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return ''
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
 /**
@@ -39,8 +30,8 @@ export function TicketDatesEditor({ ticketId, createdAt, closedAt }: TicketDates
   const [error, setError] = useState<string | null>(null)
 
   const openEditor = () => {
-    setCreatedInput(isoToLocalInput(createdAt))
-    setClosedInput(isoToLocalInput(closedAt))
+    setCreatedInput(formatForDateTimeInput(createdAt))
+    setClosedInput(formatForDateTimeInput(closedAt))
     setError(null)
     setEditing(true)
   }
@@ -56,14 +47,18 @@ export function TicketDatesEditor({ ticketId, createdAt, closedAt }: TicketDates
       setError('Creation date is required.')
       return
     }
-    const created = new Date(createdInput)
-    if (isNaN(created.getTime())) {
+    // Inputs are wall-clock strings in the project's resolved display timezone
+    // (same one the read-only values above are formatted in), not the
+    // browser's OS timezone — zonedInputToUtcDate keeps that consistent.
+    const created = zonedInputToUtcDate(createdInput)
+    if (!created || isNaN(created.getTime())) {
       setError('Creation date is invalid.')
       return
     }
+    let closed: Date | null = null
     if (closedInput) {
-      const closed = new Date(closedInput)
-      if (isNaN(closed.getTime())) {
+      closed = zonedInputToUtcDate(closedInput)
+      if (!closed || isNaN(closed.getTime())) {
         setError('Closing date is invalid.')
         return
       }
@@ -76,7 +71,7 @@ export function TicketDatesEditor({ ticketId, createdAt, closedAt }: TicketDates
     try {
       await updateTicketDates(ticketId, {
         createdAt: created.toISOString(),
-        closedAt: closedInput ? new Date(closedInput).toISOString() : null,
+        closedAt: closed ? closed.toISOString() : null,
       })
       setEditing(false)
       toast.success('Ticket dates updated')

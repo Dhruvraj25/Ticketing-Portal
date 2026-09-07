@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "test:notifications": "node --test tests/notification-utils.test.mjs",
     "test:navigation": "node --experimental-strip-types --test tests/navigation-utils.test.ts",
-    "test:catalog": "node --experimental-strip-types --test tests/notification-catalog.test.ts"
+    "test:catalog": "node --experimental-strip-types --test tests/notification-catalog.test.ts",
+    "test:datetime": "node --experimental-strip-types --test tests/datetime-tz-input.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

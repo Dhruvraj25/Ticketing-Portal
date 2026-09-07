@@ -435,8 +435,15 @@ export default async function TicketDetailPage({
             {user.role === 'admin' && (
               <TicketDatesEditor
                 ticketId={ticket.id}
-                createdAt={ticket.createdAt.toISOString()}
-                closedAt={ticket.closedAt ? ticket.closedAt.toISOString() : null}
+                // ticket.createdAt / ticket.closedAt come from getTicketById, which is
+                // wrapped in unstable_cache — on a cache hit those values round-trip
+                // through JSON and arrive as ISO strings rather than Date instances
+                // (same reason every other date on this page goes through `new Date(...)`
+                // first). Closed tickets are the ones that actually hit this: closedAt is
+                // only non-null once a ticket is completed, so calling .toISOString()
+                // straight on it crashed specifically when opening a completed ticket.
+                createdAt={new Date(ticket.createdAt).toISOString()}
+                closedAt={ticket.closedAt ? new Date(ticket.closedAt).toISOString() : null}
               />
             )}
 
