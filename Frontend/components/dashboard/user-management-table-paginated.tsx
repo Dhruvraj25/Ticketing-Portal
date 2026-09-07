@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useCallback } from 'react'
+import Link from 'next/link'
 import { getUsersPaginated, createUser, updateUserRole, deleteUser, resetUserPassword, toggleUserBanned, updateUserTeamsNotifications } from '@/app/actions/admin'
 import type { UserListResult, UserListFilters, UserRoleCounts } from '@/app/actions/admin'
 import { Card } from '@/components/ui/card'
@@ -16,7 +17,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
 import { PasswordField } from '@/components/ui/password-field'
-import { User, Loader2, Shield, UserPlus, Trash2, KeyRound, UserX, UserCheck, MoreHorizontal, Search, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ArrowUpDown, MessageSquare } from 'lucide-react'
+import { User, Loader2, Shield, UserPlus, Trash2, KeyRound, UserX, UserCheck, MoreHorizontal, Search, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ArrowUpDown, MessageSquare, Bell } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import type { UserRole } from '@/lib/types'
 import { USER_ROLE_CONFIG } from '@/lib/types'
@@ -297,6 +298,14 @@ export default function UserManagementTablePaginated({ initialData, roleCounts, 
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="h-8 w-8 p-0"><MoreHorizontal className="h-4 w-4" /><span className="sr-only">Actions</span></Button></DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="bg-card border-border/50">
+                          {u.role === 'client' && (
+                            <DropdownMenuItem asChild className="gap-2 cursor-pointer">
+                              <Link href={`/dashboard/clients/${u.id}/notification-preferences`}>
+                                <Bell className="h-4 w-4" />Notification Preferences
+                              </Link>
+                            </DropdownMenuItem>
+                          )}
+                          {u.role === 'client' && <DropdownMenuSeparator className="bg-border/50" />}
                           <DropdownMenuItem onClick={() => setResetTarget(u)} className="gap-2 cursor-pointer"><KeyRound className="h-4 w-4" />Reset Password</DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleToggleBanned(u)} className="gap-2 cursor-pointer">
                             {u.banned ? <><UserCheck className="h-4 w-4 text-emerald-400" /><span className="text-emerald-400">Activate</span></> : <><UserX className="h-4 w-4 text-amber-400" /><span className="text-amber-400">Deactivate</span></>}

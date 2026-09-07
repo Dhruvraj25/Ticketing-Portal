@@ -39,6 +39,7 @@ import {
   UserPlus,
   MessageSquare,
   CircleHelp,
+  Building2,
 } from 'lucide-react'
 import type { UserRole } from '@/lib/types'
 import { USER_ROLE_CONFIG } from '@/lib/types'
@@ -77,6 +78,7 @@ const NAV_TOUR_ATTR: Record<string, string> = {
   '/dashboard/notifications': 'nav-notifications',
   '/dashboard/admin/users': 'nav-users',
   '/dashboard/admin/teams': 'nav-teams',
+  '/dashboard/clients': 'nav-clients',
   '/dashboard/admin': 'nav-settings',
   '/dashboard/profile': 'nav-profile',
   '/dashboard/help': 'nav-help',
@@ -96,6 +98,7 @@ const adminNavItems: NavItem[] = [
   { href: '/dashboard/reviews', label: 'Reviews', icon: <CheckSquare /> },
   { href: '/dashboard/notifications', label: 'Notifications', icon: <Bell /> },
   { href: '/dashboard/admin/users', label: 'Users', icon: <UserCog /> },
+  { href: '/dashboard/clients', label: 'Clients', icon: <Building2 /> },
   { href: '/dashboard/admin/teams', label: 'Teams', icon: <MessageSquare /> },
   { href: '/dashboard/admin', label: 'Settings', icon: <Settings />, matchDescendants: false },
   { href: '/dashboard/help', label: 'Help & Support', icon: <CircleHelp /> },
@@ -110,6 +113,7 @@ const managerNavItems: NavItem[] = [
   { href: '/dashboard/assignments', label: 'Assignments', icon: <ListChecks /> },
   { href: '/dashboard/review-queue', label: 'Review Queue', icon: <CheckSquare /> },
   { href: '/dashboard/team', label: 'Team', icon: <Activity /> },
+  { href: '/dashboard/clients', label: 'Clients', icon: <Building2 /> },
   { href: '/dashboard/wallets', label: 'Support Wallets', icon: <Wallet /> },
   { href: '/dashboard/reports/view', label: 'Report Center', icon: <FileText /> },
   { href: '/dashboard/reports/customer-reviews', label: 'Customer Reviews', icon: <CheckSquare /> },

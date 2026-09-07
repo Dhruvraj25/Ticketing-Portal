@@ -668,7 +668,10 @@ export function ProfileClient({ user }: ProfileClientProps) {
                 </div>
               </div>
 
-              <NotificationPreferencesSection />
+              {/* Notification preferences are managed by Admin/Manager per client —
+                  clients no longer self-manage them (kept for internal roles' own
+                  notification settings). */}
+              {user.role !== 'client' && <NotificationPreferencesSection />}
 
               <div className="flex items-center justify-between p-4 rounded-lg bg-muted/20 border border-border/40">
                 <div className="flex items-center gap-3">
