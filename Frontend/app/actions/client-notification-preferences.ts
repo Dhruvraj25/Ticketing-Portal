@@ -146,9 +146,9 @@ async function loadClientPreferences(clientId: string, actor: { id: string; role
   let rows: NotificationPreferenceRow[]
   try {
     const result = await pool.query<NotificationPreferenceRow>(
-      `SELECT "userId", "channel", "eventType", "enabled"
+      `SELECT "clientId", "channel", "eventType", "enabled"
          FROM notification_preferences
-        WHERE "userId" = $1`,
+        WHERE "clientId" = $1`,
       [clientId],
     )
     rows = result.rows
@@ -316,9 +316,9 @@ export const updateClientNotificationPreferences = wrapServerAction(
     try {
       for (const v of validated) {
         await pool.query(
-          `INSERT INTO notification_preferences ("userId", "channel", "eventType", "enabled", "createdAt", "updatedAt")
+          `INSERT INTO notification_preferences ("clientId", "channel", "eventType", "enabled", "createdAt", "updatedAt")
            VALUES ($1, $2, $3, $4, now(), now())
-           ON CONFLICT ("userId", "channel", "eventType")
+           ON CONFLICT ("clientId", "channel", "eventType")
            DO UPDATE SET "enabled" = EXCLUDED."enabled", "updatedAt" = now()`,
           [clientId, v.channel, v.eventType, v.enabled],
         )

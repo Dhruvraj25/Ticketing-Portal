@@ -79,34 +79,33 @@ export function canonicalNotificationEvent(eventType: string | null | undefined)
 }
 
 /**
- * Load the set of explicitly DISABLED in-app events per user.
- * userId → Set<canonicalEvent>. Fail-open: any DB hiccup (e.g. the
- * notification_preferences table does not exist yet because migration 0015
- * has not been applied) returns an empty index, i.e. current behavior —
- * nothing is suppressed.
+ * Load the set of explicitly DISABLED in-app events per client.
+ * clientId → Set<canonicalEvent>. Fail-open: any DB hiccup (e.g. the
+ * notification_preferences table does not exist yet) returns an empty index,
+ * i.e. current behavior — nothing is suppressed.
  */
 export async function loadDisabledInAppEvents(
-  userIds: string[],
+  clientIds: string[],
 ): Promise<Map<string, Set<string>>> {
   const index = new Map<string, Set<string>>()
-  const unique = [...new Set(userIds)].filter(Boolean)
+  const unique = [...new Set(clientIds)].filter(Boolean)
   if (unique.length === 0) return index
 
   try {
-    const result = await pool.query<{ userId: string; eventType: string; enabled: boolean }>(
-      `SELECT "userId", "eventType", "enabled"
+    const result = await pool.query<{ clientId: string; eventType: string; enabled: boolean }>(
+      `SELECT "clientId", "eventType", "enabled"
          FROM notification_preferences
-        WHERE "userId" = ANY($1::text[]) AND "channel" = 'in_app'`,
+        WHERE "clientId" = ANY($1::text[]) AND "channel" = 'in_app'`,
       [unique],
     )
     for (const row of result.rows) {
       if (row.enabled) continue
       const canonical = canonicalNotificationEvent(row.eventType)
       if (!canonical) continue
-      let set = index.get(row.userId)
+      let set = index.get(row.clientId)
       if (!set) {
         set = new Set<string>()
-        index.set(row.userId, set)
+        index.set(row.clientId, set)
       }
       set.add(canonical)
     }

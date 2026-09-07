@@ -75,8 +75,8 @@ test('client channel defaults: Email/In-App ON, Teams follows customer toggle', 
 
 test('buildUserSettings: explicit rows override defaults per (channel, event)', () => {
   const rows: NotificationPreferenceRow[] = [
-    { userId: 'client-a', channel: 'email', eventType: 'ticket_assigned', enabled: false },
-    { userId: 'client-a', channel: 'teams', eventType: 'ticket_closed', enabled: true },
+    { clientId: 'client-a', channel: 'email', eventType: 'ticket_assigned', enabled: false },
+    { clientId: 'client-a', channel: 'teams', eventType: 'ticket_closed', enabled: true },
   ]
   const byUser = new Map<string, Map<string, boolean>>()
   byUser.set('client-a', indexPreferences(rows))
@@ -102,12 +102,12 @@ test('buildUserSettings: explicit rows override defaults per (channel, event)', 
 
 test('buildUserSettings leaves other users untouched (client-wise, never global)', () => {
   const rows: NotificationPreferenceRow[] = [
-    { userId: 'client-a', channel: 'email', eventType: 'ticket_assigned', enabled: false },
-    { userId: 'client-b', channel: 'email', eventType: 'ticket_closed', enabled: false },
+    { clientId: 'client-a', channel: 'email', eventType: 'ticket_assigned', enabled: false },
+    { clientId: 'client-b', channel: 'email', eventType: 'ticket_closed', enabled: false },
   ]
   const byUser = new Map<string, Map<string, boolean>>()
-  byUser.set('client-a', indexPreferences(rows.filter(r => r.userId === 'client-a')))
-  byUser.set('client-b', indexPreferences(rows.filter(r => r.userId === 'client-b')))
+  byUser.set('client-a', indexPreferences(rows.filter(r => r.clientId === 'client-a')))
+  byUser.set('client-b', indexPreferences(rows.filter(r => r.clientId === 'client-b')))
 
   const a = new Map(buildUserSettings({ role: 'client', enableTeamsNotifications: false }, byUser, 'client-a').map(s => [s.eventType, s]))
   const b = new Map(buildUserSettings({ role: 'client', enableTeamsNotifications: false }, byUser, 'client-b').map(s => [s.eventType, s]))

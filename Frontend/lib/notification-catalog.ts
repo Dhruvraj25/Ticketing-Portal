@@ -129,7 +129,7 @@ export function defaultNotificationEnabled(
 
 /** A stored preference row (what the repository query returns). */
 export interface NotificationPreferenceRow {
-  userId: string
+  clientId: string
   channel: string
   eventType: string
   enabled: boolean
