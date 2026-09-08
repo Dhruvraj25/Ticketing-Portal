@@ -125,14 +125,14 @@ export default async function ProjectDetailPage({
             value={project.clientName || '—'}
             iconName="Users"
             delay={2}
-            valueClassName="text-sm font-normal leading-snug break-words"
+            valueClassName="text-lg font-semibold leading-snug break-words"
           />
           <StatCard
             title="Manager"
             value={project.managerName || '—'}
             iconName="Briefcase"
             delay={3}
-            valueClassName="text-sm font-normal leading-snug break-words"
+            valueClassName="text-lg font-semibold leading-snug break-words"
           />
         </div>
 
