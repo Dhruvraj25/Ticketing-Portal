@@ -44,6 +44,7 @@ export const submitEstimate = wrapServerAction('submitEstimate', async function 
 
   const approvalDeadline = new Date()
   approvalDeadline.setDate(approvalDeadline.getDate() + AUTO_APPROVAL_DAYS)
+  const estimateSubmittedAt = new Date()
 
   await db
     .update(ticket)
@@ -51,7 +52,7 @@ export const submitEstimate = wrapServerAction('submitEstimate', async function 
       estimatedHours: data.estimatedHours,
       estimatedCompletionDate: data.estimatedCompletionDate,
       estimateNotes: data.estimateNotes,
-      estimateSubmittedAt: new Date(),
+      estimateSubmittedAt,
       status: 'estimate_pending',
       approvalDeadline,
       updatedAt: new Date(),
@@ -70,7 +71,12 @@ export const submitEstimate = wrapServerAction('submitEstimate', async function 
   await dispatchNotification({
     eventType: 'estimate_requested',
     triggeredBy: currentUser.id,
-    dedup: { scope: `ticket:${ticketId}` },
+    // Requirement #9 — approval email on EVERY distinct submission cycle
+    // (resubmitting after rejection is a NEW cycle). Scoped to THIS
+    // estimateSubmittedAt so a later resubmission always emails again, while
+    // duplicate retries of the same submission are still suppressed. Matches
+    // the estimate_approved cycle key below.
+    dedup: { scope: `ticket:${ticketId}:est:${estimateSubmittedAt.getTime()}` },
     recipients: [
       {
         userId: t.clientId,
@@ -331,10 +337,14 @@ export const rejectEstimate = wrapServerAction('rejectEstimate', async function 
   }
 
   if (recipients.length > 0) {
+    // Requirement #9 — cycle-aware, matching estimate_requested/estimate_approved:
+    // t.estimateSubmittedAt still holds the submission being rejected (fetched
+    // before this function's update), so a later resubmission gets its own key.
+    const estimateCycleKey = t.estimateSubmittedAt ? new Date(t.estimateSubmittedAt).getTime() : t.id
     await dispatchNotification({
       eventType: 'estimate_rejected',
       triggeredBy: currentUser.id,
-      dedup: { scope: `ticket:${ticketId}` },
+      dedup: { scope: `ticket:${ticketId}:est:${estimateCycleKey}` },
       recipients,
     })
   }
@@ -525,7 +535,9 @@ export const requestAdditionalHours = wrapServerAction('requestAdditionalHours',
   await dispatchNotification({
     eventType: 'additional_hours_requested',
     triggeredBy: currentUser.id,
-    dedup: { scope: `ticket:${ticketId}` },
+    // Requirement #9 — cycle-aware, matching additional_hours_approved: a
+    // later request (new deadline) is a distinct cycle and must email again.
+    dedup: { scope: `ticket:${ticketId}:hours:${additionalHoursDeadline.getTime()}` },
     recipients: [
       {
         userId: t.clientId,
@@ -790,10 +802,15 @@ export const declineAdditionalHours = wrapServerAction('declineAdditionalHours',
   }
 
   if (recipients.length > 0) {
+    // Requirement #9 — cycle-aware, matching additional_hours_approved:
+    // t.additionalHoursDeadline still holds the request being declined
+    // (fetched before this function's update), so a later request gets its
+    // own key.
+    const hoursCycleKey = t.additionalHoursDeadline ? new Date(t.additionalHoursDeadline).getTime() : t.id
     await dispatchNotification({
       eventType: 'additional_hours_rejected',
       triggeredBy: currentUser.id,
-      dedup: { scope: `ticket:${ticketId}` },
+      dedup: { scope: `ticket:${ticketId}:hours:${hoursCycleKey}` },
       recipients,
     })
   }
@@ -956,7 +973,11 @@ export const getEstimateDashboardStats = wrapServerAction('getEstimateDashboardS
 
   const conditions = []
   if (currentUser.role === 'client') {
-    conditions.push(eq(ticket.clientId, currentUser.id))
+    // Client Approver org-scope (own + standard accounts of the same client) —
+    // same rule as the ticket list/detail pages.
+    const { getClientOrgUserIds } = await import('@/app/actions/tickets/queries')
+    const orgIds = await getClientOrgUserIds(currentUser.id, (currentUser as any).userType ?? null)
+    conditions.push(orgIds && orgIds.length > 1 ? inArray(ticket.clientId, orgIds) : eq(ticket.clientId, currentUser.id))
   } else if (currentUser.role === 'project_manager') {
     const managedProjects = db
       .select({ id: project.id })
@@ -1000,7 +1021,8 @@ export const getEstimateDashboardStats = wrapServerAction('getEstimateDashboardS
         count: count(),
       })
       .from(ticket)
-      .where(and(eq(ticket.clientId, currentUser.id), inArray(ticket.status, ['estimate_pending', 'estimate_approved'])))
+      // baseFilter already carries the client's org-scope condition computed above.
+      .where(and(baseFilter!, inArray(ticket.status, ['estimate_pending', 'estimate_approved'])))
       .groupBy(ticket.status, ticket.autoApproved, ticket.estimateApprovedAt)
 
     for (const row of clientStats) {

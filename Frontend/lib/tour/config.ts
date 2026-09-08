@@ -1500,12 +1500,6 @@ export const PAGE_TOURS: Record<string, TourStep[]> = {
       description: 'Every client’s support wallet — purchased hours, consumption and contract status in one place.',
     },
     {
-      id: 'page-wallets-kpis',
-      ...el('[data-tour="wallets-kpis"]', 'bottom'),
-      title: 'Wallet statistics',
-      description: 'Total wallet hours, remaining hours, low-balance clients and recharge requests this month.',
-    },
-    {
       id: 'page-wallets-filters',
       ...el('[data-tour="wallets-filters"]', 'bottom'),
       title: 'Search & filters',
@@ -1555,12 +1549,6 @@ export const PAGE_TOURS: Record<string, TourStep[]> = {
       ...el('[data-tour="wallet-detail-summary"]', 'bottom'),
       title: 'Wallet summary',
       description: 'Purchased, reserved, consumed and remaining hours for this wallet.',
-    },
-    {
-      id: 'page-wallet-detail-utilization',
-      ...el('[data-tour="wallet-detail-utilization"]', 'bottom'),
-      title: 'Hour utilization',
-      description: 'A visual breakdown of how the wallet is being consumed — consumed, reserved and remaining.',
     },
     {
       id: 'page-wallet-detail-tabs',

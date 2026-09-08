@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/select'
 import { TICKET_PRIORITY_CONFIG, TICKET_CATEGORY_CONFIG, VALIDATION } from '@/lib/types'
 import type { TicketPriority, TicketCategory } from '@/lib/types'
+import { loadTicketDraft, saveTicketDraft, clearTicketDraft, resolveDraftSelection } from '@/lib/ticket-draft'
 import dynamic from 'next/dynamic'
 import { cn } from '@/lib/utils'
 import { stripHtml } from '@/lib/format'
@@ -148,24 +149,14 @@ export default function NewTicketPage() {
 
         // A saved draft takes precedence over URL/default auto-selection so
         // every dropdown selection survives a refresh (Save Draft requirement).
-        let draft: {
-          clientId?: string
-          projectId?: string
-          moduleId?: string
-        } | null = null
-        try {
-          const raw = localStorage.getItem('ticket-draft')
-          if (raw) draft = JSON.parse(raw)
-        } catch {}
+        const draft = loadTicketDraft()
 
         // NOTE: must check against `clientList` (the value just fetched above),
         // not the `clients` state var — `clients` is captured from this effect's
         // render closure (still the initial `[]`) since setClients() hasn't
         // re-rendered yet. Checking against stale `clients` always fails,
         // silently dropping the saved Client selection on every draft restore.
-        const draftClientId = draft?.clientId && clientList.some((c) => String(c.id) === String(draft.clientId))
-          ? draft.clientId
-          : ''
+        const draftClientId = resolveDraftSelection(draft?.clientId, clientList, (c) => c.id) ?? ''
         if (draftClientId) setSelectedClientId(draftClientId)
 
         const projs = draftClientId
@@ -176,10 +167,9 @@ export default function NewTicketPage() {
 
         // Prefer the draft's project, then the projectId search param, then the 'Support' project
         const projectParam = searchParams.get('projectId')
-        let selectedProjId: string | null = null
+        let selectedProjId: string | null = resolveDraftSelection(draft?.projectId, projs, (p) => p.id)
 
-        if (draft?.projectId && projs.find((p) => String(p.id) === String(draft.projectId))) {
-          selectedProjId = String(draft.projectId)
+        if (selectedProjId) {
           console.log('[CreateTicket] Restored project from draft:', selectedProjId)
         } else if (projectParam && projs.find((p) => String(p.id) === projectParam)) {
           selectedProjId = projectParam
@@ -209,9 +199,8 @@ export default function NewTicketPage() {
 
             // Prefer the draft's module, then the moduleId search param, then the 'Support' module
             const moduleParam = searchParams.get('moduleId')
-            let restoredModuleId: string | null = null
-            if (draft?.moduleId && mods.find((m) => String(m.id) === String(draft.moduleId))) {
-              restoredModuleId = String(draft.moduleId)
+            let restoredModuleId: string | null = resolveDraftSelection(draft?.moduleId, mods, (m) => m.id)
+            if (restoredModuleId) {
               console.log('[CreateTicket] Restored module from draft:', restoredModuleId)
             } else if (moduleParam && mods.find((m) => String(m.id) === moduleParam)) {
               restoredModuleId = moduleParam
@@ -243,18 +232,14 @@ export default function NewTicketPage() {
   // Project / Module / Client are restored inside load() so the restored
   // dropdown values always resolve against freshly loaded option lists.
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('ticket-draft')
-      if (saved) {
-        const draft = JSON.parse(saved)
-        if (draft.title) setTitle(draft.title)
-        if (draft.description) setDescription(draft.description)
-        if (draft.priority) setPriority(draft.priority)
-        if (draft.category) setCategory(draft.category)
-        if (draft.environment) setEnvironment(draft.environment)
-        if (draft.additionalInfo) setAdditionalInfo(draft.additionalInfo)
-      }
-    } catch {}
+    const draft = loadTicketDraft()
+    if (!draft) return
+    if (draft.title) setTitle(draft.title)
+    if (draft.description) setDescription(draft.description)
+    if (draft.priority) setPriority(draft.priority as TicketPriority)
+    if (draft.category) setCategory(draft.category as TicketCategory)
+    if (draft.environment) setEnvironment(draft.environment)
+    if (draft.additionalInfo) setAdditionalInfo(draft.additionalInfo)
   }, [])
 
   const handleProjectChange = useCallback(async (projectId: string) => {
@@ -318,7 +303,7 @@ export default function NewTicketPage() {
   }, [])
 
   function saveDraft() {
-    const draft = {
+    saveTicketDraft({
       title,
       description,
       priority,
@@ -329,8 +314,7 @@ export default function NewTicketPage() {
       clientId: selectedClientId,
       projectId: selectedProjectId,
       moduleId: selectedModuleId,
-    }
-    localStorage.setItem('ticket-draft', JSON.stringify(draft))
+    })
     setDraftSaved(true)
     setTimeout(() => setDraftSaved(false), 2000)
   }
@@ -383,7 +367,7 @@ export default function NewTicketPage() {
         }
       }
 
-      localStorage.removeItem('ticket-draft')
+      clearTicketDraft()
       router.push(`/dashboard/tickets/${ticket.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create ticket')

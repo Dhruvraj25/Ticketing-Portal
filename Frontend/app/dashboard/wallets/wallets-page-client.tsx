@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useMemo, useCallback, memo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { format } from 'date-fns'
 import { Download } from 'lucide-react'
-import { StatCard } from '@/components/dashboard/stat-card'
 import { WalletPageHeader } from '@/components/dashboard/wallet/wallet-header'
 import { WalletFilters } from '@/components/dashboard/wallet/wallet-filters'
 import { WalletEmptyState } from '@/components/dashboard/wallet/wallet-empty-state'
@@ -29,17 +28,6 @@ function getStatusInfo(wallet: SupportWallet) {
   if (wallet.remainingHours <= 50) return { label: 'Moderate', color: 'bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/30' }
   return { label: 'Healthy', color: 'bg-green-50 dark:bg-green-500/15 text-green-600 dark:text-green-400 border-green-200 dark:border-green-500/30' }
 }
-
-const WalletKpiCards = memo(function WalletKpiCards({ stats }: { stats: WalletsPageClientProps['stats'] }) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-      <StatCard title="Total Wallet Hours" value={stats.totalPurchased} iconName="Clock" />
-      <StatCard title="Remaining Hours" value={stats.totalRemaining} iconName="Wallet" />
-      <StatCard title="Low Balance Clients" value={stats.lowBalanceClients} iconName="AlertTriangle" />
-      <StatCard title="Wallet Recharge Requests" value={stats.rechargesThisMonth} iconName="TrendingUp" />
-    </div>
-  )
-})
 
 function WalletExportButton({ filteredWallets }: { filteredWallets: SupportWallet[] }) {
   const handleExport = useCallback(() => {
@@ -73,7 +61,7 @@ function WalletExportButton({ filteredWallets }: { filteredWallets: SupportWalle
 }
 
 export function WalletsPageClient({
-  user, wallets, stats, lowBalanceWallets, projects,
+  user, wallets, lowBalanceWallets, projects,
 }: WalletsPageClientProps) {
   const isManagerOrAdmin = user.role === 'project_manager' || user.role === 'admin'
   const [searchQuery, setSearchQuery] = useState('')
@@ -113,9 +101,6 @@ export function WalletsPageClient({
        <div data-tour="wallets-header" className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6">
    
       <WalletPageHeader walletCount={wallets.length} />
-      </div>
-      <div data-tour="wallets-kpis">
-        <WalletKpiCards stats={stats} />
       </div>
       <div data-tour="wallets-filters">
       <WalletFilters

@@ -566,16 +566,16 @@ async function _getConsolidatedDashboardDataImpl(role: string, userId: string, u
       inProgress: sql<number>`COUNT(*) FILTER (WHERE ${ticket.status} IN ('in_progress', 'estimate_pending'))::int`.mapWith(Number),
       resolved: sql<number>`COUNT(*) FILTER (WHERE ${ticket.status} IN ('resolved', 'client_review'))::int`.mapWith(Number),
       // Pending revision requests = tickets explicitly in 'request_for_revision'
-      // (manager/admin-initiated) PLUS tickets with an active revision_history
-      // record awaiting action (status 'pending' or 'pending_approval').
-      // Client-initiated revisions keep the ticket in 'client_review' until a
-      // manager approves, so counting tickets by status alone undercounts.
+      // (client-initiated) PLUS tickets with an active revision_history record
+      // still awaiting manager approval ('pending_approval'). Manager/admin
+      // Rework has no approval step — its rows are 'acknowledged' immediately
+      // and must NOT count as "pending" here.
       revisions: sql<number>`COUNT(*) FILTER (
         WHERE ${ticket.status} = 'request_for_revision'
            OR EXISTS (
              SELECT 1 FROM ${revisionHistory}
              WHERE ${revisionHistory.ticketId} = ${ticket.id}
-               AND ${revisionHistory.status} IN ('pending', 'pending_approval')
+               AND ${revisionHistory.status} = 'pending_approval'
            )
       )::int`.mapWith(Number),
       pendingEstimates: sql<number>`COUNT(*) FILTER (WHERE ${ticket.status} = 'estimate_pending')::int`.mapWith(Number),

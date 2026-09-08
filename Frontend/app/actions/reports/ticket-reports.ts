@@ -2,18 +2,30 @@
 
 import { db } from '@/lib/db'
 import { ticket } from '@/lib/db/schema'
-import { and, eq, desc, gte, lte, sql, isNotNull, count } from 'drizzle-orm'
+import { and, eq, desc, gte, lte, sql, isNotNull, count, inArray } from 'drizzle-orm'
 import { TicketStatus, TICKET_STATUS_CONFIG } from '@/lib/types'
 import type { ReportFilters, ReportResult } from './types'
 import { getDateRange } from './types'
 import type { CurrentUser } from './queries'
+import { getClientOrgUserIds } from '@/app/actions/tickets/queries'
+
+/**
+ * Ticket-visibility condition for a report's currentUser (client role only).
+ * Mirrors the Client Approver org-scope used on the ticket list/detail pages:
+ * an Approver's reports must cover tickets created by every Standard client
+ * user of their organization (shared projects), not only their own tickets.
+ */
+async function ticketClientScopeCondition(currentUser: CurrentUser) {
+  const orgIds = await getClientOrgUserIds(currentUser.id, currentUser.userType ?? null)
+  return orgIds && orgIds.length > 1 ? inArray(ticket.clientId, orgIds) : eq(ticket.clientId, currentUser.id)
+}
 
 // ─── Report: Ticket Summary ──────────────────────────────────────────────
 export async function getTicketSummaryReport(filters: ReportFilters, currentUser: CurrentUser): Promise<ReportResult> {
   const { since, until } = getDateRange(filters.dateFrom, filters.dateTo)
   const conditions = [gte(ticket.createdAt, since), lte(ticket.createdAt, until)]
 
-  if (currentUser.role === 'client') conditions.push(eq(ticket.clientId, currentUser.id))
+  if (currentUser.role === 'client') conditions.push(await ticketClientScopeCondition(currentUser))
   if (currentUser.role === 'developer') conditions.push(eq(ticket.assignedToId, currentUser.id))
   if (filters.projectId) conditions.push(eq(ticket.projectId, filters.projectId))
   if (filters.moduleId) conditions.push(eq(ticket.moduleId, filters.moduleId))
@@ -124,7 +136,7 @@ export async function getTicketStatusReport(filters: ReportFilters, currentUser:
   const { since, until } = getDateRange(filters.dateFrom, filters.dateTo)
   const conditions = [gte(ticket.createdAt, since), lte(ticket.createdAt, until)]
 
-  if (currentUser.role === 'client') conditions.push(eq(ticket.clientId, currentUser.id))
+  if (currentUser.role === 'client') conditions.push(await ticketClientScopeCondition(currentUser))
   if (currentUser.role === 'developer') conditions.push(eq(ticket.assignedToId, currentUser.id))
   if (filters.projectId) conditions.push(eq(ticket.projectId, filters.projectId))
   if (filters.developerId) conditions.push(eq(ticket.assignedToId, filters.developerId))
@@ -182,7 +194,7 @@ export async function getTicketStatusReport(filters: ReportFilters, currentUser:
 // (unchanged — already efficient with limited columns)
 export async function getTicketAgingReport(filters: ReportFilters, currentUser: CurrentUser): Promise<ReportResult> {
   const conditions: any[] = [sql`${ticket.status} NOT IN (${TicketStatus.CLOSED})`]
-  if (currentUser.role === 'client') conditions.push(eq(ticket.clientId, currentUser.id))
+  if (currentUser.role === 'client') conditions.push(await ticketClientScopeCondition(currentUser))
   if (currentUser.role === 'developer') conditions.push(eq(ticket.assignedToId, currentUser.id))
   if (filters.projectId) conditions.push(eq(ticket.projectId, filters.projectId))
 
@@ -249,7 +261,7 @@ export async function getTicketAgingReport(filters: ReportFilters, currentUser: 
 // (unchanged — already uses limited columns and isNotNull filter)
 export async function getTicketResolutionReport(filters: ReportFilters, currentUser: CurrentUser): Promise<ReportResult> {
   const conditions: any[] = [isNotNull(ticket.resolvedAt)]
-  if (currentUser.role === 'client') conditions.push(eq(ticket.clientId, currentUser.id))
+  if (currentUser.role === 'client') conditions.push(await ticketClientScopeCondition(currentUser))
   if (currentUser.role === 'developer') conditions.push(eq(ticket.assignedToId, currentUser.id))
   if (filters.projectId) conditions.push(eq(ticket.projectId, filters.projectId))
   if (filters.developerId) conditions.push(eq(ticket.assignedToId, filters.developerId))
@@ -319,7 +331,7 @@ export async function getTicketResolutionReport(filters: ReportFilters, currentU
 export async function getEstimateApprovalReport(filters: ReportFilters, currentUser: CurrentUser): Promise<ReportResult> {
   const { since, until } = getDateRange(filters.dateFrom, filters.dateTo)
   const conditions: any[] = [sql`${ticket.estimatedHours} > 0`, gte(ticket.createdAt, since), lte(ticket.createdAt, until)]
-  if (currentUser.role === 'client') conditions.push(eq(ticket.clientId, currentUser.id))
+  if (currentUser.role === 'client') conditions.push(await ticketClientScopeCondition(currentUser))
   if (filters.projectId) conditions.push(eq(ticket.projectId, filters.projectId))
 
   const rows = await db
@@ -383,7 +395,7 @@ export async function getEstimateApprovalReport(filters: ReportFilters, currentU
 export async function getAdditionalHoursReport(filters: ReportFilters, currentUser: CurrentUser): Promise<ReportResult> {
   const { since, until } = getDateRange(filters.dateFrom, filters.dateTo)
   const conditions: any[] = [sql`${ticket.additionalHoursRequested} > 0`, gte(ticket.createdAt, since), lte(ticket.createdAt, until)]
-  if (currentUser.role === 'client') conditions.push(eq(ticket.clientId, currentUser.id))
+  if (currentUser.role === 'client') conditions.push(await ticketClientScopeCondition(currentUser))
   if (filters.projectId) conditions.push(eq(ticket.projectId, filters.projectId))
 
   const rows = await db

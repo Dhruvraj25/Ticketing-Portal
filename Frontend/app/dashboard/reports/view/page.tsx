@@ -45,7 +45,7 @@ const ReportMiniCharts = dynamic(() => import('@/components/dashboard/report-cen
 export default function ReportCenterPage() {
   const searchParams = useSearchParams()
 
-  const [formData, setFormData] = useState<{ projects: any[]; developers: any[]; clients: any[] }>({ projects: [], developers: [], clients: [] })
+  const [formData, setFormData] = useState<{ projects: any[]; developers: any[]; clients: any[]; role?: string }>({ projects: [], developers: [], clients: [] })
   const [report, setReport] = useState<ReportResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -155,6 +155,7 @@ export default function ReportCenterPage() {
             onApply={handleGenerateReport}
             initialReportType={currentFilters?.reportType}
             initialFilters={currentFilters || undefined}
+            userRole={formData.role as any}
           />
   </div>
           {/* Loading State */}

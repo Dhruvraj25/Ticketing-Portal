@@ -13,8 +13,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Filter, X, Search, Calendar } from 'lucide-react'
-import { TicketStatus } from '@/lib/types'
+import { TicketStatus, type UserRole } from '@/lib/types'
 import type { ReportFilters as ReportFiltersType } from '@/app/actions/reports'
+import { checkAccess } from '@/app/actions/reports/types'
 import type { ReportType } from '@/lib/report-types'
 import { REPORT_TYPE_OPTIONS } from '@/lib/report-types'
 
@@ -25,6 +26,14 @@ interface ReportFiltersProps {
   onApply: (filters: ReportFiltersType) => void
   initialReportType?: ReportType
   initialFilters?: Partial<ReportFiltersType>
+  /**
+   * Current user's role — used to hide report types the role can't run
+   * (server-enforced by checkAccess() in app/actions/reports/queries.ts;
+   * this mirrors it so the dropdown never offers a report that will be
+   * rejected, e.g. a client seeing "Worklog Report" or "Billable Hours
+   * Report"). Falls back to showing every option until the role is known.
+   */
+  userRole?: UserRole
 }
 
 const STATUS_OPTIONS = [
@@ -37,6 +46,7 @@ const STATUS_OPTIONS = [
   { value: TicketStatus.RESOLVED, label: 'Manager Review' },
   { value: TicketStatus.CLIENT_REVIEW, label: 'Awaiting Client Review' },
   { value: TicketStatus.CLOSED, label: 'Completed' },
+  { value: TicketStatus.REWORK, label: 'Rework' },
   { value: TicketStatus.REQUEST_FOR_REVISION, label: 'Requested for Revision' },
 ]
 
@@ -48,7 +58,7 @@ const PRIORITY_OPTIONS = [
   { value: 'critical', label: 'CRITICAL' },
 ]
 
-export const ReportFilters = memo(function ReportFilters({ projects, developers, clients, onApply, initialReportType, initialFilters }: ReportFiltersProps) {
+export const ReportFilters = memo(function ReportFilters({ projects, developers, clients, onApply, initialReportType, initialFilters, userRole }: ReportFiltersProps) {
   const [showFilters, setShowFilters] = useState(false)
   const [reportType, setReportType] = useState<ReportType>(initialReportType || 'ticket_summary')
   const [dateFrom, setDateFrom] = useState(initialFilters?.dateFrom || '')
@@ -87,6 +97,15 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
 
   const activeFilterCount = [dateFrom, dateTo, projectId, moduleId, developerId, clientId, status, priority].filter(Boolean).length
 
+  // Only offer report types this role is actually authorized to run — the
+  // server (checkAccess in app/actions/reports/queries.ts) is the real gate,
+  // this just keeps the dropdown from advertising reports that will 400/deny
+  // (e.g. a client seeing Worklog/Billable Hours, or a developer seeing SLA
+  // Compliance). Unknown role (not loaded yet) shows everything briefly.
+  const visibleReportOptions = userRole
+    ? REPORT_TYPE_OPTIONS.filter(opt => checkAccess(userRole, opt.value))
+    : REPORT_TYPE_OPTIONS
+
   return (
     <div className="space-y-4">
       {/* Report Type + Quick Actions */}
@@ -98,12 +117,12 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
               <SelectValue placeholder="Select report type" />
             </SelectTrigger>
             <SelectContent className="max-h-80">
-              {Array.from(new Set(REPORT_TYPE_OPTIONS.map(r => r.category))).map(category => (
+              {Array.from(new Set(visibleReportOptions.map(r => r.category))).map(category => (
                 <div key={category}>
                   <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     {category}
                   </div>
-                  {REPORT_TYPE_OPTIONS.filter(r => r.category === category).map(opt => (
+                  {visibleReportOptions.filter(r => r.category === category).map(opt => (
                     <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                   ))}
                 </div>

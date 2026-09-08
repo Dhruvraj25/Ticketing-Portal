@@ -11,7 +11,11 @@
     "test:notifications": "node --test tests/notification-utils.test.mjs",
     "test:navigation": "node --experimental-strip-types --test tests/navigation-utils.test.ts",
     "test:catalog": "node --experimental-strip-types --test tests/notification-catalog.test.ts",
-    "test:datetime": "node --experimental-strip-types --test tests/datetime-tz-input.test.ts"
+    "test:datetime": "node --experimental-strip-types --test tests/datetime-tz-input.test.ts",
+    "test:reports": "node --experimental-strip-types --test tests/report-access.test.ts",
+    "test:support-hours": "node --experimental-strip-types --test tests/support-hours-ui.test.ts",
+    "test:ticket-draft": "node --experimental-strip-types --test tests/ticket-draft.test.ts",
+    "test:ticket-dates": "node --experimental-strip-types --test tests/admin-ticket-dates.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

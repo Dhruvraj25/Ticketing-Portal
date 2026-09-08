@@ -52,7 +52,8 @@ const statusDot: Record<string, string> = {
   [TicketStatus.RESOLVED]: 'bg-green-500',
   [TicketStatus.CLIENT_REVIEW]: 'bg-sky-500',
   [TicketStatus.CLOSED]: 'bg-gray-400',
-  [TicketStatus.REQUEST_FOR_REVISION]: 'bg-orange-500',
+  [TicketStatus.REWORK]: 'bg-orange-500',
+  [TicketStatus.REQUEST_FOR_REVISION]: 'bg-rose-500',
 }
 
 const statusBorderColor: Record<string, string> = {
@@ -65,7 +66,8 @@ const statusBorderColor: Record<string, string> = {
   [TicketStatus.RESOLVED]: '#22C55E',
   [TicketStatus.CLIENT_REVIEW]: '#EAB308',
   [TicketStatus.CLOSED]: '#6B7280',
-  [TicketStatus.REQUEST_FOR_REVISION]: '#A855F7',
+  [TicketStatus.REWORK]: '#F97316',
+  [TicketStatus.REQUEST_FOR_REVISION]: '#F43F5E',
 }
 
 export const TicketCard = memo(function TicketCard({ 

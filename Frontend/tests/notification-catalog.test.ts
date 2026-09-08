@@ -6,6 +6,7 @@ import {
   canonicalNotificationEvent,
   defaultNotificationEnabled,
   indexPreferences,
+  isNotificationEnabled,
   buildUserSettings,
   type NotificationPreferenceRow,
 } from '../lib/notification-catalog.ts'
@@ -118,4 +119,56 @@ test('buildUserSettings leaves other users untouched (client-wise, never global)
   // Client B disabled email for ticket_closed; Client A kept the default ON.
   assert.equal(b.get('ticket_closed')?.email, false)
   assert.equal(a.get('ticket_closed')?.email, true)
+})
+
+// ─── Email preference enforcement is independent of Teams / In-App ─────────
+// "Email OFF, Teams ON, In-App ON" must mean exactly that: Email suppressed,
+// Teams and In-App unaffected. Each channel is looked up under its own
+// `${channel}:${event}` key, so an explicit row for one channel can never
+// leak into another.
+
+test('Email OFF does not affect Teams or In-App for the same event', () => {
+  const client = { role: 'client', enableTeamsNotifications: true }
+  const rows = indexPreferences([
+    { clientId: 'c1', channel: 'email', eventType: 'client_review', enabled: false },
+    { clientId: 'c1', channel: 'teams', eventType: 'client_review', enabled: true },
+    { clientId: 'c1', channel: 'in_app', eventType: 'client_review', enabled: true },
+  ])
+  assert.equal(isNotificationEnabled(rows, 'email', 'client_review', client), false, 'Email must be OFF')
+  assert.equal(isNotificationEnabled(rows, 'teams', 'client_review', client), true, 'Teams must remain allowed')
+  assert.equal(isNotificationEnabled(rows, 'in_app', 'client_review', client), true, 'In-App must remain allowed')
+})
+
+test('Email ON sends regardless of Teams/In-App being disabled', () => {
+  const client = { role: 'client', enableTeamsNotifications: false }
+  const rows = indexPreferences([
+    { clientId: 'c1', channel: 'teams', eventType: 'ticket_closed', enabled: false },
+    { clientId: 'c1', channel: 'in_app', eventType: 'ticket_closed', enabled: false },
+  ])
+  assert.equal(isNotificationEnabled(rows, 'email', 'ticket_closed', client), true, 'Email defaults ON and is untouched by other channels')
+  assert.equal(isNotificationEnabled(rows, 'teams', 'ticket_closed', client), false)
+  assert.equal(isNotificationEnabled(rows, 'in_app', 'ticket_closed', client), false)
+})
+
+// ─── Per-event Email ON/OFF — the events explicitly named in the audit ─────
+
+test('Email ON/OFF is enforced independently for every audited workflow event', () => {
+  const client = { role: 'client' }
+  for (const eventType of ['ticket_assigned', 'manager_review', 'client_review', 'rework', 'request_for_revision', 'ticket_closed']) {
+    const onRows = indexPreferences([{ clientId: 'c1', channel: 'email', eventType, enabled: true }])
+    const offRows = indexPreferences([{ clientId: 'c1', channel: 'email', eventType, enabled: false }])
+    assert.equal(isNotificationEnabled(onRows, 'email', eventType, client), true, `${eventType}: Email ON must send`)
+    assert.equal(isNotificationEnabled(offRows, 'email', eventType, client), false, `${eventType}: Email OFF must not send`)
+  }
+})
+
+// ─── Manager Rework vs Client Requested Revision — distinguishable events ──
+
+test('Manager Rework and Client Requested Revision are separately toggleable preferences', () => {
+  // Disabling "Rework requested" must not silently disable "Revision requested".
+  const rows = indexPreferences([{ clientId: 'c1', channel: 'email', eventType: 'rework', enabled: false }])
+  const staff = { role: 'project_manager' }
+  assert.equal(isNotificationEnabled(rows, 'email', 'rework', staff), false)
+  assert.equal(isNotificationEnabled(rows, 'email', 'request_for_revision', staff), true)
+  assert.equal(isNotificationEnabled(rows, 'email', 'revision_requested', staff), true) // alias resolves to request_for_revision
 })

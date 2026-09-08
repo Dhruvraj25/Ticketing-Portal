@@ -42,39 +42,17 @@ export const updateTicketStatus = wrapServerAction('updateTicketStatus', async f
     oldValue: t.status, newValue: newStatus,
   })
 
-  // Send Ticket Resolved notification (In-App + Email + Teams) to client and manager
+  // Send Manager Review notification (In-App + Email + Teams) to the project
+  // manager. The CLIENT is intentionally NOT notified here: 'resolved' is an
+  // internal, pre-manager-review state — the client cannot act on it yet (no
+  // approve/reject action is shown until the manager forwards it to
+  // 'client_review', see managerForwardToClient below). Notifying the client
+  // "ready for your review" at this point was both premature (nothing for
+  // them to do) and a duplicate of the correct notification sent on forward.
   if (newStatus === 'resolved' && t.clientId) {
     const ticketLink = (getPortalUrl()) + '/dashboard/tickets/' + ticketId
     const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = []
 
-    recipients.push({
-      userId: t.clientId,
-      inApp: {
-        title: 'Ticket Resolved',
-        message: `Ticket #${t.ticketNumber} (${t.title}) has been resolved by ${currentUser.name || 'Developer'} and is ready for your review.`,
-        link: `/dashboard/tickets/${ticketId}`,
-        ticketId,
-      },
-      email: {
-        templateData: {
-          ticketNumber: t.ticketNumber,
-          ticketTitle: t.title,
-          resolvedBy: currentUser.name || 'Developer',
-          resolutionSummary: '',
-          ticketLink,
-        },
-      },
-      teams: {
-        payload: {
-          ticketNumber: t.ticketNumber,
-          ticketTitle: t.title,
-          resolvedBy: currentUser.name || 'Developer',
-          url: ticketLink,
-        },
-      },
-    })
-
-    // Also notify the project manager when developer resolves a ticket
     if (t.projectId) {
       const [projectRow] = await db
         .select({ managerId: project.managerId })
@@ -85,17 +63,17 @@ export const updateTicketStatus = wrapServerAction('updateTicketStatus', async f
         recipients.push({
           userId: projectRow.managerId,
           inApp: {
-            title: 'Ticket Resolved',
-            message: `Ticket #${t.ticketNumber} (${t.title}) was resolved by ${currentUser.name || 'Developer'}.`,
+            title: 'Ticket Ready for Your Review',
+            message: `${currentUser.name || 'Developer'} marked ticket #${t.ticketNumber} (${t.title}) resolved. Review it, then forward to the client or send it back for rework.`,
             link: `/dashboard/tickets/${ticketId}`,
             ticketId,
           },
           email: {
+            eventType: 'manager_review',
             templateData: {
               ticketNumber: t.ticketNumber,
               ticketTitle: t.title,
-              resolvedBy: currentUser.name || 'Developer',
-              resolutionSummary: '',
+              resolvedByName: currentUser.name || 'Developer',
               ticketLink,
             },
           },
@@ -111,12 +89,18 @@ export const updateTicketStatus = wrapServerAction('updateTicketStatus', async f
       }
     }
 
-    await dispatchNotification({
-      eventType: 'ticket_resolved',
-      triggeredBy: currentUser.id,
-      dedup: { scope: `ticket:${ticketId}` },
-      recipients,
-    })
+    if (recipients.length > 0) {
+      // Requirement #9 — approval email on EVERY distinct manager-review
+      // cycle (resolve -> rework -> resolve again is a NEW cycle). revisionCount
+      // only increases on each rework/revision (see app/actions/revisions.ts),
+      // so it's a stable, already-tracked per-cycle marker — no new column.
+      await dispatchNotification({
+        eventType: 'manager_review',
+        triggeredBy: currentUser.id,
+        dedup: { scope: `ticket:${ticketId}:cycle:${t.revisionCount || 0}` },
+        recipients,
+      })
+    }
   }
 
   revalidatePath('/dashboard')
@@ -386,12 +370,18 @@ export const managerForwardToClient = wrapServerAction('managerForwardToClient',
     ticketId, userId: currentUser.id, action: 'forwarded_to_client', newValue: 'Forwarded for client review',
   })
 
-  // Forwarded for client review: In-App + Email + Teams
+  // Forwarded for client review: In-App + Email + Teams. This is the ONLY
+  // point the client is told "ready for your review" — never on the
+  // developer's earlier 'resolved' transition (see updateTicketStatus).
   const forwardTicketLink = (getPortalUrl()) + '/dashboard/tickets/' + ticketId
   await dispatchNotification({
     eventType: 'ticket_resolved',
     triggeredBy: currentUser.id,
-    dedup: { scope: `ticket:${ticketId}` },
+    // Requirement #9 — approval email on EVERY distinct client-review cycle
+    // (forward -> client requests changes -> rework -> forward again is a NEW
+    // cycle). revisionCount only increases on each rework/revision, so it's a
+    // stable, already-tracked per-cycle marker — no new column needed.
+    dedup: { scope: `ticket:${ticketId}:cycle:${t.revisionCount || 0}` },
     recipients: [
       {
         userId: t.clientId,

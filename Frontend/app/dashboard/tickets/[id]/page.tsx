@@ -106,10 +106,13 @@ async function RevisionHistoryWrapper({ ticketId, isManagerOrAdmin }: { ticketId
         <span className="text-xs text-muted-foreground">({revisionHistoryEntries.length})</span>
       </div>
 
-      {isManagerOrAdmin && revisionHistoryEntries.some(r => r.status === 'pending' || r.status === 'pending_approval') && (
+      {/* Only client-initiated revisions ('pending_approval') ever need a manager
+          decision — Manager Rework is actioned immediately and has no approval
+          step, so it must never surface here (no additional approval gate). */}
+      {isManagerOrAdmin && revisionHistoryEntries.some(r => r.status === 'pending_approval') && (
         <div data-tour="ticket-revision-approval" className="mb-4">
           <RevisionApprovalActions
-            pendingRevisions={revisionHistoryEntries.filter(r => r.status === 'pending' || r.status === 'pending_approval')}
+            pendingRevisions={revisionHistoryEntries.filter(r => r.status === 'pending_approval')}
             ticketId={ticketId}
           />
         </div>
@@ -118,6 +121,11 @@ async function RevisionHistoryWrapper({ ticketId, isManagerOrAdmin }: { ticketId
       <div className="space-y-4">
         {revisionHistoryEntries.slice(0, 10).map((rev, idx) => {
           const roleConfig = USER_ROLE_CONFIG[rev.requestedByRole as keyof typeof USER_ROLE_CONFIG]
+          // Manager/admin-initiated entries are "Rework"; client-initiated
+          // entries are "Request for Revision" — the two must stay visually
+          // distinguishable and correctly attributed to their actual actor.
+          const isRework = rev.requestedByRole === 'project_manager' || rev.requestedByRole === 'admin'
+          const actorLabel = rev.requestedByRole === 'project_manager' ? 'Manager' : rev.requestedByRole === 'admin' ? 'Admin' : 'Client'
           return (
             <div key={rev.id} className="relative pl-6">
               {idx < Math.min(revisionHistoryEntries.length, 10) - 1 && (
@@ -132,10 +140,17 @@ async function RevisionHistoryWrapper({ ticketId, isManagerOrAdmin }: { ticketId
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-semibold text-orange-700 dark:text-orange-300">Revision #{rev.revisionNumber}</span>
                     <span className={cn('text-xs px-2 py-0.5 rounded-full border', roleConfig?.color || 'bg-gray-50 dark:bg-slate-800/50 text-gray-600 dark:text-slate-400 border-gray-200 dark:border-slate-800')}>
-                      {rev.requestedByName}
+                      Requested by {rev.requestedByName}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      ({rev.requestedByRole === 'project_manager' ? 'Manager' : rev.requestedByRole === 'admin' ? 'Admin' : 'Client'})
+                      ({actorLabel})
+                    </span>
+                    <span className={cn('text-xs px-2 py-0.5 rounded-full border font-medium',
+                      isRework
+                        ? 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-500/30'
+                        : 'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-500/30'
+                    )}>
+                      Action: {isRework ? 'Rework' : 'Request for Revision'}
                     </span>
                   </div>
                   <span className="text-xs text-muted-foreground shrink-0">

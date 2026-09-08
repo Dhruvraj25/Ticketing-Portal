@@ -116,11 +116,15 @@ function StatsSection({ consolidatedStats, userRole }: { consolidatedStats: Cons
 // limited to the logged-in client / approver org's accessible tickets.
 
 function ClientReportsSection({ stats, userRole }: { stats: ConsolidatedStats; userRole: string }) {
+  // Each card opens the real Ticket Summary report (checkAccess already
+  // allows 'client' to run it, and it's tenant-scoped to the client's own
+  // org — see getTicketSummaryReport), filtered to the matching status, so
+  // "Reports" actually opens a report instead of the raw ticket list.
   const cards: { title: string; value: number; href: string; colorTheme?: KpiColorTheme }[] = [
-    { title: 'Total Tickets', value: stats.totalTickets, href: '/dashboard/tickets' },
-    { title: 'In Progress', value: stats.inProgressTickets, href: '/dashboard/tickets?status=in_progress', colorTheme: 'indigo' },
-    { title: 'Pending for Approval', value: stats.clientReviewCount, href: '/dashboard/tickets?status=client_review', colorTheme: 'amber' },
-    { title: 'Closed', value: stats.closedCount, href: '/dashboard/tickets?status=closed', colorTheme: 'emerald' },
+    { title: 'Total Tickets', value: stats.totalTickets, href: '/dashboard/reports/view?report=ticket_summary' },
+    { title: 'In Progress', value: stats.inProgressTickets, href: '/dashboard/reports/view?report=ticket_summary&status=in_progress', colorTheme: 'indigo' },
+    { title: 'Pending for Approval (Client)', value: stats.clientReviewCount, href: '/dashboard/reports/view?report=ticket_summary&status=client_review', colorTheme: 'amber' },
+    { title: 'Closed', value: stats.closedCount, href: '/dashboard/reports/view?report=ticket_summary&status=closed', colorTheme: 'emerald' },
   ]
 
   if (userRole !== 'client') return null

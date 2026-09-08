@@ -38,7 +38,10 @@ export const approveRevision = wrapServerAction('approveRevision', async functio
     .limit(1)
 
   if (!rev) throw new Error('Revision not found')
-  if (rev.status !== 'pending' && rev.status !== 'pending_approval') throw new Error('Revision is not pending approval')
+  // Only client-initiated revisions ever reach 'pending_approval' — Manager
+  // Rework is actioned immediately and never enters this approval pipeline
+  // (no separate Manager approval gate for Rework).
+  if (rev.status !== 'pending_approval') throw new Error('Revision is not pending approval')
 
   const [t] = await db.select().from(ticket).where(eq(ticket.id, rev.ticketId)).limit(1)
   if (!t) throw new Error('Ticket not found')
@@ -162,7 +165,8 @@ export const rejectRevision = wrapServerAction('rejectRevision', async function 
     .limit(1)
 
   if (!rev) throw new Error('Revision not found')
-  if (rev.status !== 'pending' && rev.status !== 'pending_approval') throw new Error('Revision is not pending approval')
+  // Same rule as approveRevision — Manager Rework is never in this pipeline.
+  if (rev.status !== 'pending_approval') throw new Error('Revision is not pending approval')
 
   const [t] = await db.select().from(ticket).where(eq(ticket.id, rev.ticketId)).limit(1)
   if (!t) throw new Error('Ticket not found')
@@ -304,7 +308,11 @@ export const requestRevision = wrapServerAction('requestRevision', async functio
         revisionNotes: data.revisionNotes,
         priority: data.priority || null,
         attachmentIds: data.attachmentIds || null,
-        status: currentUser.role === 'client' ? 'pending_approval' : 'pending',
+        // Manager/admin Rework is actioned immediately — there is no approval
+        // step for it, so its record is 'acknowledged' from the start and
+        // never enters the 'pending'/'pending_approval' approval pipeline
+        // that exists only for client-initiated revisions.
+        status: currentUser.role === 'client' ? 'pending_approval' : 'acknowledged',
       })
       .returning()
 
@@ -390,39 +398,21 @@ export const requestRevision = wrapServerAction('requestRevision', async functio
     await dispatchNotification({
       eventType: 'revision_requested',
       triggeredBy: currentUser.id,
-      dedup: { scope: `ticket:${data.ticketId}` },
+      // Scoped per revision record so a later revision cycle on the same
+      // ticket still notifies (matches approveRevision/rejectRevision).
+      dedup: { scope: `revision:${result.revision.id}` },
       recipients,
     })
   } else {
-    // Manager or admin rework — notify the assigned developer and client
+    // Manager or admin rework — INTERNAL ONLY. 'rework' is deliberately absent
+    // from isClientVisibleStatus() (Backend/src/lib/ticket-workflow.ts), so the
+    // client must never learn who sent the ticket back or why. Notify the
+    // assigned developer alone — never the client — matching the canonical
+    // rework notification (Backend/src/services/ticket.service.ts, TS.REWORK
+    // handling: "assigned developer is notified... Distinct from client
+    // Request for Revision").
     const ticketLink = getPortalUrl() + '/dashboard/tickets/' + data.ticketId
-    const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = [
-      {
-        userId: t.clientId,
-        inApp: {
-          title: `Rework Requested (Revision #${newRevisionNumber})`,
-          message: `${currentUser.name} sent ticket #${t.ticketNumber} back for rework: ${data.revisionNotes.substring(0, 100)}`,
-          link: `/dashboard/tickets/${data.ticketId}`,
-          ticketId: data.ticketId,
-        },
-        email: {
-          eventType: 'revision_requested',
-          templateData: {
-            ticketNumber: t.ticketNumber,
-            ticketTitle: t.title,
-            requestedByName: currentUser.name || currentUser.id,
-            revisionNotes: data.revisionNotes,
-            ticketLink,
-          },
-        },
-        teams: {
-          payload: {
-            ticketNumber: t.ticketNumber, ticketTitle: t.title,
-            requestedByName: currentUser.name || currentUser.id, revisionNotes: data.revisionNotes,
-          },
-        },
-      },
-    ]
+    const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = []
     if (t.assignedToId) {
       recipients.push({
         userId: t.assignedToId,
@@ -432,7 +422,24 @@ export const requestRevision = wrapServerAction('requestRevision', async functio
           link: `/dashboard/tickets/${data.ticketId}`,
           ticketId: data.ticketId,
         },
+        // Dedicated 'rework' email template (Backend/src/services/email/templates/rework.ts).
+        // No dedicated Teams card exists yet, so Teams still reuses the
+        // 'revision_requested' card (falls back gracefully) — the outer
+        // eventType below ('rework') still gates the recipient's own "Rework
+        // requested" In-App/Email/Teams preference independently of "Revision
+        // requested".
+        email: {
+          eventType: 'rework',
+          templateData: {
+            ticketNumber: t.ticketNumber,
+            ticketTitle: t.title,
+            requestedByName: currentUser.name || currentUser.id,
+            revisionNotes: data.revisionNotes,
+            ticketLink,
+          },
+        },
         teams: {
+          eventType: 'revision_requested',
           payload: {
             ticketNumber: t.ticketNumber, ticketTitle: t.title,
             requestedByName: currentUser.name || currentUser.id, revisionNotes: data.revisionNotes,
@@ -442,9 +449,15 @@ export const requestRevision = wrapServerAction('requestRevision', async functio
     }
 
     await dispatchNotification({
-      eventType: 'revision_requested',
+      // Distinct from the client's 'request_for_revision' event — lets a
+      // recipient toggle "Rework requested" independently of "Revision
+      // requested" (see lib/notification-catalog.ts).
+      eventType: 'rework',
       triggeredBy: currentUser.id,
-      dedup: { scope: `ticket:${data.ticketId}` },
+      // Scoped to this specific revision record (not just the ticket) so a
+      // later rework/revision cycle on the same ticket still notifies —
+      // matches approveRevision/rejectRevision's `revision:${rev.id}` scope.
+      dedup: { scope: `revision:${result.revision.id}` },
       recipients,
     })
   }
@@ -491,14 +504,14 @@ export const getRevisionDashboardStats = wrapServerAction('getRevisionDashboardS
   const currentUser = await getUser()
 
   // Pending revision requests = tickets explicitly in 'request_for_revision'
-  // (manager/admin-initiated) PLUS tickets with an active revision_history
-  // record awaiting action (status 'pending' or 'pending_approval').
-  // Client-initiated revisions keep the ticket in 'client_review' until a
-  // manager approves, so counting tickets by status alone undercounts.
+  // (client-initiated) PLUS tickets with an active revision_history record
+  // still awaiting manager approval ('pending_approval'). Manager/admin
+  // Rework has no approval step — its revision_history rows are
+  // 'acknowledged' immediately and must NOT count as "pending" here.
   const pendingRevisionIds = db
     .selectDistinct({ ticketId: revisionHistory.ticketId })
     .from(revisionHistory)
-    .where(inArray(revisionHistory.status, ['pending', 'pending_approval']))
+    .where(eq(revisionHistory.status, 'pending_approval'))
 
   const conditions = [
     or(
@@ -507,7 +520,11 @@ export const getRevisionDashboardStats = wrapServerAction('getRevisionDashboardS
     ),
   ]
   if (currentUser.role === 'client') {
-    conditions.push(eq(ticket.clientId, currentUser.id))
+    // Client Approver org-scope (own + standard accounts of the same client) —
+    // same rule as the ticket list/detail pages.
+    const { getClientOrgUserIds } = await import('@/app/actions/tickets/queries')
+    const orgIds = await getClientOrgUserIds(currentUser.id, (currentUser as any).userType ?? null)
+    conditions.push(orgIds && orgIds.length > 1 ? inArray(ticket.clientId, orgIds) : eq(ticket.clientId, currentUser.id))
   } else if (currentUser.role === 'developer') {
     conditions.push(eq(ticket.assignedToId, currentUser.id))
   } else if (currentUser.role === 'project_manager') {

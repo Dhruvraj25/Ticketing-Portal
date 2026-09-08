@@ -7,6 +7,7 @@ import { and, eq, desc, inArray, isNotNull, gte, lte } from 'drizzle-orm'
 import type { ReportFilters, ReportResult } from './types'
 import { getDateRange } from './types'
 import type { CurrentUser } from './queries'
+import { getClientOrgUserIds } from '@/app/actions/tickets/queries'
 
 // ─── Report: Support Wallet ─────────────────────────────────────────────
 export async function getSupportWalletReport(filters: ReportFilters, currentUser: CurrentUser): Promise<ReportResult> {
@@ -150,7 +151,13 @@ function defaultTxColumns() {
 export async function getWalletConsumptionReport(filters: ReportFilters, currentUser: CurrentUser): Promise<ReportResult> {
   const { since, until } = getDateRange(filters.dateFrom, filters.dateTo)
   const conditions: any[] = [gte(ticket.createdAt, since), lte(ticket.createdAt, until)]
-  if (currentUser.role === 'client') conditions.push(eq(ticket.clientId, currentUser.id))
+  if (currentUser.role === 'client') {
+    // Client Approver org-scope (own + standard accounts of the same client) —
+    // same rule as the ticket list/detail pages, so wallet consumption isn't
+    // undercounted for tickets a Standard user of the org created.
+    const orgIds = await getClientOrgUserIds(currentUser.id, currentUser.userType ?? null)
+    conditions.push(orgIds && orgIds.length > 1 ? inArray(ticket.clientId, orgIds) : eq(ticket.clientId, currentUser.id))
+  }
   if (currentUser.role === 'project_manager') {
     const managedProjects = db.select({ id: project.id }).from(project).where(eq(project.managerId, currentUser.id))
     conditions.push(inArray(ticket.projectId, managedProjects))

@@ -46,7 +46,10 @@ import { getAnalyticsReport } from './analytics'
 
 import { getCustomerReviewReport } from './customer-review-reports'
 
-export type CurrentUser = { id: string; role: UserRole }
+// userType carries the Client Approver / Standard distinction (see
+// getClientOrgUserIds in tickets/queries.ts) so ticket-scoped report handlers
+// can apply the same org-wide visibility an Approver gets everywhere else.
+export type CurrentUser = { id: string; role: UserRole; userType?: string | null }
 
 // ─── Report-type-to-tag mapping ────────────────────────────────────────
 // Used to assign specific cache tags per report type for targeted invalidation
@@ -158,7 +161,11 @@ const getCachedReportFormData = unstable_cache(
 // ─── Server Action (getCurrentUser called OUTSIDE cached wrapper) ─────────
 export const getReportFormData = wrapServerAction('getReportFormData', async function getReportFormData() {
   const { role, id: userId } = await getCurrentUser()
-  return getCachedReportFormData(role, userId)
+  const data = await getCachedReportFormData(role, userId)
+  // Role is returned (not cached) so the Report Center can show only the
+  // report types this user is authorized to run (see checkAccess) — never
+  // cached across users since it comes straight from the session.
+  return { ...data, role }
 })
 
 // ─── Cached Report Handler ────────────────────────────────────────────────
@@ -170,9 +177,9 @@ export const getReportFormData = wrapServerAction('getReportFormData', async fun
 
 const getCachedReportHandler = unstable_cache(
   async (cacheKey: string) => {
-    const { reportType, filtersJson, role, userId } = JSON.parse(cacheKey)
+    const { reportType, filtersJson, role, userId, userType } = JSON.parse(cacheKey)
     const filters: ReportFilters = JSON.parse(filtersJson)
-    const currentUser: CurrentUser = { id: userId, role }
+    const currentUser: CurrentUser = { id: userId, role, userType: userType ?? null }
 
     const handler = REPORT_HANDLERS[reportType]
     if (!handler) throw new Error('Invalid report type')
@@ -200,11 +207,15 @@ export const getReportData = wrapServerAction('getReportData', async function ge
   // Cache key encodes everything that affects output: filters, role, and user ID.
   // Role is included for access control (admin sees all, client sees own).
   // User ID is included because role-based queries filter by userId.
+  // userType distinguishes a Client Approver from a Standard client — ticket-
+  // scoped handlers use it to widen the client's own-tickets filter to their
+  // whole org (see getClientOrgUserIds), so it must also be part of the key.
   const cacheKey = JSON.stringify({
     reportType: filters.reportType,
     filtersJson: JSON.stringify(filters),
     role: currentUser.role,
     userId: currentUser.id,
+    userType: (currentUser as any).userType ?? null,
   })
 
   return getCachedReportHandler(cacheKey)

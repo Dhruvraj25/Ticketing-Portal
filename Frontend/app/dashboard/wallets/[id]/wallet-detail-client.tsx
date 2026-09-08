@@ -19,7 +19,6 @@ import {
   XCircle,
   Activity,
   TrendingUp,
-  BarChart3,
   FileText,
   Ticket,
   Eye,
@@ -52,58 +51,6 @@ import { TicketStatus, TICKET_STATUS_CONFIG, WALLET_STATUS_CONFIG } from '@/lib/
 import type { SupportWallet, WalletTransaction, UserRole, WalletTransactionType } from '@/lib/types'
 import { getWalletContractStatus } from '@/lib/wallet-utils'
 import { SupportValidityPicker } from '@/components/ui/support-validity-picker'
-
-// Utilization Chart — uses CSS transform scaleX instead of width animation to prevent CLS
-function UtilizationChart({
-  purchased,
-  reserved,
-  consumed,
-  remaining,
-}: {
-  purchased: number
-  reserved: number
-  consumed: number
-  remaining: number
-}) {
-  const total = purchased || 1
-  const consumedPct = (consumed / total) * 100
-  const reservedPct = (reserved / total) * 100
-  const remainingPct = (remaining / total) * 100
-
-  return (
-    <div className="space-y-4">
-      <div className="h-4 rounded-full bg-muted overflow-hidden flex">
-        <div
-          className="h-full bg-blue-500 origin-left transition-transform duration-700"
-          style={{ transform: `scaleX(${consumedPct / 100})`, width: `${consumedPct}%` }}
-        />
-        <div
-          className="h-full bg-amber-400 origin-left transition-transform duration-700"
-          style={{ transform: `scaleX(${reservedPct / 100})`, width: `${reservedPct}%` }}
-        />
-        <div
-          className="h-full bg-emerald-500 origin-left transition-transform duration-700"
-          style={{ transform: `scaleX(${remainingPct / 100})`, width: `${remainingPct}%` }}
-        />
-      </div>
-
-      <div className="grid grid-cols-3 gap-2 text-center">
-        <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/15 border border-blue-100">
-          <p className="text-lg font-bold text-blue-600 dark:text-blue-400">{consumed}</p>
-          <p className="text-xs text-blue-500 dark:text-blue-400">Consumed</p>
-        </div>
-        <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/15 border border-amber-100">
-          <p className="text-lg font-bold text-amber-600 dark:text-amber-400">{reserved}</p>
-          <p className="text-xs text-amber-500 dark:text-amber-400">Reserved</p>
-        </div>
-        <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-100">
-          <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{remaining}</p>
-          <p className="text-xs text-emerald-500 dark:text-emerald-400">Remaining</p>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // Transaction type badge
 function TransactionTypeBadge({ type }: { type: string }) {
@@ -352,21 +299,6 @@ export function WalletDetailClient({
             )}
           </div>
         </div>
-      </div>
-
-      {/* Utilization Chart */}
-      <div data-tour="wallet-detail-utilization" className="rounded-xl bg-white dark:bg-slate-900 border border-border p-6"
-      >
-        <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-          <BarChart3 className="h-4 w-4 text-primary" />
-          Hour Utilization
-        </h3>
-        <UtilizationChart
-          purchased={wallet.totalPurchasedHours}
-          reserved={wallet.reservedHours}
-          consumed={wallet.consumedHours}
-          remaining={wallet.remainingHours}
-        />
       </div>
 
       {/* Tabs */}
