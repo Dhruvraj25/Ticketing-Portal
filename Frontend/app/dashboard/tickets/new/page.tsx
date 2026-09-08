@@ -120,11 +120,42 @@ export default function NewTicketPage() {
   const [dragOver, setDragOver] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
 
-  // Load user role and clients on mount
+  // Single initialization/restoration flow (mount-only). Everything the page
+  // needs on first paint — user role, clients, projects, modules — is loaded
+  // here, and a saved draft (read exactly ONCE, into `draft` below) is
+  // restored as each dependent piece becomes available:
+  //   simple fields (no option list to wait for) -> restored immediately
+  //   clientId   -> restored once clients  are loaded
+  //   projectId  -> restored once projects are loaded (scoped to the
+  //                 restored client, if any)
+  //   moduleId   -> restored once modules  are loaded (scoped to the
+  //                 restored project)
+  // Keeping this as ONE effect (not two) means there is only one place that
+  // reads localStorage and only one order of operations — a second,
+  // independently-timed effect can never race this one or apply a
+  // different draft snapshot.
   useEffect(() => {
-    async function load() {
+    async function init() {
       console.log('[CreateTicket] Initial load')
       try {
+        // Read the draft exactly once. Every restoration below — simple
+        // fields now, Client/Project/Module as their option lists arrive —
+        // reads from this same snapshot, never re-reading localStorage.
+        const draft = loadTicketDraft()
+
+        // Simple fields have no async option list to wait for, so restore
+        // them right away — a saved value always wins over the useState
+        // defaults ('medium' / 'general' / '') that are otherwise in place
+        // while the rest of this function is still loading.
+        if (draft) {
+          if (draft.title) setTitle(draft.title)
+          if (draft.description) setDescription(draft.description)
+          if (draft.priority) setPriority(draft.priority as TicketPriority)
+          if (draft.category) setCategory(draft.category as TicketCategory)
+          if (draft.environment) setEnvironment(draft.environment)
+          if (draft.additionalInfo) setAdditionalInfo(draft.additionalInfo)
+        }
+
         // Check user role via session
         try {
           const sessionRes = await fetch('/api/auth/me')
@@ -149,8 +180,7 @@ export default function NewTicketPage() {
 
         // A saved draft takes precedence over URL/default auto-selection so
         // every dropdown selection survives a refresh (Save Draft requirement).
-        const draft = loadTicketDraft()
-
+        //
         // NOTE: must check against `clientList` (the value just fetched above),
         // not the `clients` state var — `clients` is captured from this effect's
         // render closure (still the initial `[]`) since setClients() hasn't
@@ -229,24 +259,7 @@ export default function NewTicketPage() {
         console.error('[CreateTicket] Initial load failed:', e)
       }
     }
-    load()
-  }, [])
-
-  // Restore simple fields from a saved draft.
-  // Project / Module / Client are restored inside load() so the restored
-  // dropdown values always resolve against freshly loaded option lists.
-  // NOTE: this effect deliberately runs AFTER the load() effect above, so a
-  // saved priority/category/environment always wins over the state defaults
-  // ('medium' / 'general' / '') that were in place while options loaded.
-  useEffect(() => {
-    const draft = loadTicketDraft()
-    if (!draft) return
-    if (draft.title) setTitle(draft.title)
-    if (draft.description) setDescription(draft.description)
-    if (draft.priority) setPriority(draft.priority as TicketPriority)
-    if (draft.category) setCategory(draft.category as TicketCategory)
-    if (draft.environment) setEnvironment(draft.environment)
-    if (draft.additionalInfo) setAdditionalInfo(draft.additionalInfo)
+    init()
   }, [])
 
   // When the user picks a different project we must clear the now-invalid

@@ -164,8 +164,20 @@ test('create-ticket page has no leftover raw localStorage draft access (single s
 
 // ─── Regression: the REAL production bug — restored values overwritten AFTER restore ─
 // The deployed build restored title/description but every dropdown snapped back to
-// its default. These tests pin the structural guarantees that prevent that class of
-// bug, because the page cannot be mounted under plain node:test.
+// its default. Root cause: draft restoration was split across TWO independent
+// mount-time useEffect blocks while Client -> Project -> Module loading was
+// asynchronous, so option-list loading and draft restoration could race. The
+// fix merges everything into ONE initialization/restoration flow (a single
+// `init()` inside a single `useEffect`) that reads the draft exactly once and
+// restores each field as soon as its dependencies are ready. These tests pin
+// that structure, because the page cannot be mounted under plain node:test.
+
+function getInitEffectBody(): string {
+  const start = NEW_TICKET_PAGE_SRC.indexOf('async function init()')
+  const end = NEW_TICKET_PAGE_SRC.indexOf('\n    init()', start)
+  assert.ok(start !== -1 && end !== -1, 'the single init() restoration flow must exist')
+  return NEW_TICKET_PAGE_SRC.slice(start, end)
+}
 
 test('hasDraftSelection: draft is authoritative for a field only when a non-empty value is saved', () => {
   assert.equal(hasDraftSelection({ projectId: '7' }, 'projectId'), true)
@@ -174,17 +186,42 @@ test('hasDraftSelection: draft is authoritative for a field only when a non-empt
   assert.equal(hasDraftSelection(null, 'projectId'), false)
 })
 
+test('there is exactly ONE mount-time initialization/restoration flow (no second competing draft effect)', () => {
+  const effectStarts = [...NEW_TICKET_PAGE_SRC.matchAll(/useEffect\(\(\) => \{/g)]
+  // Every remaining useEffect in the file belongs to something other than
+  // mount-time draft restoration (there is none left to find) — specifically
+  // assert the OLD second effect signature is gone and only one effect calls
+  // loadTicketDraft().
+  assert.ok(!NEW_TICKET_PAGE_SRC.includes('useEffect(() => {\n    const draft = loadTicketDraft()'),
+    'the old second "restore simple fields" effect must no longer exist as its own effect')
+  const loadTicketDraftCalls = [...NEW_TICKET_PAGE_SRC.matchAll(/loadTicketDraft\(\)/g)]
+  assert.equal(loadTicketDraftCalls.length, 1, 'loadTicketDraft() must be called exactly once in the whole file')
+})
+
+test('simple fields (title/description/priority/category/environment/additionalInfo) restore synchronously, before any network await', () => {
+  const body = getInitEffectBody()
+  const draftReadIdx = body.indexOf('const draft = loadTicketDraft()')
+  const simpleFieldsIdx = body.indexOf('setPriority(draft.priority as TicketPriority)')
+  const firstAwaitIdx = body.indexOf('await fetch(')
+  assert.ok(draftReadIdx !== -1 && simpleFieldsIdx !== -1 && firstAwaitIdx !== -1)
+  assert.ok(
+    draftReadIdx < simpleFieldsIdx && simpleFieldsIdx < firstAwaitIdx,
+    'simple fields must be restored from the draft before the first network await (user role fetch), so they never depend on async timing',
+  )
+  for (const field of ['title', 'description', 'priority', 'category', 'environment', 'additionalInfo']) {
+    assert.match(body, new RegExp(`draft\\.${field}`), `init() must restore "${field}"`)
+  }
+})
+
 test('initial-load effect must NOT auto-select the Support project/module when the draft saved none (default must not override saved empty state)', () => {
-  const loadStart = NEW_TICKET_PAGE_SRC.indexOf('async function load()')
-  const loadEnd = NEW_TICKET_PAGE_SRC.indexOf('\n    load()', loadStart)
-  const loadBody = NEW_TICKET_PAGE_SRC.slice(loadStart, loadEnd)
+  const body = getInitEffectBody()
   assert.match(
-    loadBody,
+    body,
     /hasDraftSelection\(draft, 'projectId'\)/,
     'Support-project fallback must be gated on the draft having no saved project',
   )
   assert.match(
-    loadBody,
+    body,
     /hasDraftSelection\(draft, 'moduleId'\)/,
     'Support-module fallback must be gated on the draft having no saved module',
   )
@@ -194,43 +231,30 @@ test('user-driven project change clears the module, but the restore path must no
   // Clearing the module when the USER picks a different project is correct;
   // what must never happen is the async restore flow invoking this handler,
   // because it would wipe the just-restored module. The restore path in
-  // load() must therefore fetch modules itself instead of calling
+  // init() must therefore fetch modules itself instead of calling
   // handleProjectChange.
   const handlerStart = NEW_TICKET_PAGE_SRC.indexOf('const handleProjectChange = useCallback')
   const handlerEnd = NEW_TICKET_PAGE_SRC.indexOf('\n  }, [', handlerStart)
   const handlerBody = NEW_TICKET_PAGE_SRC.slice(handlerStart, handlerEnd)
   assert.match(handlerBody, /setSelectedModuleId\(''\)/, 'user picking a new project must clear the stale module')
 
-  const loadStart = NEW_TICKET_PAGE_SRC.indexOf('async function load()')
-  const loadEnd = NEW_TICKET_PAGE_SRC.indexOf('\n    load()', loadStart)
-  const loadBody = NEW_TICKET_PAGE_SRC.slice(loadStart, loadEnd)
+  const body = getInitEffectBody()
   assert.ok(
-    !loadBody.includes('handleProjectChange'),
+    !body.includes('handleProjectChange'),
     'the restore path must fetch modules itself, never via handleProjectChange (which clears the module)',
   )
-  // Ordering guarantee: the restored module id is applied only AFTER the
-  // freshly fetched module list has been set, so the value always exists in
-  // the list the Select renders from.
-  const setModulesIdx = loadBody.indexOf('setModules(mods)')
-  const setModuleIdx = loadBody.indexOf('setSelectedModuleId(restoredModuleId)')
+  // Ordering guarantee: Project is restored only after projects are loaded,
+  // and the restored module id is applied only AFTER the freshly fetched
+  // module list has been set, so both values always exist in the list the
+  // Select renders from.
+  const setProjectsIdx = body.indexOf('setProjects(projs)')
+  const setProjectIdx = body.indexOf('setSelectedProjectId(selectedProjId)')
+  assert.ok(setProjectsIdx !== -1 && setProjectIdx !== -1 && setProjectIdx > setProjectsIdx,
+    'project restore must apply after setProjects(projs) so the option list exists')
+  const setModulesIdx = body.indexOf('setModules(mods)')
+  const setModuleIdx = body.indexOf('setSelectedModuleId(restoredModuleId)')
   assert.ok(setModulesIdx !== -1 && setModuleIdx !== -1 && setModuleIdx > setModulesIdx,
     'module restore must apply after setModules(mods) so the option list exists')
-})
-
-test('restore-simple-fields effect runs after the initial-load effect and restores every dropdown field', () => {
-  const loadEffectStart = NEW_TICKET_PAGE_SRC.indexOf('useEffect(() => {\n    async function load()')
-  const restoreStart = NEW_TICKET_PAGE_SRC.indexOf('useEffect(() => {\n    const draft = loadTicketDraft()')
-  assert.ok(loadEffectStart !== -1, 'initial-load effect exists')
-  assert.ok(restoreStart !== -1, 'simple-fields restore effect exists')
-  assert.ok(
-    restoreStart > loadEffectStart,
-    'simple-fields restore must be declared after load() so saved priority/category/environment win over defaults',
-  )
-  const restoreEnd = NEW_TICKET_PAGE_SRC.indexOf('\n  }, [])', restoreStart)
-  const restoreBody = NEW_TICKET_PAGE_SRC.slice(restoreStart, restoreEnd)
-  for (const field of ['priority', 'category', 'environment', 'additionalInfo']) {
-    assert.match(restoreBody, new RegExp(`draft\\.${field}`), `restore effect must apply "${field}"`)
-  }
 })
 
 test('draft save payload keys exactly match the restore contract (no ID/label drift)', () => {
@@ -244,25 +268,35 @@ test('draft save payload keys exactly match the restore contract (no ID/label dr
 })
 
 test('restore resolves every dropdown against the list it will render from (fresh fetch, not stale state)', () => {
-  const loadStart = NEW_TICKET_PAGE_SRC.indexOf('async function load()')
-  const loadEnd = NEW_TICKET_PAGE_SRC.indexOf('\n    load()', loadStart)
-  const loadBody = NEW_TICKET_PAGE_SRC.slice(loadStart, loadEnd)
+  const body = getInitEffectBody()
   // Client resolved against clientList (just fetched), Project against projs, Module against mods
-  assert.match(loadBody, /resolveDraftSelection\(draft\?\.clientId, clientList, \(c\) => c\.id\)/)
-  assert.match(loadBody, /resolveDraftSelection\(draft\?\.projectId, projs, \(p\) => p\.id\)/)
-  assert.match(loadBody, /resolveDraftSelection\(draft\?\.moduleId, mods, \(m\) => m\.id\)/)
+  assert.match(body, /resolveDraftSelection\(draft\?\.clientId, clientList, \(c\) => c\.id\)/)
+  assert.match(body, /resolveDraftSelection\(draft\?\.projectId, projs, \(p\) => p\.id\)/)
+  assert.match(body, /resolveDraftSelection\(draft\?\.moduleId, mods, \(m\) => m\.id\)/)
 })
 
 test('project/client dropdown restoration resolves against the freshly-fetched list, not stale component state', () => {
   // Regression guard for the original bug: checking against `clients`/`projects`
   // state (captured by this effect's closure before setClients/setProjects had
   // re-rendered) always fails and silently drops the saved selection.
-  const loadStart = NEW_TICKET_PAGE_SRC.indexOf('async function load()')
-  const loadEnd = NEW_TICKET_PAGE_SRC.indexOf('\n    load()', loadStart)
-  const loadBody = NEW_TICKET_PAGE_SRC.slice(loadStart, loadEnd)
-  assert.match(loadBody, /resolveDraftSelection\(draft\?\.clientId, clientList,/)
-  assert.match(loadBody, /resolveDraftSelection\(draft\?\.projectId, projs,/)
-  assert.match(loadBody, /resolveDraftSelection\(draft\?\.moduleId, mods,/)
+  const body = getInitEffectBody()
+  assert.match(body, /resolveDraftSelection\(draft\?\.clientId, clientList,/)
+  assert.match(body, /resolveDraftSelection\(draft\?\.projectId, projs,/)
+  assert.match(body, /resolveDraftSelection\(draft\?\.moduleId, mods,/)
+})
+
+test('ID type consistency: Project/Module/Client are compared as strings on both the draft and the option side', () => {
+  const body = getInitEffectBody()
+  // resolveDraftSelection itself normalizes both sides via String(...) (see
+  // lib/ticket-draft.ts), so the call sites only need to pass the raw id
+  // accessor — verify none of them pre-coerce in a way that could drift from
+  // the Select's `value={String(p.id)}` / `value={String(m.id)}` / `value={c.id}`.
+  assert.match(body, /resolveDraftSelection\(draft\?\.clientId, clientList, \(c\) => c\.id\)/)
+  assert.match(body, /resolveDraftSelection\(draft\?\.projectId, projs, \(p\) => p\.id\)/)
+  assert.match(body, /resolveDraftSelection\(draft\?\.moduleId, mods, \(m\) => m\.id\)/)
+  // Every place a resolved/found id is assigned back into state goes through String(...).
+  assert.match(body, /selectedProjId = String\(supportProject\.id\)/)
+  assert.match(body, /restoredModuleId = String\(supportModule\.id\)/)
 })
 
 // ─── Requirement #12: an invalid/stale saved selection is CLEARED, never ──
@@ -334,28 +368,20 @@ test('Category and Priority restore their saved non-default values and never fal
   assert.notEqual(reloaded?.priority, 'medium', 'must not have silently reverted to the MEDIUM default')
 })
 
-test('restore effect applies priority/category/environment unconditionally (not gated behind any async list)', () => {
+test('init() applies priority/category/environment unconditionally (not gated behind any async list)', () => {
   // Unlike Client/Project/Module, these three have no "does it still exist in
   // a fetched list" concern (Category/Priority come from static config
-  // objects; Environment from a hardcoded option list) — the restore effect
-  // must set them directly from the draft with no resolveDraftSelection call.
-  const restoreStart = NEW_TICKET_PAGE_SRC.indexOf('useEffect(() => {\n    const draft = loadTicketDraft()')
-  const restoreEnd = NEW_TICKET_PAGE_SRC.indexOf('\n  }, [])', restoreStart)
-  const restoreBody = NEW_TICKET_PAGE_SRC.slice(restoreStart, restoreEnd)
-  assert.match(restoreBody, /setPriority\(draft\.priority as TicketPriority\)/)
-  assert.match(restoreBody, /setCategory\(draft\.category as TicketCategory\)/)
-  assert.match(restoreBody, /setEnvironment\(draft\.environment\)/)
+  // objects; Environment from a hardcoded option list) — init() must set
+  // them directly from the draft with no resolveDraftSelection call.
+  const body = getInitEffectBody()
+  assert.match(body, /setPriority\(draft\.priority as TicketPriority\)/)
+  assert.match(body, /setCategory\(draft\.category as TicketCategory\)/)
+  assert.match(body, /setEnvironment\(draft\.environment\)/)
 })
 
 // ─── No timeouts / race-condition hacks in the restore path ────────────────
 
 test('regression: no setTimeout/setInterval is used anywhere in the draft restore or save logic', () => {
-  const loadStart = NEW_TICKET_PAGE_SRC.indexOf('async function load()')
-  const loadEnd = NEW_TICKET_PAGE_SRC.indexOf('\n    load()', loadStart)
-  const loadBody = NEW_TICKET_PAGE_SRC.slice(loadStart, loadEnd)
-  const restoreStart = NEW_TICKET_PAGE_SRC.indexOf('useEffect(() => {\n    const draft = loadTicketDraft()')
-  const restoreEnd = NEW_TICKET_PAGE_SRC.indexOf('\n  }, [])', restoreStart)
-  const restoreBody = NEW_TICKET_PAGE_SRC.slice(restoreStart, restoreEnd)
-  assert.ok(!loadBody.includes('setTimeout') && !loadBody.includes('setInterval'))
-  assert.ok(!restoreBody.includes('setTimeout') && !restoreBody.includes('setInterval'))
+  const body = getInitEffectBody()
+  assert.ok(!body.includes('setTimeout') && !body.includes('setInterval'))
 })
