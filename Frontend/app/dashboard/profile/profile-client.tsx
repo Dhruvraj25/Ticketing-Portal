@@ -4,6 +4,7 @@ import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
+import { useAutoRefreshGuard } from '@/components/dashboard/auto-refresh-provider'
 import {
   updateProfile,
   updateProfileImage,
@@ -152,6 +153,23 @@ export function ProfileClient({ user }: ProfileClientProps) {
   const [resetDialogOpen, setResetDialogOpen] = useState(false)
   const [resetSubmitting, setResetSubmitting] = useState(false)
   const [resetStatus, setResetStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  // Unsaved-changes guard: never let the portal-wide background refresh
+  // (AutoRefreshProvider) run while the user has edited any profile field
+  // and hasn't saved yet, so a 30s idle tick can never wipe in-progress edits.
+  const isDirty =
+    fullName !== user.name ||
+    about !== (user.about ?? '') ||
+    phone !== (user.phone ?? '') ||
+    countryCode !== (user.countryCode ?? 'US') ||
+    timezone !== (user.timezone ?? 'UTC') ||
+    language !== (user.language ?? 'en') ||
+    timeFormat !== ((user.timeFormat as '12h' | '24h') || '12h') ||
+    dateFormat !== (user.dateFormat ?? 'MM/dd/yyyy') ||
+    currentPassword !== '' ||
+    newPassword !== '' ||
+    confirmPassword !== ''
+  useAutoRefreshGuard(isDirty)
 
   const themePref = theme ?? 'light'
   // Strict role policy: only Admin and Project Manager can change passwords

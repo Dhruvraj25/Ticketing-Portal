@@ -13,7 +13,6 @@ import { TICKET_STATUS_CONFIG, TICKET_PRIORITY_CONFIG, TICKET_CATEGORY_CONFIG } 
 import { TicketStatus } from '@/lib/types'
 import { TicketStatusActions } from '@/components/dashboard/ticket-status-actions'
 import { PriorityEditor } from '@/components/dashboard/priority-editor'
-import { TicketAutoRefresh } from '@/components/dashboard/ticket-auto-refresh'
 import { TicketDatesEditor } from '@/components/dashboard/ticket-dates-editor'
 import { PageTimer } from '@/lib/performance-profiler'
 
@@ -266,8 +265,8 @@ export default async function TicketDetailPage({
 
     return (
       <div className="flex flex-col h-full -mx-4 sm:-mx-6 lg:-mx-10">
-        {/* Background refresh — keeps ticket data current while the user is idle */}
-        <TicketAutoRefresh />
+        {/* Background refresh is handled portal-wide by AutoRefreshProvider
+            (app/dashboard/layout.tsx) — no page-local timer needed here. */}
         {/* Back navigation */}
         <div data-tour="ticket-back-nav" className="px-4 lg:px-6 pt-3 pb-0">
           <div className="flex items-center gap-2">

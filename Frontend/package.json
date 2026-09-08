@@ -16,7 +16,8 @@
     "test:support-hours": "node --experimental-strip-types --test tests/support-hours-ui.test.ts",
     "test:ticket-draft": "node --experimental-strip-types --test tests/ticket-draft.test.ts",
     "test:ticket-dates": "node --experimental-strip-types --test tests/admin-ticket-dates.test.ts",
-    "test:dashboard-clock": "node --experimental-strip-types --test tests/dashboard-clock.test.ts"
+    "test:dashboard-clock": "node --experimental-strip-types --test tests/dashboard-clock.test.ts",
+    "test:auto-refresh": "node --experimental-strip-types --test tests/auto-refresh.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

@@ -8,6 +8,7 @@ import { NotificationProvider } from '@/components/dashboard/notification-provid
 import { KeyboardShortcutsProvider } from '@/components/dashboard/keyboard-shortcuts-provider'
 import { LoadingProvider } from '@/components/loading-provider'
 import { TourProvider } from '@/components/tour/tour-provider'
+import { AutoRefreshProvider } from '@/components/dashboard/auto-refresh-provider'
 import { TimezoneProvider } from '@/components/timezone-provider'
 import { getCurrentUser } from '@/lib/auth-utils'
 import { getNotifications } from '@/app/actions/notifications'
@@ -63,6 +64,7 @@ export default async function DashboardLayout({
             userRole={currentUser!.role as UserRole}
             userName={currentUser!.name}
           >
+            <AutoRefreshProvider>
             <KeyboardShortcutsProvider userRole={currentUser!.role as UserRole}>
             <div className="min-h-screen bg-[#F4F7F9] dark:bg-slate-950 flex">
               {/* Sidebar — dynamically loaded (no SSR) to eliminate hydration mismatches */}
@@ -86,6 +88,7 @@ export default async function DashboardLayout({
               </main>
             </div>
             </KeyboardShortcutsProvider>
+            </AutoRefreshProvider>
           </TourProvider>
           </TimezoneProvider>
         </SidebarProvider>

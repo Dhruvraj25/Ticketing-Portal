@@ -21,6 +21,7 @@ import {
 import { TICKET_PRIORITY_CONFIG, TICKET_CATEGORY_CONFIG, VALIDATION } from '@/lib/types'
 import type { TicketPriority, TicketCategory } from '@/lib/types'
 import { loadTicketDraft, saveTicketDraft, clearTicketDraft, resolveDraftSelection, hasDraftSelection } from '@/lib/ticket-draft'
+import { useAutoRefreshGuard } from '@/components/dashboard/auto-refresh-provider'
 import dynamic from 'next/dynamic'
 import { cn } from '@/lib/utils'
 import { stripHtml } from '@/lib/format'
@@ -90,6 +91,11 @@ const STEP_LABELS: Record<Step, string> = {
 export default function NewTicketPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  // Never let the portal-wide background refresh (AutoRefreshProvider) run
+  // underneath an in-progress ticket creation — a mid-typing router.refresh()
+  // could interrupt the fragile draft-restore lifecycle or drop staged image
+  // previews. Suppressed unconditionally for as long as this page is mounted.
+  useAutoRefreshGuard(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [step, setStep] = useState<Step>('details')
