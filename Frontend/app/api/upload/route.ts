@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
       (resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
           {
-            folder: 'supporthub/attachments',
+            folder: 'Support Hero/attachments',
             resource_type: 'auto',
             use_filename: true,
             unique_filename: true,

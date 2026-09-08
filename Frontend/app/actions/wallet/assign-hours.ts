@@ -334,7 +334,7 @@ export const autoCreateWalletForClient = async function autoCreateWalletForClien
     })
     .returning()
 
-  console.log(`[SupportHub] Auto-created client wallet #${newWallet.id} for client ${clientId}`)
+  console.log(`[Support Hero] Auto-created client wallet #${newWallet.id} for client ${clientId}`)
   return newWallet
 }
 

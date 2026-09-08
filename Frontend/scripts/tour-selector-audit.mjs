@@ -240,7 +240,7 @@ if (asJson) {
   )
 } else {
   console.log('╔══════════════════════════════════════════════════════════════╗')
-  console.log('║   SupportHub Tour Selector Audit                              ║')
+  console.log('║   Support Hero Tour Selector Audit                           ║')
   console.log('╚══════════════════════════════════════════════════════════════╝')
   console.log('')
 

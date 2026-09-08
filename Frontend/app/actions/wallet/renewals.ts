@@ -83,10 +83,10 @@ export async function _getClientRenewalStatusImpl(currentUser: { id: string; rol
           message,
           link: wallet.id ? `/dashboard/wallets/${wallet.id}` : '/dashboard/wallets',
           isRead: false,
-        }).catch((err: Error) => console.error('[SupportHub] Failed to create renewal notification:', err))
+        }).catch((err: Error) => console.error('[Support Hero] Failed to create renewal notification:', err))
       }
     } catch (err) {
-      console.error('[SupportHub] Failed to check renewal notification:', err)
+      console.error('[Support Hero] Failed to check renewal notification:', err)
     }
   }
 
