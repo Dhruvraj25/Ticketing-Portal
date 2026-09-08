@@ -74,8 +74,8 @@ export default async function ClientNotificationPreferencesPage({
           Back to Clients
         </Link>
     <div className="space-y-6">
-      <div className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6">
-       
+        <div className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6">
+        
         <PageHeader
           title="Notification Preferences"
           subtitle={`Manage notification preferences for ${initialData.client.name} — Email, Teams, and In-App channels per event.`}
