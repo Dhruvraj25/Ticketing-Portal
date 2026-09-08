@@ -120,6 +120,20 @@ export default function NewTicketPage() {
   const [dragOver, setDragOver] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
 
+  // Guards the entire mount-time draft-restoration flow (init(), below).
+  // Radix's <Select> drives a hidden native <select> to stay form-compatible;
+  // when a controlled `value` is set programmatically to an id whose
+  // <SelectItem> was only just added to the list in the same update (exactly
+  // what happens when we restore a saved Project/Client/Module the instant
+  // its option list finishes loading), that native element can briefly have
+  // no matching <option>, and the browser's native reset fires a `change`
+  // event Radix forwards to us as onValueChange(''). Every dropdown's change
+  // handler checks this ref and ignores a "user cleared it" (empty-string)
+  // callback while a restore is in flight, so a spurious reset can never
+  // silently wipe a value we just restored. It never suppresses a GENUINE
+  // user action, because it is always false again once init() finishes.
+  const restoringDraftRef = useRef(false)
+
   // Single initialization/restoration flow (mount-only). Everything the page
   // needs on first paint — user role, clients, projects, modules — is loaded
   // here, and a saved draft (read exactly ONCE, into `draft` below) is
@@ -137,6 +151,10 @@ export default function NewTicketPage() {
   useEffect(() => {
     async function init() {
       console.log('[CreateTicket] Initial load')
+      // Active for the FULL restoration flow — draft read, simple fields,
+      // client, projects, project, modules, module — cleared in `finally`
+      // below so it can never get stuck on if something throws partway.
+      restoringDraftRef.current = true
       try {
         // Read the draft exactly once. Every restoration below — simple
         // fields now, Client/Project/Module as their option lists arrive —
@@ -257,6 +275,11 @@ export default function NewTicketPage() {
         }
       } catch (e) {
         console.error('[CreateTicket] Initial load failed:', e)
+      } finally {
+        // Restoration (successful, partial, or failed) is over — every
+        // dropdown's onValueChange handler goes back to treating an empty
+        // callback as a genuine user action from here on.
+        restoringDraftRef.current = false
       }
     }
     init()
@@ -287,6 +310,13 @@ export default function NewTicketPage() {
 
   const handleProjectChange = useCallback(async (projectId: string) => {
     console.log('[CreateTicket] Project changed to:', projectId)
+    if (restoringDraftRef.current && !projectId) {
+      // Radix's Select emitted a spurious empty value while we were still
+      // restoring a saved Project — not a real user action. See the
+      // restoringDraftRef comment near its declaration for why this happens.
+      console.log('[CreateTicket] Ignoring empty Project change during draft restoration')
+      return
+    }
     setSelectedProjectId(projectId)
     setSelectedModuleId('')
     setModules([])
@@ -296,6 +326,41 @@ export default function NewTicketPage() {
     }
     await loadModulesForProject(projectId)
   }, [loadModulesForProject])
+
+  // When the user picks a different client we must clear the now-invalid
+  // Project/Module selection and reload the client's projects — but not when
+  // Radix emits a spurious empty callback while a saved Client is still
+  // being restored (see restoringDraftRef). Draft client restoration itself
+  // never calls this handler — it sets selectedClientId directly inside
+  // init() — so this guard only protects against the empty-emission quirk.
+  const handleClientChange = useCallback(async (clientId: string) => {
+    if (restoringDraftRef.current && !clientId) {
+      console.log('[CreateTicket] Ignoring empty Client change during draft restoration')
+      return
+    }
+    setSelectedClientId(clientId)
+    setSelectedProjectId('')
+    setSelectedModuleId('')
+    setModules([])
+    if (clientId) {
+      const projs = await getTicketFormProjects(clientId)
+      setProjects(projs)
+    } else {
+      const projs = await getTicketFormProjects()
+      setProjects(projs)
+    }
+  }, [])
+
+  // Guards the Module Select the same way as Project/Client: ignore a
+  // spurious empty callback while a saved Module is still being restored,
+  // never a genuine user clearing it after restoration.
+  const handleModuleChange = useCallback((moduleId: string) => {
+    if (restoringDraftRef.current && !moduleId) {
+      console.log('[CreateTicket] Ignoring empty Module change during draft restoration')
+      return
+    }
+    setSelectedModuleId(moduleId)
+  }, [])
 
   function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
@@ -648,7 +713,10 @@ export default function NewTicketPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div data-tour="ticket-category" className="space-y-2">
                   <Label htmlFor="category">Category</Label>
-                  <Select value={category} onValueChange={(v) => setCategory(v as TicketCategory)}>
+                  <Select value={category} onValueChange={(v) => {
+                    if (restoringDraftRef.current && !v) return
+                    setCategory(v as TicketCategory)
+                  }}>
                     <SelectTrigger className="h-11 rounded-xl bg-input/50 border-border/50">
                       <SelectValue />
                     </SelectTrigger>
@@ -662,7 +730,10 @@ export default function NewTicketPage() {
 
                 <div className="space-y-2" data-tour="ticket-priority">
                   <Label htmlFor="priority">Priority</Label>
-                  <Select value={priority} onValueChange={(v) => setPriority(v as TicketPriority)}>
+                  <Select value={priority} onValueChange={(v) => {
+                    if (restoringDraftRef.current && !v) return
+                    setPriority(v as TicketPriority)
+                  }}>
                     <SelectTrigger className="h-11 rounded-xl bg-input/50 border-border/50">
                       <SelectValue />
                     </SelectTrigger>
@@ -680,19 +751,7 @@ export default function NewTicketPage() {
                   <Label htmlFor="client">
                     Client <span className="text-destructive">*</span>
                   </Label>
-                  <Select value={selectedClientId} onValueChange={async (clientId) => {
-                    setSelectedClientId(clientId)
-                    setSelectedProjectId('')
-                    setSelectedModuleId('')
-                    setModules([])
-                    if (clientId) {
-                      const projs = await getTicketFormProjects(clientId)
-                      setProjects(projs)
-                    } else {
-                      const projs = await getTicketFormProjects()
-                      setProjects(projs)
-                    }
-                  }}>
+                  <Select value={selectedClientId} onValueChange={handleClientChange}>
                     <SelectTrigger className="h-11 rounded-xl bg-input/50 border-border/50">
                       <SelectValue placeholder="Select client" />
                     </SelectTrigger>
@@ -739,7 +798,7 @@ export default function NewTicketPage() {
                   </Label>
                   <Select
                     value={selectedModuleId}
-                    onValueChange={setSelectedModuleId}
+                    onValueChange={handleModuleChange}
                     disabled={!selectedProjectId || loadingModules}
                   >
                     <SelectTrigger className="h-11 rounded-xl bg-input/50 border-border/50">
@@ -782,7 +841,10 @@ export default function NewTicketPage() {
                 <Label htmlFor="environment">
                   Environment <span className="text-destructive">*</span>
                 </Label>
-                <Select value={environment} onValueChange={setEnvironment}>
+                <Select value={environment} onValueChange={(v) => {
+                  if (restoringDraftRef.current && !v) return
+                  setEnvironment(v)
+                }}>
                   <SelectTrigger className="h-11 rounded-xl bg-input/50 border-border/50">
                     <SelectValue placeholder="Select environment" />
                   </SelectTrigger>

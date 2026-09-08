@@ -385,3 +385,180 @@ test('regression: no setTimeout/setInterval is used anywhere in the draft restor
   const body = getInitEffectBody()
   assert.ok(!body.includes('setTimeout') && !body.includes('setInterval'))
 })
+
+// ============================================================================
+// restoringDraftRef — spurious empty-onValueChange guard
+// ============================================================================
+// Production evidence: after "[CreateTicket] Restored project from draft: 45"
+// and "Loading modules for project: 45", the console also logged
+// "[CreateTicket] Project changed to:" (empty) followed by "Project
+// deselected, clearing modules" — i.e. the Project <Select>'s onValueChange
+// fired with '' immediately after we programmatically restored it to '45',
+// and handleProjectChange treated that as a real user action and wiped both
+// the restored project and module.
+//
+// Root cause: Radix's <Select> keeps a hidden native <select> in sync for
+// native form semantics (autofill/validation). When a controlled `value` is
+// set to an id whose <SelectItem>/<option> was only just added to the option
+// list in the SAME update (exactly what restoring Project does: setProjects()
+// and setSelectedProjectId() land in one batched render, right as the
+// project's own <SelectItem> is created), the native element can momentarily
+// have no matching <option>. The browser silently resets the native
+// select's value, firing a native `change` event that Radix's hidden-input
+// bridge forwards to us as onValueChange(''). This is a Radix/browser timing
+// quirk, not a bug in this project's components/ui/select.tsx wrapper (see
+// the "select.tsx is a pure pass-through" test below) — restoringDraftRef
+// guards against it at the call site instead.
+
+test('restoringDraftRef: declared via useRef(false), not a plain variable (survives re-renders, starts false)', () => {
+  assert.match(NEW_TICKET_PAGE_SRC, /const restoringDraftRef = useRef\(false\)/)
+})
+
+test('restoringDraftRef is set true at the very start of init(), before any restoration work', () => {
+  const body = getInitEffectBody()
+  const setTrueIdx = body.indexOf('restoringDraftRef.current = true')
+  const draftReadIdx = body.indexOf('const draft = loadTicketDraft()')
+  assert.ok(setTrueIdx !== -1, 'must arm the guard')
+  assert.ok(setTrueIdx < draftReadIdx, 'guard must be armed before the draft is even read, so no restoration step is ever unprotected')
+})
+
+test('restoringDraftRef is cleared in a finally block, after module restoration, so it can never get stuck on', () => {
+  const start = NEW_TICKET_PAGE_SRC.indexOf('async function init()')
+  const finallyIdx = NEW_TICKET_PAGE_SRC.indexOf('} finally {', start)
+  const clearIdx = NEW_TICKET_PAGE_SRC.indexOf('restoringDraftRef.current = false', start)
+  const moduleRestoreIdx = NEW_TICKET_PAGE_SRC.indexOf('if (restoredModuleId) setSelectedModuleId(restoredModuleId)', start)
+  assert.ok(finallyIdx !== -1, 'must clear the guard in a finally so a thrown error (e.g. a failed fetch) can never leave it stuck on')
+  assert.ok(clearIdx !== -1 && clearIdx > finallyIdx, 'the clear must happen inside the finally block')
+  assert.ok(moduleRestoreIdx !== -1 && clearIdx > moduleRestoreIdx,
+    'the guard must stay active through draft load, simple fields, client, projects, project, modules, AND module restoration — cleared only after all of it')
+})
+
+test('handleProjectChange ignores an empty callback while restoring, but still clears on a genuine empty selection afterward', () => {
+  const start = NEW_TICKET_PAGE_SRC.indexOf('const handleProjectChange = useCallback')
+  const end = NEW_TICKET_PAGE_SRC.indexOf('\n  }, [', start)
+  const body = NEW_TICKET_PAGE_SRC.slice(start, end)
+  const guardIdx = body.indexOf("if (restoringDraftRef.current && !projectId)")
+  const clearIdx = body.indexOf("setSelectedProjectId(projectId)")
+  assert.ok(guardIdx !== -1, 'handleProjectChange must ignore a spurious empty callback while restoringDraftRef is active')
+  assert.ok(clearIdx !== -1 && guardIdx < clearIdx, 'the guard must run BEFORE any state is cleared')
+  assert.match(body, /return\s*\n\s*\}/, 'the guard branch must return early, skipping the clear logic entirely')
+})
+
+test('handleClientChange (extracted from the inline JSX handler) carries the same empty-value guard, and draft client restoration never routes through it', () => {
+  const start = NEW_TICKET_PAGE_SRC.indexOf('const handleClientChange = useCallback')
+  assert.ok(start !== -1, 'the Client change handler must be a named, guarded callback — not an unguarded inline arrow function')
+  const end = NEW_TICKET_PAGE_SRC.indexOf('\n  }, [])', start)
+  const body = NEW_TICKET_PAGE_SRC.slice(start, end)
+  assert.match(body, /if \(restoringDraftRef\.current && !clientId\)/)
+  assert.match(body, /setSelectedProjectId\(''\)/, 'a genuine client change must still clear the stale project')
+  assert.match(body, /setSelectedModuleId\(''\)/, 'a genuine client change must still clear the stale module')
+
+  // The JSX must use the named handler, not an inline function (no duplicate logic).
+  assert.match(NEW_TICKET_PAGE_SRC, /<Select value=\{selectedClientId\} onValueChange=\{handleClientChange\}>/)
+
+  // Draft client restoration itself sets state directly inside init() — it
+  // must never call handleClientChange (which would clear the just-restored
+  // project/module even without the empty-value quirk).
+  const initBody = getInitEffectBody()
+  assert.ok(!initBody.includes('handleClientChange'), 'client restoration must set selectedClientId directly, never via handleClientChange')
+})
+
+test('handleModuleChange carries the same empty-value guard, and the Module Select uses it instead of the raw setter', () => {
+  const start = NEW_TICKET_PAGE_SRC.indexOf('const handleModuleChange = useCallback')
+  assert.ok(start !== -1, 'the Module change handler must be a named, guarded callback — not the raw setSelectedModuleId setter')
+  const end = NEW_TICKET_PAGE_SRC.indexOf('\n  }, [])', start)
+  const body = NEW_TICKET_PAGE_SRC.slice(start, end)
+  assert.match(body, /if \(restoringDraftRef\.current && !moduleId\)/)
+  assert.match(body, /setSelectedModuleId\(moduleId\)/)
+  assert.match(NEW_TICKET_PAGE_SRC, /onValueChange=\{handleModuleChange\}/)
+  assert.ok(!NEW_TICKET_PAGE_SRC.includes('onValueChange={setSelectedModuleId}'), 'the Module Select must no longer wire the raw setter directly')
+})
+
+test('Category/Priority/Environment onValueChange handlers also ignore an empty callback during restoration', () => {
+  // Lower risk (their SelectItem list is static, always mounted) but the
+  // production screenshot showed simple fields going blank too, so these are
+  // guarded the same way for defense in depth.
+  const categoryIdx = NEW_TICKET_PAGE_SRC.indexOf('value={category} onValueChange=')
+  const priorityIdx = NEW_TICKET_PAGE_SRC.indexOf('value={priority} onValueChange=')
+  const environmentIdx = NEW_TICKET_PAGE_SRC.indexOf('value={environment} onValueChange=')
+  for (const [name, idx] of [['category', categoryIdx], ['priority', priorityIdx], ['environment', environmentIdx]] as const) {
+    assert.ok(idx !== -1, `${name} Select not found`)
+    const snippet = NEW_TICKET_PAGE_SRC.slice(idx, idx + 250)
+    assert.match(snippet, /if \(restoringDraftRef\.current && !v\) return/, `${name} onValueChange must ignore an empty callback while restoring`)
+  }
+})
+
+test('the guard never uses setTimeout/retries/polling — it is a synchronous ref check only', () => {
+  for (const handlerStart of [
+    NEW_TICKET_PAGE_SRC.indexOf('const handleProjectChange = useCallback'),
+    NEW_TICKET_PAGE_SRC.indexOf('const handleClientChange = useCallback'),
+    NEW_TICKET_PAGE_SRC.indexOf('const handleModuleChange = useCallback'),
+  ]) {
+    const end = NEW_TICKET_PAGE_SRC.indexOf('\n  }, [', handlerStart)
+    const body = NEW_TICKET_PAGE_SRC.slice(handlerStart, end)
+    assert.ok(!body.includes('setTimeout') && !body.includes('setInterval') && !body.includes('await new Promise'))
+  }
+})
+
+test('select.tsx is an unmodified, pure pass-through wrapper around Radix — confirmed NOT responsible for the empty-emission quirk', () => {
+  const selectSrc = readFileSync(join(ROOT, 'components', 'ui', 'select.tsx'), 'utf8')
+  // No custom onValueChange interception, no value coercion, no state of its
+  // own — every exported piece is a thin data-slot wrapper around
+  // @radix-ui/react-select primitives, spreading props straight through.
+  assert.match(selectSrc, /from '@radix-ui\/react-select'/)
+  assert.ok(!selectSrc.includes('onValueChange'), 'the wrapper must not intercept onValueChange — Radix calls the caller-provided handler directly')
+  assert.ok(!selectSrc.includes('useState') && !selectSrc.includes('useRef'), 'the wrapper holds no state of its own that could cause a spurious reset')
+})
+
+// ─── The exact reported sequence (production console evidence) ────────────
+
+test('SEQUENCE: restore projectId=45 -> spurious empty callback ignored -> 45 and its module survive -> a later real change still clears', () => {
+  // This reproduces the decision the code makes at each step, using the same
+  // boolean condition the handler bodies were just asserted to contain above
+  // (`restoringDraftRef.current && !projectId`), against a fake ref — the
+  // real component can't be mounted under plain node:test, so this pins the
+  // exact state-machine behavor the structural assertions above guarantee is
+  // wired into the real handler.
+  const restoringDraftRef = { current: false }
+  let selectedProjectId = ''
+  let selectedModuleId = ''
+  let modulesCleared = false
+
+  function handleProjectChange(projectId: string) {
+    if (restoringDraftRef.current && !projectId) return // the guard under test
+    selectedProjectId = projectId
+    selectedModuleId = ''
+    modulesCleared = true
+    if (!projectId) return
+    modulesCleared = false // loadModulesForProject would now fetch fresh modules
+  }
+
+  // 1. Restore draft projectId=45 (init() sets state directly, not via the handler).
+  restoringDraftRef.current = true
+  selectedProjectId = '45'
+  const restoredModules = [{ id: 501 }, { id: 502 }]
+  selectedModuleId = '502' // saved module, restored after modules load
+
+  // 2. Radix emits the spurious empty callback while still restoring.
+  handleProjectChange('')
+
+  // 3-6. It was ignored: Project remains 45, modules remain loaded, saved module remains selected.
+  assert.equal(selectedProjectId, '45', 'Project must remain restored')
+  assert.equal(selectedModuleId, '502', 'saved Module must remain selected')
+  assert.equal(modulesCleared, false, 'modules must not have been cleared')
+  assert.equal(restoredModules.length, 2, 'the fetched module list itself is untouched by the ignored callback')
+
+  // Restoration finishes.
+  restoringDraftRef.current = false
+
+  // 7. A later GENUINE user Project change must still clear the module normally.
+  handleProjectChange('99')
+  assert.equal(selectedProjectId, '99')
+  assert.equal(selectedModuleId, '', 'a real user project change must still clear the module')
+  assert.equal(modulesCleared, false, 'loadModulesForProject would now run for the new project')
+
+  // And a genuine user clearing the project (selecting nothing) after
+  // restoration must also go through normally, not be swallowed.
+  handleProjectChange('')
+  assert.equal(selectedProjectId, '', 'a genuine empty selection after restoration must be honored')
+})
