@@ -65,15 +65,17 @@ export default async function ClientNotificationPreferencesPage({
   pageTimer.finish()
 
   return (
-    <div className="space-y-6">
-      <div className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6">
-        <Link
+    <>
+     <Link
           href="/dashboard/clients"
           className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors mb-4"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to Clients
         </Link>
+    <div className="space-y-6">
+      <div className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6">
+       
         <PageHeader
           title="Notification Preferences"
           subtitle={`Manage notification preferences for ${initialData.client.name} — Email, Teams, and In-App channels per event.`}
@@ -95,5 +97,6 @@ export default async function ClientNotificationPreferencesPage({
         initialData={initialData}
       />
     </div>
+    </>
   )
 }
