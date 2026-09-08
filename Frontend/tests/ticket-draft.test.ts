@@ -264,3 +264,98 @@ test('project/client dropdown restoration resolves against the freshly-fetched l
   assert.match(loadBody, /resolveDraftSelection\(draft\?\.projectId, projs,/)
   assert.match(loadBody, /resolveDraftSelection\(draft\?\.moduleId, mods,/)
 })
+
+// ─── Requirement #12: an invalid/stale saved selection is CLEARED, never ──
+// silently replaced by the Support-project/module default or any other
+// fallback. This is the exact decision the page makes for Project/Module:
+//   resolveDraftSelection(...) -> null (id no longer in the list)
+//   hasDraftSelection(...)     -> true (the draft DID save something)
+//   => the "no draft selection at all" auto-fallback branch must be SKIPPED,
+//      leaving the field cleared instead of defaulting to "Support".
+
+test('invalid saved Project id: resolves to null, and the page\'s own fallback chain (no URL param) leaves it cleared', () => {
+  const draft = { projectId: '999' } // no longer exists in the fetched list
+  const projs = [{ id: 1, projectName: 'Alpha' }, { id: 2, projectName: 'Support' }]
+  const resolved = resolveDraftSelection(draft.projectId, projs, (p) => p.id)
+  assert.equal(resolved, null, 'stale id must not resolve')
+  assert.equal(hasDraftSelection(draft, 'projectId'), true, 'the draft DID save a project, so this is not "no selection at all"')
+
+  // Reproduce the page's exact fallback chain (app/dashboard/tickets/new/page.tsx):
+  //   let selectedProjId = resolveDraftSelection(...)
+  //   if (selectedProjId) {}
+  //   else if (urlParam && found) { selectedProjId = urlParam }
+  //   else if (!hasDraftSelection(draft, 'projectId')) { auto-select Support }
+  const urlParam: string | null = null
+  let selectedProjId: string | null = resolved
+  if (selectedProjId) {
+    // restored from draft
+  } else if (urlParam && projs.find((p) => String(p.id) === urlParam)) {
+    selectedProjId = urlParam
+  } else if (!hasDraftSelection(draft, 'projectId')) {
+    const supportProject = projs.find((p) => p.projectName.toLowerCase().includes('support'))
+    if (supportProject) selectedProjId = String(supportProject.id)
+  }
+  assert.equal(selectedProjId, null, 'an invalid saved project must be left cleared, never silently defaulted to Support')
+})
+
+test('invalid saved Module id: resolves to null and the Support-fallback stays gated off (field is cleared, not defaulted)', () => {
+  const draft = { moduleId: '999' }
+  const mods = [{ id: 10, moduleName: 'Support' }]
+  const resolved = resolveDraftSelection(draft.moduleId, mods, (m) => m.id)
+  assert.equal(resolved, null)
+  assert.equal(hasDraftSelection(draft, 'moduleId'), true)
+})
+
+test('genuinely empty draft (no saved project/module at all) DOES still get the normal new-ticket Support default', () => {
+  // Requirement #11 — normal new-ticket defaults must be preserved for a
+  // brand-new ticket (no draft) or a draft that explicitly saved nothing.
+  const emptyDraft = { title: 'no dropdowns picked yet' }
+  assert.equal(hasDraftSelection(emptyDraft, 'projectId'), false)
+  assert.equal(hasDraftSelection(emptyDraft, 'moduleId'), false)
+  assert.equal(hasDraftSelection(null, 'projectId'), false, 'a brand-new ticket (no draft) must also get the normal default')
+})
+
+// ─── Environment / Category / Priority — explicit, non-default restoration ─
+
+test('Environment restores a non-default saved value exactly (static options, no async dependency)', () => {
+  resetStorage()
+  saveTicketDraft({ environment: 'testing' })
+  const reloaded = loadTicketDraft()
+  assert.equal(reloaded?.environment, 'testing', 'Environment has no async option list, so it has no excuse to fail restoration')
+})
+
+test('Category and Priority restore their saved non-default values and never fall back to general/medium', () => {
+  resetStorage()
+  saveTicketDraft({ category: 'integration', priority: 'urgent' })
+  const reloaded = loadTicketDraft()
+  assert.equal(reloaded?.category, 'integration')
+  assert.notEqual(reloaded?.category, 'general', 'must not have silently reverted to the General default')
+  assert.equal(reloaded?.priority, 'urgent')
+  assert.notEqual(reloaded?.priority, 'medium', 'must not have silently reverted to the MEDIUM default')
+})
+
+test('restore effect applies priority/category/environment unconditionally (not gated behind any async list)', () => {
+  // Unlike Client/Project/Module, these three have no "does it still exist in
+  // a fetched list" concern (Category/Priority come from static config
+  // objects; Environment from a hardcoded option list) — the restore effect
+  // must set them directly from the draft with no resolveDraftSelection call.
+  const restoreStart = NEW_TICKET_PAGE_SRC.indexOf('useEffect(() => {\n    const draft = loadTicketDraft()')
+  const restoreEnd = NEW_TICKET_PAGE_SRC.indexOf('\n  }, [])', restoreStart)
+  const restoreBody = NEW_TICKET_PAGE_SRC.slice(restoreStart, restoreEnd)
+  assert.match(restoreBody, /setPriority\(draft\.priority as TicketPriority\)/)
+  assert.match(restoreBody, /setCategory\(draft\.category as TicketCategory\)/)
+  assert.match(restoreBody, /setEnvironment\(draft\.environment\)/)
+})
+
+// ─── No timeouts / race-condition hacks in the restore path ────────────────
+
+test('regression: no setTimeout/setInterval is used anywhere in the draft restore or save logic', () => {
+  const loadStart = NEW_TICKET_PAGE_SRC.indexOf('async function load()')
+  const loadEnd = NEW_TICKET_PAGE_SRC.indexOf('\n    load()', loadStart)
+  const loadBody = NEW_TICKET_PAGE_SRC.slice(loadStart, loadEnd)
+  const restoreStart = NEW_TICKET_PAGE_SRC.indexOf('useEffect(() => {\n    const draft = loadTicketDraft()')
+  const restoreEnd = NEW_TICKET_PAGE_SRC.indexOf('\n  }, [])', restoreStart)
+  const restoreBody = NEW_TICKET_PAGE_SRC.slice(restoreStart, restoreEnd)
+  assert.ok(!loadBody.includes('setTimeout') && !loadBody.includes('setInterval'))
+  assert.ok(!restoreBody.includes('setTimeout') && !restoreBody.includes('setInterval'))
+})
