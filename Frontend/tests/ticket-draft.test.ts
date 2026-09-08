@@ -251,10 +251,15 @@ test('user-driven project change clears the module, but the restore path must no
   const setProjectIdx = body.indexOf('setSelectedProjectId(selectedProjId)')
   assert.ok(setProjectsIdx !== -1 && setProjectIdx !== -1 && setProjectIdx > setProjectsIdx,
     'project restore must apply after setProjects(projs) so the option list exists')
+  // Module restoration is two-phase (see the pendingModuleIdRef tests below):
+  // init() only ever RECORDS the resolved id as pending, after setModules();
+  // it must never call setSelectedModuleId directly (that's what raced Radix).
   const setModulesIdx = body.indexOf('setModules(mods)')
-  const setModuleIdx = body.indexOf('setSelectedModuleId(restoredModuleId)')
-  assert.ok(setModulesIdx !== -1 && setModuleIdx !== -1 && setModuleIdx > setModulesIdx,
-    'module restore must apply after setModules(mods) so the option list exists')
+  const setPendingIdx = body.indexOf('pendingModuleIdRef.current = restoredModuleId')
+  assert.ok(setModulesIdx !== -1 && setPendingIdx !== -1 && setPendingIdx > setModulesIdx,
+    'pending module restoration must be recorded after setModules(mods) so the option list exists')
+  assert.ok(!body.includes('setSelectedModuleId(restoredModuleId)'),
+    'init() must never call setSelectedModuleId directly for the restored module — that is exactly the same-commit race that hit Project')
 })
 
 test('draft save payload keys exactly match the restore contract (no ID/label drift)', () => {
@@ -426,11 +431,11 @@ test('restoringDraftRef is cleared in a finally block, after module restoration,
   const start = NEW_TICKET_PAGE_SRC.indexOf('async function init()')
   const finallyIdx = NEW_TICKET_PAGE_SRC.indexOf('} finally {', start)
   const clearIdx = NEW_TICKET_PAGE_SRC.indexOf('restoringDraftRef.current = false', start)
-  const moduleRestoreIdx = NEW_TICKET_PAGE_SRC.indexOf('if (restoredModuleId) setSelectedModuleId(restoredModuleId)', start)
+  const moduleRestoreIdx = NEW_TICKET_PAGE_SRC.indexOf('pendingModuleIdRef.current = restoredModuleId', start)
   assert.ok(finallyIdx !== -1, 'must clear the guard in a finally so a thrown error (e.g. a failed fetch) can never leave it stuck on')
   assert.ok(clearIdx !== -1 && clearIdx > finallyIdx, 'the clear must happen inside the finally block')
   assert.ok(moduleRestoreIdx !== -1 && clearIdx > moduleRestoreIdx,
-    'the guard must stay active through draft load, simple fields, client, projects, project, modules, AND module restoration — cleared only after all of it')
+    'the guard must stay active through draft load, simple fields, client, projects, project, modules, AND recording the pending module restoration — cleared only after all of it')
 })
 
 test('handleProjectChange ignores an empty callback while restoring, but still clears on a genuine empty selection afterward', () => {
@@ -561,4 +566,187 @@ test('SEQUENCE: restore projectId=45 -> spurious empty callback ignored -> 45 an
   // restoration must also go through normally, not be swallowed.
   handleProjectChange('')
   assert.equal(selectedProjectId, '', 'a genuine empty selection after restoration must be honored')
+})
+
+// ============================================================================
+// pendingModuleIdRef — two-phase Module restoration
+// ============================================================================
+// Production evidence: "[CreateTicket] Restored module from draft: 103" was
+// logged — draft.moduleId resolved correctly against the freshly-fetched
+// module list — yet the UI still showed the "Select module" placeholder.
+// Root cause: setModules(mods) and setSelectedModuleId(restoredModuleId)
+// were dispatched in the SAME synchronous span, so React batched them into
+// ONE commit: the <SelectItem>/<option> for module 103 and the controlled
+// `value="103"` landed in the DOM together. Radix's hidden native <select>
+// (kept in sync for native form semantics) can end up assigning `.value`
+// before the matching <option> has actually been inserted in that same
+// patch, so the browser silently resets it to "" and Radix forwards that as
+// onValueChange('') — indistinguishable from restoringDraftRef's already-
+// guarded case, except this time the emission carries no useful signal at
+// all: the net effect is simply that selectedModuleId never became "103" in
+// the first place (or was immediately reset), even though our own state
+// (and the console log) correctly computed it.
+//
+// Fix: never call setSelectedModuleId in the same tick as setModules(mods).
+// init() stores the resolved id in pendingModuleIdRef instead; a SEPARATE
+// effect keyed on `modules` applies it only once the module list has
+// already committed and painted in its OWN prior render — so the matching
+// <option> unquestionably exists before the controlled value ever points
+// at it.
+
+function getPendingModuleEffectBody(): string {
+  const start = NEW_TICKET_PAGE_SRC.indexOf('const pendingId = pendingModuleIdRef.current')
+  const end = NEW_TICKET_PAGE_SRC.indexOf('\n  }, [modules])', start)
+  assert.ok(start !== -1 && end !== -1, 'the pending-module-restoration effect must exist')
+  return NEW_TICKET_PAGE_SRC.slice(start, end)
+}
+
+test('pendingModuleIdRef: declared via useRef, not state (no extra re-render just to track it)', () => {
+  assert.match(NEW_TICKET_PAGE_SRC, /const pendingModuleIdRef = useRef<string \| null>\(null\)/)
+})
+
+test('init() records the resolved module id as PENDING, never calling setSelectedModuleId in the same commit as setModules', () => {
+  const body = getInitEffectBody()
+  assert.match(body, /if \(restoredModuleId\) pendingModuleIdRef\.current = restoredModuleId/)
+  assert.ok(!body.includes('setSelectedModuleId('), 'init() must never call setSelectedModuleId directly — only the pending-restoration effect may')
+})
+
+test('the pending-module effect is a SEPARATE useEffect keyed on `modules`, not folded into init()', () => {
+  const effectDeclIdx = NEW_TICKET_PAGE_SRC.indexOf('useEffect(() => {\n    const pendingId = pendingModuleIdRef.current')
+  assert.ok(effectDeclIdx !== -1, 'must be its own useEffect')
+  assert.match(NEW_TICKET_PAGE_SRC.slice(effectDeclIdx, effectDeclIdx + 800), /\}, \[modules\]\)/,
+    'must run whenever the module option list changes, i.e. strictly after it has rendered — never inline inside init()')
+})
+
+test('the pending-module effect applies the id only if still present in the current module list, then always clears the pending ref', () => {
+  const body = getPendingModuleEffectBody()
+  assert.match(body, /modules\.some\(\(m\) => String\(m\.id\) === pendingId\)/)
+  assert.match(body, /setSelectedModuleId\(pendingId\)/)
+  assert.match(body, /pendingModuleIdRef\.current = null/)
+})
+
+test('a genuine Project/Client change clears any outstanding pending module restoration (never applied to the wrong module list)', () => {
+  const projStart = NEW_TICKET_PAGE_SRC.indexOf('const handleProjectChange = useCallback')
+  const projEnd = NEW_TICKET_PAGE_SRC.indexOf('\n  }, [loadModulesForProject])', projStart)
+  assert.match(NEW_TICKET_PAGE_SRC.slice(projStart, projEnd), /pendingModuleIdRef\.current = null/)
+
+  const clientStart = NEW_TICKET_PAGE_SRC.indexOf('const handleClientChange = useCallback')
+  const clientEnd = NEW_TICKET_PAGE_SRC.indexOf('\n  }, [])', clientStart)
+  assert.match(NEW_TICKET_PAGE_SRC.slice(clientStart, clientEnd), /pendingModuleIdRef\.current = null/)
+})
+
+test('handleModuleChange (genuine user selection) never touches pendingModuleIdRef', () => {
+  // Requirement: the normal onValueChange handler must not interfere with a
+  // pending restoration — it doesn't need to, because the pending effect
+  // only ever acts when pendingModuleIdRef is non-null, which user-driven
+  // changes never set.
+  const start = NEW_TICKET_PAGE_SRC.indexOf('const handleModuleChange = useCallback')
+  const end = NEW_TICKET_PAGE_SRC.indexOf('\n  }, [])', start)
+  const body = NEW_TICKET_PAGE_SRC.slice(start, end)
+  assert.ok(!body.includes('pendingModuleIdRef'), 'handleModuleChange must not clear (or set) the pending restoration')
+})
+
+test('no duplicate module API request was introduced to fix this — getTicketFormModules is still called exactly once per project load', () => {
+  const initBody = getInitEffectBody()
+  const calls = [...initBody.matchAll(/getTicketFormModules\(/g)]
+  assert.equal(calls.length, 1, 'init() must fetch modules exactly once for the restored/auto-selected project')
+})
+
+// ─── The exact reported production sequence ────────────────────────────────
+
+test('SEQUENCE (production case): draft.moduleId="103" against the exact reported module list -> selectedModuleId ends as "103"', () => {
+  // Reproduces the two-phase decision the real code makes, using the same
+  // conditions asserted into the real source above: init() resolves + defers
+  // via pendingModuleIdRef, a SEPARATE modules-keyed effect applies it.
+  const draftModuleId = '103'
+  const modules = [
+    { id: 104, moduleName: 'Admin Dashboard' },
+    { id: 103, moduleName: 'Order & Payments' },
+    { id: 101, moduleName: 'Product Catalog' },
+    { id: 102, moduleName: 'Shopping Cart' },
+    { id: 100, moduleName: 'User Authentication' },
+  ]
+
+  const pendingModuleIdRef = { current: null as string | null }
+  let selectedModuleId = ''
+
+  // Phase 1 (inside init(), same commit as setModules): resolve and DEFER.
+  const resolved = resolveDraftSelection(draftModuleId, modules, (m) => m.id)
+  assert.equal(resolved, '103')
+  pendingModuleIdRef.current = resolved // NOT setSelectedModuleId(resolved)
+  assert.equal(selectedModuleId, '', 'selectedModuleId must NOT change in phase 1 — this is exactly what avoided the Radix race')
+
+  // Phase 2 (separate effect, after `modules` has already rendered):
+  function applyPendingModuleEffect() {
+    const pendingId = pendingModuleIdRef.current
+    if (!pendingId) return
+    if (modules.some((m) => String(m.id) === pendingId)) {
+      selectedModuleId = pendingId
+    }
+    pendingModuleIdRef.current = null
+  }
+  applyPendingModuleEffect()
+
+  assert.equal(selectedModuleId, '103', 'the Module Select must end up showing "Order & Payments" (id 103), not the placeholder')
+  assert.equal(pendingModuleIdRef.current, null, 'pending state must be resolved, not left hanging')
+})
+
+test('SEQUENCE: Radix emits an empty value on the Module Select during initialization -> ignored', () => {
+  const restoringDraftRef = { current: true }
+  let selectedModuleId = '103' // already applied by the pending effect
+  function handleModuleChange(moduleId: string) {
+    if (restoringDraftRef.current && !moduleId) return
+    selectedModuleId = moduleId
+  }
+  handleModuleChange('') // the spurious Radix callback
+  assert.equal(selectedModuleId, '103', 'a spurious empty callback during restoration must not clear the restored module')
+})
+
+test('SEQUENCE: a genuine user module change is accepted', () => {
+  const restoringDraftRef = { current: false } // restoration long finished
+  let selectedModuleId = '103'
+  function handleModuleChange(moduleId: string) {
+    if (restoringDraftRef.current && !moduleId) return
+    selectedModuleId = moduleId
+  }
+  handleModuleChange('104')
+  assert.equal(selectedModuleId, '104', 'a real user selection must always apply')
+})
+
+test('SEQUENCE: changing Project clears the Module normally (including any outstanding pending restoration)', () => {
+  const pendingModuleIdRef = { current: '103' as string | null } // still outstanding
+  let selectedModuleId = '103'
+  let modules: { id: number }[] = [{ id: 103 }, { id: 104 }]
+
+  function handleProjectChange(projectId: string) {
+    selectedModuleId = ''
+    modules = []
+    pendingModuleIdRef.current = null
+  }
+  handleProjectChange('77')
+
+  assert.equal(selectedModuleId, '', 'module must clear on a real project change')
+  assert.equal(modules.length, 0)
+  assert.equal(pendingModuleIdRef.current, null, 'a stale pending restoration must not survive into the new project\'s module list')
+})
+
+test('SEQUENCE: an invalid/stale saved module id remains unselected (never falls back to some other module)', () => {
+  const draftModuleId = '999' // does not exist in this project's modules
+  const modules = [{ id: 100 }, { id: 101 }]
+  const pendingModuleIdRef = { current: null as string | null }
+  let selectedModuleId = ''
+
+  const resolved = resolveDraftSelection(draftModuleId, modules, (m) => m.id)
+  assert.equal(resolved, null, 'an invalid id must not resolve')
+  pendingModuleIdRef.current = resolved // stays null — nothing to apply
+
+  function applyPendingModuleEffect() {
+    const pendingId = pendingModuleIdRef.current
+    if (!pendingId) return
+    if (modules.some((m) => String(m.id) === pendingId)) selectedModuleId = pendingId
+    pendingModuleIdRef.current = null
+  }
+  applyPendingModuleEffect()
+
+  assert.equal(selectedModuleId, '', 'an invalid saved module id must leave the field unselected, never auto-pick a different module')
 })

@@ -134,6 +134,18 @@ export default function NewTicketPage() {
   // user action, because it is always false again once init() finishes.
   const restoringDraftRef = useRef(false)
 
+  // Two-phase Module restoration. Even with restoringDraftRef, setting
+  // selectedModuleId in the SAME update as setModules(mods) still races
+  // Radix's hidden native <select>: the <SelectItem>/<option> for the
+  // restored module and the controlled `value` pointing at it would commit
+  // together, so the browser can momentarily have no matching <option> and
+  // silently resets the native element to "" (see restoringDraftRef comment
+  // for the full mechanism). Storing the resolved id here instead — and
+  // only calling setSelectedModuleId from the effect below, once `modules`
+  // has already rendered — means the option always exists in the DOM
+  // *before* the controlled value ever points at it.
+  const pendingModuleIdRef = useRef<string | null>(null)
+
   // Single initialization/restoration flow (mount-only). Everything the page
   // needs on first paint — user role, clients, projects, modules — is loaded
   // here, and a saved draft (read exactly ONCE, into `draft` below) is
@@ -266,7 +278,12 @@ export default function NewTicketPage() {
                 console.log('[CreateTicket] Auto-selected Support module:', restoredModuleId, supportModule.moduleName)
               }
             }
-            if (restoredModuleId) setSelectedModuleId(restoredModuleId)
+            // Do NOT setSelectedModuleId here — that would land in the same
+            // commit as setModules(mods) above and hit the same Radix race
+            // that Project restoration does. Record it as pending instead;
+            // the effect below applies it once `modules` has actually
+            // rendered its <SelectItem>s.
+            if (restoredModuleId) pendingModuleIdRef.current = restoredModuleId
           } catch (e) {
             console.error('[CreateTicket] Failed to load modules:', e)
           } finally {
@@ -284,6 +301,26 @@ export default function NewTicketPage() {
     }
     init()
   }, [])
+
+  // Phase 2 of Module draft restoration (see pendingModuleIdRef above): runs
+  // whenever `modules` changes, i.e. strictly AFTER the module list has
+  // already committed and rendered its <SelectItem>s — never in the same
+  // update that set them. Only then do we point the controlled value at the
+  // pending id, so the matching <option> already exists in the DOM by the
+  // time Radix's hidden native <select> is asked to select it.
+  useEffect(() => {
+    const pendingId = pendingModuleIdRef.current
+    if (!pendingId) return
+    const stillValid = modules.some((m) => String(m.id) === pendingId)
+    if (stillValid) {
+      console.log('[CreateTicket] Applying pending module restoration:', pendingId)
+      setSelectedModuleId(pendingId)
+    }
+    // Resolved either way (applied, or no longer valid for this list) — a
+    // pending id must never carry over and get applied against some LATER,
+    // unrelated module list (e.g. after the user changes project).
+    pendingModuleIdRef.current = null
+  }, [modules])
 
   // When the user picks a different project we must clear the now-invalid
   // Module selection — but NOT when this handler is invoked programmatically
@@ -320,6 +357,10 @@ export default function NewTicketPage() {
     setSelectedProjectId(projectId)
     setSelectedModuleId('')
     setModules([])
+    // A genuine project change makes any still-outstanding pending Module
+    // restoration meaningless — it belonged to the OLD project's module
+    // list. Clear it so it can never be misapplied to the new one.
+    pendingModuleIdRef.current = null
     if (!projectId) {
       console.log('[CreateTicket] Project deselected, clearing modules')
       return
@@ -342,6 +383,7 @@ export default function NewTicketPage() {
     setSelectedProjectId('')
     setSelectedModuleId('')
     setModules([])
+    pendingModuleIdRef.current = null
     if (clientId) {
       const projs = await getTicketFormProjects(clientId)
       setProjects(projs)
