@@ -22,7 +22,13 @@ const QUERIES_SRC = readFileSync(join(ROOT, 'app', 'actions', 'reports', 'querie
 const TICKET_REPORTS_SRC = readFileSync(join(ROOT, 'app', 'actions', 'reports', 'ticket-reports.ts'), 'utf8')
 const DASHBOARD_SRC = readFileSync(join(ROOT, 'app', 'dashboard', 'page.tsx'), 'utf8')
 const REPORT_FILTERS_SRC = readFileSync(join(ROOT, 'components', 'dashboard', 'report-center', 'report-filters.tsx'), 'utf8')
+// /dashboard/reports/view is now a server-side role dispatcher (page.tsx)
+// that renders one of two client components: ReportCenterClient (admin/
+// manager/developer — the original, unchanged generic Report Center) or
+// ClientReportsView (the new dedicated 4-report page).
 const REPORT_VIEW_PAGE_SRC = readFileSync(join(ROOT, 'app', 'dashboard', 'reports', 'view', 'page.tsx'), 'utf8')
+const REPORT_CENTER_CLIENT_SRC = readFileSync(join(ROOT, 'app', 'dashboard', 'reports', 'view', 'report-center-client.tsx'), 'utf8')
+const CLIENT_REPORTS_VIEW_SRC = readFileSync(join(ROOT, 'app', 'dashboard', 'reports', 'view', 'client-reports-view.tsx'), 'utf8')
 
 function extractArrayBlock(name: string): string {
   const re = new RegExp(`const ${name}: ReportType\\[\\] = \\[([\\s\\S]*?)\\]`)
@@ -98,41 +104,116 @@ test('ticket_summary/status/aging reports scope clients to their own org (tenant
   }
 })
 
-// ─── Client Dashboard "Reports" cards route through a real report ─────────
+// ─── Client Dashboard no longer has an inline Reports KPI/card section ────
 
-test('ClientReportsSection routes through the report system, not the raw ticket list', () => {
-  const start = DASHBOARD_SRC.indexOf('function ClientReportsSection')
-  assert.ok(start >= 0, 'ClientReportsSection not found in app/dashboard/page.tsx')
+test('the old inline ClientReportsSection is fully removed from the dashboard', () => {
+  assert.ok(!DASHBOARD_SRC.includes('ClientReportsSection'), 'ClientReportsSection must no longer exist anywhere in app/dashboard/page.tsx')
+  assert.ok(!DASHBOARD_SRC.includes("title: 'Pending for Approval (Client)'"), 'the 4-card block must not still be inlined into the dashboard')
+})
+
+test('the main dashboard KPI cards (Total Tickets/Open/In Progress/Resolved) are untouched', () => {
+  const start = DASHBOARD_SRC.indexOf('function StatsSection')
+  assert.ok(start >= 0, 'StatsSection must still exist — it must NOT have been removed along with ClientReportsSection')
   const end = DASHBOARD_SRC.indexOf('\n}', DASHBOARD_SRC.indexOf('return (', start))
   const body = DASHBOARD_SRC.slice(start, end)
-
   assert.match(body, /title: 'Total Tickets'/)
+  assert.match(body, /title: 'Open'/)
   assert.match(body, /title: 'In Progress'/)
-  assert.match(body, /title: 'Pending for Approval \(Client\)'/)
-  assert.match(body, /title: 'Closed'/)
+  assert.match(body, /title: 'Resolved'/)
+})
 
-  // Each card must open /dashboard/reports/view (a real report), never the
-  // bare ticket list — that was the "Billable Hours -> Worklog"-style wrong-
-  // destination bug for the client's own Reports section.
-  assert.ok(!body.includes("href: '/dashboard/tickets"), 'client report cards must not link straight to the ticket list')
-  assert.match(body, /href: '\/dashboard\/reports\/view\?report=ticket_summary'/, 'Total Tickets must open ticket_summary with no status filter')
-  assert.match(body, /href: '\/dashboard\/reports\/view\?report=ticket_summary&status=in_progress'/)
-  assert.match(body, /href: '\/dashboard\/reports\/view\?report=ticket_summary&status=client_review'/)
-  assert.match(body, /href: '\/dashboard\/reports\/view\?report=ticket_summary&status=closed'/)
+test('the Client Dashboard has a "Reports" entry point to the dedicated Client Reports page', () => {
+  const idx = DASHBOARD_SRC.indexOf("user.role === 'client'")
+  assert.ok(idx >= 0, 'no client-role-gated block found on the dashboard')
+  const nearby = DASHBOARD_SRC.slice(idx, idx + 400)
+  assert.match(nearby, /href="\/dashboard\/reports\/view"/, 'the Reports button must link to /dashboard/reports/view')
+  assert.match(nearby, />\s*Reports\s*</, 'must be visibly labeled "Reports"')
+})
+
+// ─── /dashboard/reports/view — server-side role dispatch ──────────────────
+
+test('the report view route dispatches by role SERVER-SIDE (getCurrentUser), not a client-side check', () => {
+  assert.match(REPORT_VIEW_PAGE_SRC, /import \{ getCurrentUser \} from '@\/lib\/auth-utils'/)
+  assert.match(REPORT_VIEW_PAGE_SRC, /const currentUser = await getCurrentUser\(\)/)
+  assert.match(REPORT_VIEW_PAGE_SRC, /if \(currentUser\.role === 'client'\) \{/)
+  assert.match(REPORT_VIEW_PAGE_SRC, /return <ReportCenterClient \/>/, 'every non-client role must still get the original, unchanged Report Center')
+})
+
+test('the client branch renders ClientReportsView using org-scoped stats, not a fresh/duplicate query', () => {
+  assert.match(REPORT_VIEW_PAGE_SRC, /import \{ getConsolidatedDashboardData \} from '@\/app\/actions\/tickets'/)
+  assert.match(REPORT_VIEW_PAGE_SRC, /const stats = await getConsolidatedDashboardData\(\)/)
+  assert.match(REPORT_VIEW_PAGE_SRC, /<ClientReportsView/)
+})
+
+// ─── ClientReportsView — exactly 4 reports, each independently correct ────
+
+test('ClientReportsView defines exactly 4 report cards', () => {
+  const matches = [...CLIENT_REPORTS_VIEW_SRC.matchAll(/title: '([^']+)'/g)].map(m => m[1])
+  assert.deepEqual(matches, ['Total Tickets', 'In Progress', 'Pending for Approval (Client)', 'Closed'])
+})
+
+test('ClientReportsView routes through the existing ticket_summary report, never the raw ticket list or a new report type', () => {
+  assert.ok(!CLIENT_REPORTS_VIEW_SRC.includes("'/dashboard/tickets"), 'must never link straight to the ticket list')
+  assert.match(CLIENT_REPORTS_VIEW_SRC, /report=ticket_summary/)
+  assert.ok(!/report=(?!ticket_summary)[a-z_]+/.test(CLIENT_REPORTS_VIEW_SRC), 'must not introduce any report type other than ticket_summary')
+  assert.match(CLIENT_REPORTS_VIEW_SRC, /import \{ getReportData \} from '@\/app\/actions\/reports'/, 'must reuse the existing getReportData action')
+})
+
+test('KNOWN ISSUE regression: each of the 4 cards maps to its own status — Total ≠ In Progress ≠ Pending ≠ Closed ≠ Total', () => {
+  const cardBlockStart = CLIENT_REPORTS_VIEW_SRC.indexOf('const CLIENT_REPORT_CARDS')
+  const cardBlockEnd = CLIENT_REPORTS_VIEW_SRC.indexOf(']\n', cardBlockStart)
+  const block = CLIENT_REPORTS_VIEW_SRC.slice(cardBlockStart, cardBlockEnd)
+
+  const total = block.match(/\{ title: 'Total Tickets', getValue:/)
+  const inProgress = block.match(/\{ title: 'In Progress', status: '(\w+)'/)
+  const pending = block.match(/\{ title: 'Pending for Approval \(Client\)', status: '(\w+)'/)
+  const closed = block.match(/\{ title: 'Closed', status: '(\w+)'/)
+
+  assert.ok(total, 'Total Tickets card not found')
+  assert.ok(!block.match(/\{ title: 'Total Tickets', status:/), 'Total Tickets must have NO status filter (all tickets), never share a status with another card')
+  assert.ok(inProgress && pending && closed, 'one or more of In Progress / Pending for Approval (Client) / Closed is missing its status')
+
+  const statuses = [inProgress![1], pending![1], closed![1]]
+  assert.equal(new Set(statuses).size, 3, `In Progress / Pending for Approval / Closed must each use a DIFFERENT status — got: ${statuses.join(', ')}`)
+  assert.equal(inProgress![1], 'in_progress')
+  assert.equal(pending![1], 'client_review')
+  assert.equal(closed![1], 'closed')
 
   // Only real, existing TicketStatus values are used — never an invented one.
-  const usedStatuses = [...body.matchAll(/status=([a-z_]+)'/g)].map(m => m[1])
+  const usedStatuses = [...CLIENT_REPORTS_VIEW_SRC.matchAll(/status=\$\{status\}|status: '([a-z_]+)'/g)].map(m => m[1]).filter(Boolean)
   for (const s of usedStatuses) {
-    assert.ok(['in_progress', 'client_review', 'closed'].includes(s), `unexpected/invented status "${s}" in ClientReportsSection`)
+    assert.ok(['in_progress', 'client_review', 'closed'].includes(s), `unexpected/invented status "${s}" in ClientReportsView`)
   }
 })
 
-test('ClientReportsSection stays gated to the client role only', () => {
-  const start = DASHBOARD_SRC.indexOf('function ClientReportsSection')
-  assert.ok(start >= 0, 'ClientReportsSection not found in app/dashboard/page.tsx')
-  const nextFn = DASHBOARD_SRC.indexOf('\nfunction ', start + 1)
-  const body = DASHBOARD_SRC.slice(start, nextFn === -1 ? undefined : nextFn)
-  assert.match(body, /if \(userRole !== 'client'\) return null/, 'ClientReportsSection must stay gated to role === client')
+test('KNOWN ISSUE regression: each card\'s href is built from its OWN status — clicking one can never open another', () => {
+  assert.match(CLIENT_REPORTS_VIEW_SRC, /function cardHref\(status\?: string\): string \{/)
+  const fnStart = CLIENT_REPORTS_VIEW_SRC.indexOf('function cardHref')
+  const fnEnd = CLIENT_REPORTS_VIEW_SRC.indexOf('\n}', fnStart)
+  const fn = CLIENT_REPORTS_VIEW_SRC.slice(fnStart, fnEnd)
+  assert.match(fn, /report=ticket_summary&status=\$\{status\}/)
+  assert.match(fn, /'\/dashboard\/reports\/view\?report=ticket_summary'/, 'no status -> plain ticket_summary link (Total Tickets)')
+  // The cards map href={cardHref(card.status)} — each card's OWN status,
+  // never a shared/hardcoded value.
+  assert.match(CLIENT_REPORTS_VIEW_SRC, /href=\{cardHref\(card\.status\)\}/)
+})
+
+test('ClientReportsView never renders the generic admin/manager report-type dropdown', () => {
+  // The ReportFilters TYPE is fine to import (it's the shared filters shape,
+  // e.g. useState<ReportFiltersType> — note the substring "<ReportFilters"
+  // also appears there, so match a real JSX tag boundary specifically);
+  // the DROPDOWN COMPONENT must never be rendered here.
+  assert.ok(!/<ReportFilters[\s/>]/.test(CLIENT_REPORTS_VIEW_SRC), 'a client must never see the generic multi-category report dropdown')
+  assert.ok(!CLIENT_REPORTS_VIEW_SRC.includes("from '@/components/dashboard/report-center/report-filters'"), 'must not even import the dropdown component')
+})
+
+// ─── report-center-client.tsx — admin/manager/developer experience unchanged ─
+
+test('ReportCenterClient (admin/manager/developer) still has the full generic filter-driven Report Center', () => {
+  assert.match(REPORT_CENTER_CLIENT_SRC, /export function ReportCenterClient\(\)/)
+  assert.match(REPORT_CENTER_CLIENT_SRC, /<ReportFilters/)
+  assert.match(REPORT_CENTER_CLIENT_SRC, /getReportFormData/)
+  assert.match(REPORT_CENTER_CLIENT_SRC, /getReportData/)
 })
 
 // ─── Admin/Manager Report Center routes are unaffected ─────────────────────
@@ -151,8 +232,8 @@ test('ReportFilters hides report types the current role cannot run', () => {
   assert.match(REPORT_FILTERS_SRC, /checkAccess\(userRole, opt\.value\)/, 'ReportFilters must filter REPORT_TYPE_OPTIONS through checkAccess')
 })
 
-test('Report Center page passes the current user role into ReportFilters', () => {
-  assert.match(REPORT_VIEW_PAGE_SRC, /userRole=\{formData\.role/)
+test('ReportCenterClient passes the current user role into ReportFilters', () => {
+  assert.match(REPORT_CENTER_CLIENT_SRC, /userRole=\{formData\.role/)
 })
 
 test('getReportFormData returns the caller\'s role so the dropdown can be scoped', () => {

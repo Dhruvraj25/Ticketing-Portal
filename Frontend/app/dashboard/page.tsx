@@ -12,7 +12,7 @@ import { TicketList } from '@/components/dashboard/ticket-card'
 import { PageHeader, CurrentDate } from '@/components/dashboard/page-header-server'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
-import { Plus, ArrowRight, LayoutDashboard } from 'lucide-react'
+import { Plus, ArrowRight, LayoutDashboard, FileText } from 'lucide-react'
 import { SupportRenewalReminder } from '@/components/dashboard/support-renewal-reminder'
 
 // ─── Loading Fallbacks ──────────────────────────────────────────────────────
@@ -106,48 +106,6 @@ function StatsSection({ consolidatedStats, userRole }: { consolidatedStats: Cons
           colorTheme={card.colorTheme}
         />
       ))}
-    </div>
-  )
-}
-
-// ─── Client Reports Section (R22) ──────────────────────────────────────────
-// Counts come from the role-scoped consolidated stats query (never derived
-// from the paginated recent-tickets list), so totals are always complete and
-// limited to the logged-in client / approver org's accessible tickets.
-
-function ClientReportsSection({ stats, userRole }: { stats: ConsolidatedStats; userRole: string }) {
-  // Each card opens the real Ticket Summary report (checkAccess already
-  // allows 'client' to run it, and it's tenant-scoped to the client's own
-  // org — see getTicketSummaryReport), filtered to the matching status, so
-  // "Reports" actually opens a report instead of the raw ticket list.
-  const cards: { title: string; value: number; href: string; colorTheme?: KpiColorTheme }[] = [
-    { title: 'Total Tickets', value: stats.totalTickets, href: '/dashboard/reports/view?report=ticket_summary' },
-    { title: 'In Progress', value: stats.inProgressTickets, href: '/dashboard/reports/view?report=ticket_summary&status=in_progress', colorTheme: 'indigo' },
-    { title: 'Pending for Approval (Client)', value: stats.clientReviewCount, href: '/dashboard/reports/view?report=ticket_summary&status=client_review', colorTheme: 'amber' },
-    { title: 'Closed', value: stats.closedCount, href: '/dashboard/reports/view?report=ticket_summary&status=closed', colorTheme: 'emerald' },
-  ]
-
-  if (userRole !== 'client') return null
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-foreground">Reports</h2>
-        <Link href="/dashboard/reports" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-          Open Report Center
-        </Link>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {cards.map((card) => (
-          <StatCard
-            key={card.title}
-            title={card.title}
-            value={card.value}
-            href={card.href}
-            colorTheme={card.colorTheme}
-          />
-        ))}
-      </div>
     </div>
   )
 }
@@ -247,6 +205,18 @@ export default async function DashboardPage() {
         iconVariant="blue"
         actions={
           <>
+            {/* Client Reports entry point — the dedicated 4-report page
+                (Total Tickets / In Progress / Pending for Approval (Client) /
+                Closed) now lives on its own route instead of an inline
+                dashboard section. */}
+            {user.role === 'client' && (
+              <Link href="/dashboard/reports/view">
+                <Button variant="outline" size="sm" className="rounded-xl gap-1.5">
+                  <FileText className="h-3.5 w-3.5" />
+                  Reports
+                </Button>
+              </Link>
+            )}
             <CurrentDate />
           </>
         }
@@ -255,9 +225,6 @@ export default async function DashboardPage() {
       <div className="space-y-4">
         {/* ── CRITICAL PATH: KPI cards — data already loaded ───────── */}
         <StatsSection consolidatedStats={consolidatedStats} userRole={user.role} />
-
-        {/* Client Reports card area — server-computed, org-scoped counts */}
-        <ClientReportsSection stats={consolidatedStats} userRole={user.role} />
 
         {/* Admin Project Metrics — already loaded in critical data
         {user.role === 'admin' && projectMetrics && (
