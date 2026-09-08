@@ -111,7 +111,7 @@ export function NotificationPreferencesSection() {
   return (
       <div className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6">
       
-    //<div className="rounded-xl bg-muted/10 border border-border/50 overflow-hidden">
+    {/* <div className="rounded-xl bg-muted/10 border border-border/50 overflow-hidden"> */}
       <div className="px-4 py-3 border-b border-border/50">
         <p className="text-sm font-medium text-foreground flex items-center gap-2">
           <Bell className="h-4 w-4 text-muted-foreground" />
@@ -121,7 +121,7 @@ export function NotificationPreferencesSection() {
           Choose which notifications you receive, per channel and per event. Preferences are
           enforced by the server — they apply everywhere, not just on this device.
         </p>
-      </div>
+      {/* </div> */}
       </div>
 
       {loading && (
