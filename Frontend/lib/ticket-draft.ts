@@ -72,3 +72,13 @@ export function resolveDraftSelection<T>(
   const stillValid = options.some((item) => String(getId(item)) === String(draftValue))
   return stillValid ? String(draftValue) : null
 }
+
+/**
+ * True when the draft carries a dropdown selection for the given key.
+ * Used by the restore effects to decide whether the draft is authoritative
+ * for that field (in which case URL-param / "Support" auto-fallback logic
+ * must NOT run, because it could overwrite the saved value with a default).
+ */
+export function hasDraftSelection(draft: TicketDraft | null, key: keyof TicketDraft): boolean {
+  return !!draft && typeof draft[key] === 'string' && (draft[key] as string).length > 0
+}

@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/select'
 import { TICKET_PRIORITY_CONFIG, TICKET_CATEGORY_CONFIG, VALIDATION } from '@/lib/types'
 import type { TicketPriority, TicketCategory } from '@/lib/types'
-import { loadTicketDraft, saveTicketDraft, clearTicketDraft, resolveDraftSelection } from '@/lib/ticket-draft'
+import { loadTicketDraft, saveTicketDraft, clearTicketDraft, resolveDraftSelection, hasDraftSelection } from '@/lib/ticket-draft'
 import dynamic from 'next/dynamic'
 import { cn } from '@/lib/utils'
 import { stripHtml } from '@/lib/format'
@@ -174,7 +174,11 @@ export default function NewTicketPage() {
         } else if (projectParam && projs.find((p) => String(p.id) === projectParam)) {
           selectedProjId = projectParam
           console.log('[CreateTicket] Auto-selected project from URL param:', selectedProjId)
-        } else {
+        } else if (!hasDraftSelection(draft, 'projectId')) {
+          // Only auto-select the 'Support' project when the draft has NO saved
+          // project at all. If the user saved a draft with no project, the
+          // project must stay unselected (the draft is authoritative); a
+          // default here would silently override the saved (empty) state.
           const supportProject = projs.find((p) =>
             p.projectName.toLowerCase().includes('support')
           )
@@ -205,7 +209,7 @@ export default function NewTicketPage() {
             } else if (moduleParam && mods.find((m) => String(m.id) === moduleParam)) {
               restoredModuleId = moduleParam
               console.log('[CreateTicket] Auto-selected module from URL param:', moduleParam)
-            } else {
+            } else if (!hasDraftSelection(draft, 'moduleId')) {
               const supportModule = mods.find((m) =>
                 m.moduleName.toLowerCase().includes('support')
               )
@@ -231,6 +235,9 @@ export default function NewTicketPage() {
   // Restore simple fields from a saved draft.
   // Project / Module / Client are restored inside load() so the restored
   // dropdown values always resolve against freshly loaded option lists.
+  // NOTE: this effect deliberately runs AFTER the load() effect above, so a
+  // saved priority/category/environment always wins over the state defaults
+  // ('medium' / 'general' / '') that were in place while options loaded.
   useEffect(() => {
     const draft = loadTicketDraft()
     if (!draft) return
@@ -242,15 +249,13 @@ export default function NewTicketPage() {
     if (draft.additionalInfo) setAdditionalInfo(draft.additionalInfo)
   }, [])
 
-  const handleProjectChange = useCallback(async (projectId: string) => {
-    console.log('[CreateTicket] Project changed to:', projectId)
-    setSelectedProjectId(projectId)
-    setSelectedModuleId('')
-    setModules([])
-    if (!projectId) {
-      console.log('[CreateTicket] Project deselected, clearing modules')
-      return
-    }
+  // When the user picks a different project we must clear the now-invalid
+  // Module selection — but NOT when this handler is invoked programmatically
+  // to load the modules of an already-restored project (Save Draft restore
+  // flow), because that would wipe the restored module before the async
+  // module list arrives. The initial-load effect therefore calls
+  // loadModulesForProject directly instead of routing through this handler.
+  const loadModulesForProject = useCallback(async (projectId: string) => {
     console.log('[CreateTicket] Fetching modules for project ID:', Number(projectId))
     setLoadingModules(true)
     try {
@@ -266,6 +271,18 @@ export default function NewTicketPage() {
       setLoadingModules(false)
     }
   }, [])
+
+  const handleProjectChange = useCallback(async (projectId: string) => {
+    console.log('[CreateTicket] Project changed to:', projectId)
+    setSelectedProjectId(projectId)
+    setSelectedModuleId('')
+    setModules([])
+    if (!projectId) {
+      console.log('[CreateTicket] Project deselected, clearing modules')
+      return
+    }
+    await loadModulesForProject(projectId)
+  }, [loadModulesForProject])
 
   function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])

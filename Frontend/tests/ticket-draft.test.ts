@@ -7,6 +7,7 @@ import {
   saveTicketDraft,
   clearTicketDraft,
   resolveDraftSelection,
+  hasDraftSelection,
   TICKET_DRAFT_STORAGE_KEY,
 } from '../lib/ticket-draft.ts'
 
@@ -159,6 +160,97 @@ test('create-ticket page has no leftover raw localStorage draft access (single s
   assert.ok(!NEW_TICKET_PAGE_SRC.includes("localStorage.getItem('ticket-draft')"))
   assert.ok(!NEW_TICKET_PAGE_SRC.includes("localStorage.setItem('ticket-draft'"))
   assert.ok(!NEW_TICKET_PAGE_SRC.includes("localStorage.removeItem('ticket-draft')"))
+})
+
+// ─── Regression: the REAL production bug — restored values overwritten AFTER restore ─
+// The deployed build restored title/description but every dropdown snapped back to
+// its default. These tests pin the structural guarantees that prevent that class of
+// bug, because the page cannot be mounted under plain node:test.
+
+test('hasDraftSelection: draft is authoritative for a field only when a non-empty value is saved', () => {
+  assert.equal(hasDraftSelection({ projectId: '7' }, 'projectId'), true)
+  assert.equal(hasDraftSelection({ projectId: '' }, 'projectId'), false, 'empty saved value = no saved selection')
+  assert.equal(hasDraftSelection({}, 'projectId'), false)
+  assert.equal(hasDraftSelection(null, 'projectId'), false)
+})
+
+test('initial-load effect must NOT auto-select the Support project/module when the draft saved none (default must not override saved empty state)', () => {
+  const loadStart = NEW_TICKET_PAGE_SRC.indexOf('async function load()')
+  const loadEnd = NEW_TICKET_PAGE_SRC.indexOf('\n    load()', loadStart)
+  const loadBody = NEW_TICKET_PAGE_SRC.slice(loadStart, loadEnd)
+  assert.match(
+    loadBody,
+    /hasDraftSelection\(draft, 'projectId'\)/,
+    'Support-project fallback must be gated on the draft having no saved project',
+  )
+  assert.match(
+    loadBody,
+    /hasDraftSelection\(draft, 'moduleId'\)/,
+    'Support-module fallback must be gated on the draft having no saved module',
+  )
+})
+
+test('user-driven project change clears the module, but the restore path must not route through that handler', () => {
+  // Clearing the module when the USER picks a different project is correct;
+  // what must never happen is the async restore flow invoking this handler,
+  // because it would wipe the just-restored module. The restore path in
+  // load() must therefore fetch modules itself instead of calling
+  // handleProjectChange.
+  const handlerStart = NEW_TICKET_PAGE_SRC.indexOf('const handleProjectChange = useCallback')
+  const handlerEnd = NEW_TICKET_PAGE_SRC.indexOf('\n  }, [', handlerStart)
+  const handlerBody = NEW_TICKET_PAGE_SRC.slice(handlerStart, handlerEnd)
+  assert.match(handlerBody, /setSelectedModuleId\(''\)/, 'user picking a new project must clear the stale module')
+
+  const loadStart = NEW_TICKET_PAGE_SRC.indexOf('async function load()')
+  const loadEnd = NEW_TICKET_PAGE_SRC.indexOf('\n    load()', loadStart)
+  const loadBody = NEW_TICKET_PAGE_SRC.slice(loadStart, loadEnd)
+  assert.ok(
+    !loadBody.includes('handleProjectChange'),
+    'the restore path must fetch modules itself, never via handleProjectChange (which clears the module)',
+  )
+  // Ordering guarantee: the restored module id is applied only AFTER the
+  // freshly fetched module list has been set, so the value always exists in
+  // the list the Select renders from.
+  const setModulesIdx = loadBody.indexOf('setModules(mods)')
+  const setModuleIdx = loadBody.indexOf('setSelectedModuleId(restoredModuleId)')
+  assert.ok(setModulesIdx !== -1 && setModuleIdx !== -1 && setModuleIdx > setModulesIdx,
+    'module restore must apply after setModules(mods) so the option list exists')
+})
+
+test('restore-simple-fields effect runs after the initial-load effect and restores every dropdown field', () => {
+  const loadEffectStart = NEW_TICKET_PAGE_SRC.indexOf('useEffect(() => {\n    async function load()')
+  const restoreStart = NEW_TICKET_PAGE_SRC.indexOf('useEffect(() => {\n    const draft = loadTicketDraft()')
+  assert.ok(loadEffectStart !== -1, 'initial-load effect exists')
+  assert.ok(restoreStart !== -1, 'simple-fields restore effect exists')
+  assert.ok(
+    restoreStart > loadEffectStart,
+    'simple-fields restore must be declared after load() so saved priority/category/environment win over defaults',
+  )
+  const restoreEnd = NEW_TICKET_PAGE_SRC.indexOf('\n  }, [])', restoreStart)
+  const restoreBody = NEW_TICKET_PAGE_SRC.slice(restoreStart, restoreEnd)
+  for (const field of ['priority', 'category', 'environment', 'additionalInfo']) {
+    assert.match(restoreBody, new RegExp(`draft\\.${field}`), `restore effect must apply "${field}"`)
+  }
+})
+
+test('draft save payload keys exactly match the restore contract (no ID/label drift)', () => {
+  const saveStart = NEW_TICKET_PAGE_SRC.indexOf('function saveDraft()')
+  const saveEnd = NEW_TICKET_PAGE_SRC.indexOf('\n  }', saveStart)
+  const saveBody = NEW_TICKET_PAGE_SRC.slice(saveStart, saveEnd)
+  // Dropdowns emit ids/keys: clientId/projectId/moduleId are ids, priority/category/environment are value keys
+  for (const key of ['priority', 'category', 'environment', 'clientId: selectedClientId', 'projectId: selectedProjectId', 'moduleId: selectedModuleId']) {
+    assert.ok(saveBody.includes(key), `saveDraft() must persist "${key}"`)
+  }
+})
+
+test('restore resolves every dropdown against the list it will render from (fresh fetch, not stale state)', () => {
+  const loadStart = NEW_TICKET_PAGE_SRC.indexOf('async function load()')
+  const loadEnd = NEW_TICKET_PAGE_SRC.indexOf('\n    load()', loadStart)
+  const loadBody = NEW_TICKET_PAGE_SRC.slice(loadStart, loadEnd)
+  // Client resolved against clientList (just fetched), Project against projs, Module against mods
+  assert.match(loadBody, /resolveDraftSelection\(draft\?\.clientId, clientList, \(c\) => c\.id\)/)
+  assert.match(loadBody, /resolveDraftSelection\(draft\?\.projectId, projs, \(p\) => p\.id\)/)
+  assert.match(loadBody, /resolveDraftSelection\(draft\?\.moduleId, mods, \(m\) => m\.id\)/)
 })
 
 test('project/client dropdown restoration resolves against the freshly-fetched list, not stale component state', () => {
