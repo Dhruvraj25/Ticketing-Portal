@@ -83,7 +83,11 @@ export function TicketStatusActions({ ticketId, currentStatus }: TicketStatusAct
   }
 
   // Determine which buttons to show based on timer state and status
-  const isAssigned = status === TicketStatus.ASSIGNED
+  // "Start Work" must be available whenever the assigned developer can begin
+  // active work on this SAME ticket — the initial ASSIGNED state, and also
+  // REWORK (the manager sent completed work back for another pass; the
+  // developer resumes the existing ticket, never a new one).
+  const canStartWork = status === TicketStatus.ASSIGNED || status === TicketStatus.REWORK
   const isInProgress = status === TicketStatus.IN_PROGRESS
   const isResolved = status === TicketStatus.RESOLVED || status === TicketStatus.CLIENT_REVIEW
 
@@ -105,8 +109,8 @@ export function TicketStatusActions({ ticketId, currentStatus }: TicketStatusAct
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {/* Start Working — only when assigned and no active timer */}
-        {isAssigned && timerState === 'idle' && (
+        {/* Start Working — when assigned (initial) or sent back for rework, and no active timer */}
+        {canStartWork && timerState === 'idle' && (
             <Button
               onClick={() => handleAction('start_work', async () => {
                 await updateTicketStatus(ticketId, TicketStatus.IN_PROGRESS)
