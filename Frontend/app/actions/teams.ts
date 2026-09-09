@@ -27,11 +27,29 @@ const API_BASE = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL
 // "Delivery failed"/"Webhook Error" (sendTeamsTestMessage's 401 surfaces as a
 // generic thrown error), and is a strong contributor to the intermittent
 // generic Server Components error in production.
-async function getSessionCookie(): Promise<string> {
+/** Cookie NAMES only, never values — safe to log. */
+function extractCookieNames(cookieHeader: string): string[] {
+  if (!cookieHeader) return []
+  return cookieHeader
+    .split(';')
+    .map((pair) => pair.split('=')[0]?.trim())
+    .filter((name): name is string => !!name)
+}
+
+async function getSessionCookie(context: string): Promise<string> {
   try {
     const h = await headers()
-    return h.get('cookie') || ''
-  } catch {
+    const cookie = h.get('cookie') || ''
+    const names = extractCookieNames(cookie)
+    // Safe diagnostic — cookie NAMES and counts only, never values.
+    console.log(
+      `[TeamsAuthBridge] path=${context} incomingCookiePresent=${!!cookie} ` +
+      `incomingCookieCount=${names.length} forwardedCookiePresent=${!!cookie} ` +
+      `forwardedCookieNames=[${names.join(',')}]`,
+    )
+    return cookie
+  } catch (err) {
+    console.warn(`[TeamsAuthBridge] path=${context} could not read incoming request headers: ${err instanceof Error ? err.message : 'unknown'}`)
     return ''
   }
 }
@@ -47,7 +65,7 @@ export interface BackendCallResult<T = unknown> {
 }
 
 async function fetchFromBackend(path: string, options?: RequestInit) {
-  const cookie = await getSessionCookie()
+  const cookie = await getSessionCookie(path)
   const url = API_BASE + '/teams' + path
   const res = await fetch(url, {
     ...options,
@@ -72,7 +90,7 @@ async function fetchFromBackend(path: string, options?: RequestInit) {
  * Never includes secrets, cookies, or stack traces in the returned message.
  */
 async function fetchFromBackendSafe<T = unknown>(path: string, options?: RequestInit): Promise<BackendCallResult<T>> {
-  const cookie = await getSessionCookie()
+  const cookie = await getSessionCookie(path)
   const url = API_BASE + '/teams' + path
   let res: Response
   try {

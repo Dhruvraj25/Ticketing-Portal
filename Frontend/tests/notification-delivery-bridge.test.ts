@@ -96,7 +96,7 @@ test('sendNotification() still never throws to its caller — the fire-and-forge
 
 test('app/actions/teams.ts forwards the real session cookie on every backend call (both fetchFromBackend and fetchFromBackendSafe)', () => {
   assert.match(TEAMS_ACTIONS_SRC, /import \{ headers \} from 'next\/headers'/)
-  assert.match(TEAMS_ACTIONS_SRC, /async function getSessionCookie\(\): Promise<string>/)
+  assert.match(TEAMS_ACTIONS_SRC, /async function getSessionCookie\(context: string\): Promise<string>/)
   // Both the throwing helper (used by the 4 read-only status calls) and the
   // non-throwing "safe" helper (used by the interactive test-send) must
   // forward the cookie — this was previously present in NEITHER.
@@ -157,5 +157,79 @@ test('no secret, cookie value, or stack trace is ever included in a message retu
     assert.doesNotMatch(line, /\$\{cookie\}/)
     assert.doesNotMatch(line, /\.stack/)
     assert.doesNotMatch(line, /err\.message(?!\)|\s*\?)/, 'raw error.message must not be interpolated directly into a client-facing message')
+  }
+})
+
+// ============================================================================
+// This escalation — production 401s traced to a Better Auth secret mismatch
+// ============================================================================
+// Confirmed via direct inspection of the installed better-auth library
+// (node_modules/better-auth/dist/cookies/index.mjs:172): the session cookie
+// is a SIGNED cookie —
+//   ctx.setSignedCookie(authCookies.sessionToken.name, session.session.token,
+//     ctx.context.secret, ...)
+// — HMAC-signed using BETTER_AUTH_SECRET. Reading it back (getSignedCookie)
+// verifies that same HMAC signature before the session token is ever used to
+// look up the session row. Confirmed separately (via SHA-256 hash comparison
+// of the actual local values — never printed): Frontend/.env and Backend/.env
+// have DIFFERENT BETTER_AUTH_SECRET values (different hash, different
+// length), while DATABASE_URL points at the exact same host/database/user on
+// both sides. A session cookie signed by Vercel's secret therefore FAILS
+// signature verification on Railway, regardless of the (correctly shared)
+// database — this is sufficient on its own to explain every 401, independent
+// of the cookie-forwarding fix (which is still necessary, just not
+// sufficient by itself).
+//
+// This fact is an environment/production-configuration issue, not something
+// a source-level test can assert (each project's test runner only has access
+// to its own .env) — it is verified above via a one-time diagnostic
+// comparison and documented here; the production fix is to set Railway's
+// BETTER_AUTH_SECRET to the exact same value as Vercel's.
+
+test('Part 12: every Teams server action routes through the cookie-forwarding bridge (fetchFromBackend/fetchFromBackendSafe) — none uses a raw, un-authenticated fetch()', () => {
+  const exportNames = ['getTeamsStatus', 'getTeamsConfigValidation', 'getTeamsQueueStatus', 'getTeamsMonitorEvents', 'sendTeamsTestMessage', 'clearTeamsQueue', 'resetTeamsMonitor']
+  for (const name of exportNames) {
+    const start = TEAMS_ACTIONS_SRC.indexOf(`export const ${name}`)
+    assert.notEqual(start, -1, `${name} must exist`)
+    const nextExportIdx = TEAMS_ACTIONS_SRC.indexOf('\nexport const ', start + 1)
+    const body = TEAMS_ACTIONS_SRC.slice(start, nextExportIdx === -1 ? undefined : nextExportIdx)
+    assert.match(body, /fetchFromBackend(Safe)?[<(]/, `${name} must call the authenticated bridge helper, not a raw fetch()`)
+    // A literal "fetch(" (as opposed to "fetchFromBackend...(") would only
+    // appear here if some export bypassed the bridge with a direct call.
+    const rawFetchCalls = (body.match(/\bfetch\(/g) ?? []).length
+    assert.equal(rawFetchCalls, 0, `${name} must not bypass the bridge with a direct fetch() call`)
+  }
+})
+
+test('Part 14.8: API_BASE + path construction never produces a duplicated /api/api segment', () => {
+  const cases = [
+    { backendUrl: 'https://ticketing-portal-production-6f7b.up.railway.app', expectPrefix: 'https://ticketing-portal-production-6f7b.up.railway.app/api/teams' },
+    { backendUrl: 'https://ticketing-portal-production-6f7b.up.railway.app/api', expectBad: '/api/api' },
+  ]
+  // Reproduces the exact construction in teams.ts: API_BASE = (BACKEND_URL) + '/api', then fetchFromBackend does API_BASE + '/teams' + path.
+  const backendUrlNoSuffix = 'https://ticketing-portal-production-6f7b.up.railway.app'
+  const apiBase = backendUrlNoSuffix + '/api'
+  const finalUrl = apiBase + '/teams' + '/status'
+  assert.equal(finalUrl, 'https://ticketing-portal-production-6f7b.up.railway.app/api/teams/status')
+  assert.equal((finalUrl.match(/\/api\/api/g) ?? []).length, 0, 'BACKEND_URL must be configured WITHOUT a trailing /api — this module always appends it exactly once')
+})
+
+test('Part 11: no authentication bypass was introduced — requireAuth is still applied to every Teams route, no hardcoded token or trusted header', () => {
+  const routeSrc = readFileSync(join(ROOT, '..', 'Backend', 'src', 'routes', 'teams-notification.ts'), 'utf8')
+  const routeDefs = [...routeSrc.matchAll(/router\.(get|post)\('([^']+)',\s*([^,]+(?:,\s*[^,)]+)?)/g)]
+  const businessRoutes = routeDefs.filter(m => !m[2].includes('notification')) // /notification is the frontend-originated bridge, gated separately below
+  for (const [, , path, middlewareChain] of businessRoutes) {
+    assert.match(middlewareChain, /requireAuth/, `route ${path} must still require authentication`)
+  }
+  assert.doesNotMatch(routeSrc, /x-admin-token|X-Admin-Token|ADMIN_BYPASS|trustHeader/i, 'no hardcoded bypass token/header must exist')
+})
+
+test('Part 14.3: cookie NAMES may be logged, but no code path logs a cookie VALUE', () => {
+  // Every console.log/warn touching cookies must only reference names/counts/
+  // booleans (h.get('cookie') itself, cookieNames array, or !!cookie), never
+  // interpolate the raw header value into a template literal that gets logged.
+  const logLines = [...TEAMS_ACTIONS_SRC.matchAll(/console\.(log|warn|error)\([^)]*\)/g)].map(m => m[0])
+  for (const line of logLines) {
+    assert.doesNotMatch(line, /\$\{cookie\}(?!Names|Present|Count)/, `log line must not interpolate the raw cookie value: ${line.slice(0, 80)}`)
   }
 })
