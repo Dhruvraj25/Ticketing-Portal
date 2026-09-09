@@ -1,5 +1,6 @@
 import { betterAuth } from 'better-auth'
 import { nextCookies } from 'better-auth/next-js'
+import { createHash } from 'crypto'
 import { pool } from '@/lib/db'
 import { getPortalUrl } from '@/lib/urls'
 import { db } from '@/lib/db'
@@ -18,6 +19,20 @@ if (!process.env.BETTER_AUTH_SECRET) {
     'Generate one with: openssl rand -hex 32',
   )
 }
+
+// Logs the SAME shape of line as Backend/src/server.ts's logAuthConfig() —
+// never the secret itself, only its length and a SHA-256 hash PREFIX (12 hex
+// chars, not reversible). Compare this line (in Vercel's Runtime Logs — this
+// module re-evaluates on each serverless cold start, so it is NOT purely a
+// one-time build-log line) against the matching [AuthConfig] line in
+// Railway's logs: identical secretHashPrefix + identical secretLength means
+// both services sign/verify Better Auth session cookies with the same
+// secret, which is required for a session issued by one to validate on the
+// other.
+console.log(
+  `[AuthConfig] secretConfigured=true secretLength=${process.env.BETTER_AUTH_SECRET.length} ` +
+  `secretHashPrefix=${createHash('sha256').update(process.env.BETTER_AUTH_SECRET).digest('hex').slice(0, 12)}`,
+)
 
 export const auth = betterAuth({
   database: pool,
