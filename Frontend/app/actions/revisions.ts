@@ -85,12 +85,16 @@ export const approveRevision = wrapServerAction('approveRevision', async functio
         link: `/dashboard/tickets/${rev.ticketId}`,
         ticketId: rev.ticketId,
       },
+      // approvedBy (the internal manager/admin's name) is intentionally
+      // omitted here — rev.requestedById is always the client for this event
+      // (see the comment above on approveRevision), so this is a client-
+      // facing email and must not reveal the approver's identity (CLIENT
+      // PRIVACY). Teams below is an unrelated existing channel, unchanged.
       email: {
         templateData: {
           ticketNumber: t.ticketNumber,
           ticketTitle: t.title,
           revisionNumber: rev.revisionNumber,
-          approvedBy: currentUser.name,
           ticketLink,
         },
       },
@@ -103,31 +107,10 @@ export const approveRevision = wrapServerAction('approveRevision', async functio
     },
   ]
 
-  // Notify the assigned developer (In-App + Email + Teams)
-  if (t.assignedToId && t.assignedToId !== rev.requestedById) {
-    recipients.push({
-      userId: t.assignedToId,
-      inApp: {
-        title: `Revision #${rev.revisionNumber} Approved`,
-        message: `Revision #${rev.revisionNumber} for ticket #${t.ticketNumber} has been approved. The ticket is now in progress.`,
-        link: `/dashboard/tickets/${rev.ticketId}`,
-        ticketId: rev.ticketId,
-      },
-      email: {
-        templateData: {
-          ticketNumber: t.ticketNumber, ticketTitle: t.title,
-          revisionNumber: rev.revisionNumber, approvedBy: currentUser.name,
-          ticketLink,
-        },
-      },
-      teams: {
-        payload: {
-          ticketNumber: t.ticketNumber, ticketTitle: t.title,
-          revisionNumber: rev.revisionNumber, approvedBy: currentUser.name,
-        },
-      },
-    })
-  }
+  // Canonical recipient policy: revision_approved → Requester ONLY. The
+  // assigned developer is deliberately NOT a separate recipient — if the
+  // requester and the assigned developer were ever the same user, the
+  // single requester recipient above already covers them.
 
   await dispatchNotification({
     eventType: 'revision_approved',
@@ -338,31 +321,20 @@ export const requestRevision = wrapServerAction('requestRevision', async functio
       .limit(1)
     const ticketLink = getPortalUrl() + '/dashboard/tickets/' + data.ticketId
     const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = []
+    // Canonical recipient policy: revision_requested → Manager ONLY (In-App +
+    // Email + Teams). The assigned developer is deliberately NOT a recipient
+    // of this event — they learn about the revision once the manager
+    // approves it, via the separate 'rework'/'revision_approved' events.
     if (p) {
       recipients.push({
         userId: p.managerId,
-        channels: ['inApp'],
         inApp: {
           title: `Revision Request #${newRevisionNumber} - Approval Required`,
           message: `Client requested Revision #${newRevisionNumber} for ticket #${t.ticketNumber}: ${data.revisionNotes.substring(0, 100)}. Review and approve this request.`,
           link: `/dashboard/tickets/${data.ticketId}`,
           ticketId: data.ticketId,
         },
-      })
-    }
-
-    // Notify the assigned developer (In-App + Email + Teams)
-    if (t.assignedToId) {
-      recipients.push({
-        userId: t.assignedToId,
-        inApp: {
-          title: `Revision Request #${newRevisionNumber} - Approval Required`,
-          message: `Client requested Revision #${newRevisionNumber} for ticket #${t.ticketNumber}.`,
-          link: `/dashboard/tickets/${data.ticketId}`,
-          ticketId: data.ticketId,
-        },
         email: {
-          eventType: 'revision_requested',
           templateData: {
             ticketNumber: t.ticketNumber,
             ticketTitle: t.title,
@@ -380,6 +352,7 @@ export const requestRevision = wrapServerAction('requestRevision', async functio
         },
       })
     }
+
     // Notify admins (in-app)
     const admins = await db.select({ id: user.id }).from(user).where(eq(user.role, 'admin'))
     for (const admin of admins) {

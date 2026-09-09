@@ -1,6 +1,6 @@
 // ============================================================================
 // Notification Dispatcher — THE single entry point for all business-event
-// notifications in SupportHub.
+// notifications in Support Hero.
 //
 // Every business event must call dispatchNotification() and nothing else.
 // The dispatcher is responsible for:

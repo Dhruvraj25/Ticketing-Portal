@@ -394,6 +394,7 @@ test('regression: no dispatch site reverts to a bare ticket-only scope for cycle
   const estimatesSrc = readFileSync(join(ROOT, 'app', 'actions', 'estimates.ts'), 'utf8')
   const updateSrc = readFileSync(join(ROOT, 'app', 'actions', 'tickets', 'update.ts'), 'utf8')
   const revisionsSrc = readFileSync(join(ROOT, 'app', 'actions', 'revisions.ts'), 'utf8')
+  const assignHoursSrc = readFileSync(join(ROOT, 'app', 'actions', 'wallet', 'assign-hours.ts'), 'utf8')
 
   // Each of these dedup scopes must carry a per-cycle discriminator.
   assert.match(estimatesSrc, /scope: `ticket:\$\{ticketId\}:est:\$\{estimateSubmittedAt\.getTime\(\)\}`/, 'estimate_requested must be cycle-scoped')
@@ -402,4 +403,167 @@ test('regression: no dispatch site reverts to a bare ticket-only scope for cycle
   assert.match(estimatesSrc, /scope: `ticket:\$\{ticketId\}:hours:\$\{hoursCycleKey\}`/, 'additional_hours_rejected must be cycle-scoped')
   assert.match(updateSrc, /scope: `ticket:\$\{ticketId\}:cycle:\$\{t\.revisionCount \|\| 0\}`/, 'manager_review / forward-to-client must be cycle-scoped')
   assert.match(revisionsSrc, /scope: `revision:\$\{result\.revision\.id\}`/, 'rework / revision requested must be scoped per revision record')
+  // Fixed by this audit: ticket_closed/ticket_reopened previously deduped on
+  // a flat `ticket:${id}` — a close→reopen→close cycle silently swallowed
+  // the second close/reopen email forever. Now scoped to a running count of
+  // the guarded ticketHistory action for that lifecycle transition.
+  assert.match(updateSrc, /scope: `ticket:\$\{ticketId\}:close:\$\{closeCycle\}`/, 'ticket_closed must be cycle-scoped (reopen/re-close)')
+  assert.match(updateSrc, /scope: `ticket:\$\{ticketId\}:reopen:\$\{reopenCycle\}`/, 'ticket_reopened must be cycle-scoped')
+  // Fixed by this audit: support_hours_assigned previously deduped on a flat
+  // `wallet:${walletId}` — every recharge after the first was silently
+  // dropped. Now scoped to the specific walletTransaction row's own id.
+  assert.match(assignHoursSrc, /scope: `wallet:\$\{data\.walletId\}:txn:\$\{txn\.id\}`/, 'support_hours_assigned must be scoped per recharge transaction')
+})
+
+// ─── Audit fix: ticket_closed / ticket_reopened / support_hours_assigned ────
+// close → reopen → close → reopen → close must each send their own email;
+// retrying the exact same event must still collapse.
+
+test('close/reopen/close cycle dedup keys are each distinct, but a retry of the same cycle collapses', () => {
+  const close1 = buildDedupKey('ticket_closed', 'client-1', 'ticket:5:close:1')
+  const reopen1 = buildDedupKey('ticket_reopened', 'dev-1', 'ticket:5:reopen:1')
+  const close2 = buildDedupKey('ticket_closed', 'client-1', 'ticket:5:close:2')
+  const reopen2 = buildDedupKey('ticket_reopened', 'dev-1', 'ticket:5:reopen:2')
+  const close3 = buildDedupKey('ticket_closed', 'client-1', 'ticket:5:close:3')
+
+  assert.notEqual(close1, close2)
+  assert.notEqual(close2, close3)
+  assert.notEqual(close1, close3)
+  assert.notEqual(reopen1, reopen2)
+  // close and reopen never collide with each other even at the same cycle number
+  assert.notEqual(close1, reopen1)
+
+  // A retry of the SAME close cycle (e.g. duplicate form submit) still collapses.
+  assert.equal(close1, buildDedupKey('ticket_closed', 'client-1', 'ticket:5:close:1'))
+})
+
+test('each wallet recharge gets its own dedup key (per-transaction), but retrying the same recharge collapses', () => {
+  const recharge1 = buildDedupKey('support_hours_assigned', 'client-1', 'wallet:9:txn:101')
+  const recharge2 = buildDedupKey('support_hours_assigned', 'client-1', 'wallet:9:txn:102')
+  const recharge3 = buildDedupKey('support_hours_assigned', 'client-1', 'wallet:9:txn:103')
+  assert.notEqual(recharge1, recharge2)
+  assert.notEqual(recharge2, recharge3)
+  assert.notEqual(recharge1, recharge3)
+
+  const retryOfRecharge1 = buildDedupKey('support_hours_assigned', 'client-1', 'wallet:9:txn:101')
+  assert.equal(recharge1, retryOfRecharge1)
+})
+
+// ─── Audit fix: client privacy — internal names must never enter a ─────────
+// client-facing email's templateData. Source-level regression: each fix
+// scrubs a SPECIFIC internal-facing field from a SPECIFIC client recipient
+// block while leaving the sibling internal-recipient block (and In-App/
+// Teams, unrelated channels) untouched.
+
+test('ticket_assigned: client recipient email never includes developerName; developer recipient still does', () => {
+  const src = readFileSync(join(ROOT, 'app', 'actions', 'tickets', 'update.ts'), 'utf8')
+  const clientBlockStart = src.indexOf('// Also notify the client that ticket has been assigned')
+  const clientBlockEnd = src.indexOf('\n    }', src.indexOf('teams: {', clientBlockStart))
+  const clientBlock = src.slice(clientBlockStart, clientBlockEnd)
+  const clientEmailBlock = clientBlock.slice(clientBlock.indexOf('email: {'), clientBlock.indexOf('teams: {'))
+  assert.ok(!clientEmailBlock.includes('developerName'), 'client email templateData must not include developerName')
+
+  const devBlockStart = src.indexOf('// Assigned developer: In-App + Email + Teams')
+  const devBlockEnd = src.indexOf('// Also notify the client')
+  const devBlock = src.slice(devBlockStart, devBlockEnd)
+  assert.ok(devBlock.includes('developerName: developer.name'), 'developer (internal) recipient must still see the developer name')
+})
+
+test('ticket_assigned: developer recipient email receives the REAL client name, not the assigning manager', () => {
+  const src = readFileSync(join(ROOT, 'app', 'actions', 'tickets', 'update.ts'), 'utf8')
+  assert.ok(!src.includes('clientName: currentUser.name || currentUser.id'), 'must not use the assigning manager as clientName')
+  assert.match(src, /clientName: realClientName/, 'must use the ticket\'s actual client, looked up via t.clientId')
+  assert.match(src, /where\(eq\(user\.id, t\.clientId\)\)/, 'must look up the client by t.clientId')
+})
+
+// ─── Canonical recipient-policy fix ─────────────────────────────────────────
+// developer_started_work / developer_completed_work / revision_requested /
+// revision_approved had EXTRA recipients beyond the canonical 30-event
+// table (a recipient-policy defect, not a privacy/content issue) — the fix
+// removes those recipients entirely, it does not just scrub their content.
+
+test('developer_started_work sends email to Manager and NOT Client (client recipient removed entirely)', () => {
+  const src = readFileSync(join(ROOT, 'app', 'actions', 'tickets', 'timelogs.ts'), 'utf8')
+  const fnStart = src.indexOf('export const startTimer')
+  const fnEnd = src.indexOf('export const stopTimer')
+  const fn = src.slice(fnStart, fnEnd)
+
+  assert.ok(!fn.includes('ticketRow.clientId'), 'the client must not be looked up as a recipient at all in startTimer')
+  assert.ok(!fn.includes("title: 'Work Started on Your Ticket'"), 'the client-facing in-app/email recipient block must be fully removed')
+  assert.match(fn, /developer_started_work → Manager ONLY/, 'source must document the canonical Manager-only policy')
+
+  // Manager recipient must still exist and still carry an email block.
+  const managerIdx = fn.indexOf("title: 'Work Started on Ticket'")
+  assert.notEqual(managerIdx, -1, 'manager recipient must still be present')
+  const managerEmailBlock = fn.slice(fn.indexOf('email: {', managerIdx), fn.indexOf('teams: {', managerIdx))
+  assert.match(managerEmailBlock, /templateData/, 'manager recipient must still receive an email')
+})
+
+test('developer_completed_work sends email to Manager and NOT Client (client recipient removed entirely)', () => {
+  const src = readFileSync(join(ROOT, 'app', 'actions', 'tickets', 'timelogs.ts'), 'utf8')
+  const fnStart = src.indexOf('export const stopTimer')
+  const fnEnd = src.indexOf('export const pauseTimer')
+  const fn = src.slice(fnStart, fnEnd)
+
+  assert.ok(!fn.includes("title: 'Work Completed on Your Ticket'"), 'the client-facing in-app/email recipient block must be fully removed')
+  assert.match(fn, /developer_completed_work → Manager ONLY/, 'source must document the canonical Manager-only policy')
+
+  const managerIdx = fn.indexOf("title: 'Work Logged on Ticket'")
+  assert.notEqual(managerIdx, -1, 'manager recipient must still be present')
+  const managerEmailBlock = fn.slice(fn.indexOf('email: {', managerIdx), fn.indexOf('teams: {', managerIdx))
+  assert.match(managerEmailBlock, /templateData/, 'manager recipient must still receive an email')
+})
+
+test('ticket_resolved (forward to client): email templateData never includes resolvedBy', () => {
+  const src = readFileSync(join(ROOT, 'app', 'actions', 'tickets', 'update.ts'), 'utf8')
+  const blockStart = src.indexOf("eventType: 'ticket_resolved'")
+  const blockEnd = src.indexOf('teams: {', blockStart)
+  const emailBlock = src.slice(src.indexOf('email: {', blockStart), blockEnd)
+  assert.ok(!emailBlock.includes('resolvedBy'), 'client-only ticket_resolved email must not include resolvedBy')
+})
+
+test('revision_approved sends email only to the Requester — no separate assigned-developer recipient', () => {
+  const src = readFileSync(join(ROOT, 'app', 'actions', 'revisions.ts'), 'utf8')
+  const fnStart = src.indexOf('export const approveRevision')
+  const fnEnd = src.indexOf('export const rejectRevision')
+  const fn = src.slice(fnStart, fnEnd)
+
+  // Only ONE recipients.push exists — the requester's — the previous
+  // "if (t.assignedToId && t.assignedToId !== rev.requestedById)" developer
+  // block has been removed entirely, not just its email content scrubbed.
+  const pushes = fn.match(/recipients\.push\(/g) ?? []
+  assert.equal(pushes.length, 0, 'the requester is the sole recipients array entry (no additional .push for a developer)')
+  assert.ok(!fn.includes('t.assignedToId'), 'the assigned developer must not be referenced as a recipient at all')
+  assert.match(fn, /revision_approved → Requester ONLY/, 'source must document the canonical Requester-only policy')
+
+  const requesterEmailBlock = fn.slice(fn.indexOf('email: {'), fn.indexOf('teams: {'))
+  assert.ok(!requesterEmailBlock.includes('approvedBy'), 'the requester email must still never include the internal approver name (privacy fix preserved)')
+})
+
+test('revision_requested sends email to Manager and NOT Developer (developer recipient removed entirely)', () => {
+  const src = readFileSync(join(ROOT, 'app', 'actions', 'revisions.ts'), 'utf8')
+  const clientBranchStart = src.indexOf('// Client requested revision — notify manager/admin for approval')
+  const clientBranchEnd = src.indexOf('} else {', clientBranchStart)
+  const clientBranch = src.slice(clientBranchStart, clientBranchEnd)
+
+  assert.ok(!clientBranch.includes('t.assignedToId'), 'the assigned developer must not be referenced as a recipient at all in the client-revision-request branch')
+  assert.match(clientBranch, /revision_requested → Manager ONLY/, 'source must document the canonical Manager-only policy')
+
+  // Manager recipient must exist and now carry an email block (previously
+  // in-app only, with the developer wrongly holding the email instead).
+  const managerIdx = clientBranch.indexOf('userId: p.managerId')
+  assert.notEqual(managerIdx, -1, 'manager recipient must be present')
+  const managerBlock = clientBranch.slice(managerIdx, clientBranch.indexOf('// Notify admins'))
+  assert.match(managerBlock, /email: \{/, 'manager must receive the email for revision_requested')
+  assert.doesNotMatch(managerBlock, /^\s*channels: \['inApp'\]/m, 'manager recipient must not be restricted to in-app only anymore')
+})
+
+test('ticket_closed: client recipient is now included (email-only), and closedBy is self-referential, never an internal name', () => {
+  const src = readFileSync(join(ROOT, 'app', 'actions', 'tickets', 'update.ts'), 'utf8')
+  const blockStart = src.indexOf('// Ticket Closed — Client (Email only)')
+  assert.notEqual(blockStart, -1, 'a dedicated client recipient block must exist for ticket_closed')
+  const blockEnd = src.indexOf('if (closedRecipients.length > 0)')
+  const block = src.slice(blockStart, blockEnd)
+  assert.match(block, /channels: \['email'\]/, 'client copy must be email-only (no new in-app/Teams noise)')
+  assert.match(block, /closedBy: 'You'/, 'closedBy must be self-referential text, never an internal name')
 })

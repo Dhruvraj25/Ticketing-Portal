@@ -65,7 +65,7 @@ export const addWalletHours = async function addWalletHours(data: {
     .where(eq(supportWallet.id, data.walletId))
     .returning()
 
-  await db.insert(walletTransaction).values({
+  const [txn] = await db.insert(walletTransaction).values({
     walletId: data.walletId,
     transactionType: data.transactionType || 'Add Hours',
     hours: data.hours,
@@ -76,7 +76,7 @@ export const addWalletHours = async function addWalletHours(data: {
     performedBy: currentUser.name || currentUser.id,
     validFrom: data.startDate || null,
     validTo: data.endDate || null,
-  })
+  }).returning({ id: walletTransaction.id })
 
   await db.insert(walletAlert).values({
     walletId: data.walletId,
@@ -149,10 +149,15 @@ export const addWalletHours = async function addWalletHours(data: {
     }
   }
 
+  // Cycle-aware dedup: a wallet is recharged repeatedly over its lifetime —
+  // each recharge is a legitimate NEW event and must send its own
+  // notification. txn.id is the just-inserted walletTransaction's own id, so
+  // it's a unique-per-recharge marker; a genuine retry of THIS SAME dispatch
+  // call (same captured txn.id) still collapses correctly.
   await dispatchNotification({
     eventType: 'support_hours_assigned',
     triggeredBy: currentUser.id,
-    dedup: { scope: `wallet:${data.walletId}` },
+    dedup: { scope: `wallet:${data.walletId}:txn:${txn.id}` },
     recipients,
   })
 

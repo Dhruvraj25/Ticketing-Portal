@@ -5,7 +5,7 @@ import { getCurrentUser as getUser } from '@/lib/auth-utils'
 import { getPortalUrl } from '@/lib/urls'
 import { db } from '@/lib/db'
 import { ticket, ticketHistory, comment, timeLog, attachment, user, project, module as moduleTable, projectClient, supportWallet, walletTransaction } from '@/lib/db/schema'
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, inArray, count } from 'drizzle-orm'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import type { TicketStatus } from '@/lib/types'
 import { dispatchNotification, shouldNotifyWalletLow, shouldNotifyWalletEmpty, WALLET_LOW_THRESHOLD } from '@/lib/notify-all'
@@ -271,6 +271,15 @@ export const assignTicket = wrapServerAction('assignTicket', async function assi
     const ticketLink = (getPortalUrl()) + '/dashboard/tickets/' + ticketId
     const recipients: Parameters<typeof dispatchNotification>[0]['recipients'] = []
 
+    // The developer's "Ticket Assigned" email shows which CLIENT the ticket
+    // belongs to — this must be the ticket's actual client (t.clientId), never
+    // the manager/admin performing the assignment (currentUser).
+    let realClientName = 'Client'
+    if (t.clientId) {
+      const [clientRow] = await db.select({ name: user.name }).from(user).where(eq(user.id, t.clientId)).limit(1)
+      if (clientRow?.name) realClientName = clientRow.name
+    }
+
     // Assigned developer: In-App + Email + Teams
     recipients.push({
       userId: developerId,
@@ -284,7 +293,7 @@ export const assignTicket = wrapServerAction('assignTicket', async function assi
         templateData: {
           ticketNumber: t.ticketNumber,
           ticketTitle: t.title,
-          clientName: currentUser.name || currentUser.id,
+          clientName: realClientName,
           developerName: developer.name,
           priority: t.priority,
           ticketLink,
@@ -294,7 +303,7 @@ export const assignTicket = wrapServerAction('assignTicket', async function assi
         payload: {
           ticketNumber: t.ticketNumber,
           ticketTitle: t.title,
-          clientName: currentUser.name || currentUser.id,
+          clientName: realClientName,
           developerName: developer.name,
           priority: t.priority,
           url: ticketLink,
@@ -303,6 +312,10 @@ export const assignTicket = wrapServerAction('assignTicket', async function assi
     })
 
     // Also notify the client that ticket has been assigned (In-App + Email + Teams)
+    // NOTE: developerName is intentionally omitted from the EMAIL templateData
+    // below — the assigned-developer identity is internal-only and must never
+    // appear in a client-facing email (CLIENT PRIVACY). In-App/Teams are
+    // unrelated existing channels/workflows and are left unchanged.
     if (t.clientId) {
       recipients.push({
         userId: t.clientId,
@@ -316,7 +329,6 @@ export const assignTicket = wrapServerAction('assignTicket', async function assi
           templateData: {
             ticketNumber: t.ticketNumber,
             ticketTitle: t.title,
-            developerName: developer.name,
             priority: t.priority,
             ticketLink,
           },
@@ -391,11 +403,14 @@ export const managerForwardToClient = wrapServerAction('managerForwardToClient',
           link: `/dashboard/tickets/${ticketId}`,
           ticketId,
         },
+        // resolvedBy (the manager/PM's name) is intentionally omitted here —
+        // this template is client-only and must never reveal the internal
+        // manager's identity (CLIENT PRIVACY). In-App/Teams below are
+        // unrelated channels and keep their existing behavior.
         email: {
           templateData: {
             ticketNumber: t.ticketNumber,
             ticketTitle: t.title,
-            resolvedBy: currentUser.name || 'Manager',
             resolutionSummary: '',
             ticketLink: forwardTicketLink,
           },
@@ -726,11 +741,47 @@ export const clientApproveTicket = wrapServerAction('clientApproveTicket', async
     }
   }
 
+  // Ticket Closed — Client (Email only). The template's own copy is written
+  // for the client ("Thank you for your business!", "Leave Feedback"), but
+  // the client was never actually a recipient — only the developer/manager
+  // were. currentUser IS the client in this flow (role-guarded above), so
+  // "closedBy: 'You'" is self-referential, not an internal-name leak.
+  // In-App/Teams are intentionally not added here (not requested; the client
+  // is the one who just took this action).
+  if (t.clientId) {
+    closedRecipients.push({
+      userId: t.clientId,
+      channels: ['email'],
+      email: {
+        templateData: {
+          ticketNumber: t.ticketNumber,
+          ticketTitle: t.title,
+          closedBy: 'You',
+          resolutionTime: '',
+          feedbackLink: closeTicketLink,
+        },
+      },
+    })
+  }
+
   if (closedRecipients.length > 0) {
+    // Cycle-aware dedup: a ticket can be closed, reopened (clientReopenTicket),
+    // and closed again — each closure is a legitimate NEW event that must send
+    // its own notification. ticketHistory's 'client_approved' action is
+    // inserted exactly once per successful close (the status guard above
+    // prevents this action from running twice for the same cycle), so its
+    // running count is a stable, already-tracked per-cycle marker — no new
+    // column needed. The just-inserted row for THIS close is already counted.
+    const [{ value: closeCycleRaw }] = await db
+      .select({ value: count() })
+      .from(ticketHistory)
+      .where(and(eq(ticketHistory.ticketId, ticketId), eq(ticketHistory.action, 'client_approved')))
+    const closeCycle = Number(closeCycleRaw) || 1
+
     await dispatchNotification({
       eventType: 'ticket_closed',
       triggeredBy: currentUser.id,
-      dedup: { scope: `ticket:${ticketId}` },
+      dedup: { scope: `ticket:${ticketId}:close:${closeCycle}` },
       recipients: closedRecipients,
     })
   }
@@ -844,10 +895,22 @@ export const clientReopenTicket = wrapServerAction('clientReopenTicket', async f
   }
 
   if (reopenedRecipients.length > 0) {
+    // Cycle-aware dedup — mirrors ticket_closed above: a ticket can be closed
+    // and reopened multiple times (each within its own 7-day window), and
+    // each reopen is a legitimate NEW event. 'reopened_by_client' is inserted
+    // exactly once per successful reopen (the status guard above prevents a
+    // second reopen of the same cycle), so its running count is a stable
+    // per-cycle marker.
+    const [{ value: reopenCycleRaw }] = await db
+      .select({ value: count() })
+      .from(ticketHistory)
+      .where(and(eq(ticketHistory.ticketId, ticketId), eq(ticketHistory.action, 'reopened_by_client')))
+    const reopenCycle = Number(reopenCycleRaw) || 1
+
     await dispatchNotification({
       eventType: 'ticket_reopened',
       triggeredBy: currentUser.id,
-      dedup: { scope: `ticket:${ticketId}` },
+      dedup: { scope: `ticket:${ticketId}:reopen:${reopenCycle}` },
       recipients: reopenedRecipients,
     })
   }

@@ -62,35 +62,9 @@ export const startTimer = wrapServerAction('startTimer', async function startTim
 
   const ticketLink = (getPortalUrl()) + '/dashboard/tickets/' + ticketId
   if (ticketRow) {
-    if (ticketRow.clientId) {
-      recipients.push({
-        userId: ticketRow.clientId,
-        inApp: {
-          title: 'Work Started on Your Ticket',
-          message: `Work has started on ticket #${ticketRow.ticketNumber} (${ticketRow.title}).`,
-          link: `/dashboard/tickets/${ticketId}`,
-          ticketId,
-        },
-        email: {
-          templateData: {
-            ticketNumber: ticketRow.ticketNumber,
-            ticketTitle: ticketRow.title,
-            developerName: currentUser.name,
-            description: description || 'Started working',
-            ticketLink,
-          },
-        },
-        teams: {
-          payload: {
-            ticketNumber: ticketRow.ticketNumber,
-            ticketTitle: ticketRow.title,
-            developerName: currentUser.name,
-            description: description || 'Started working',
-            url: ticketLink,
-          },
-        },
-      })
-    }
+    // Canonical recipient policy: developer_started_work → Manager ONLY. The
+    // client is deliberately NOT a recipient of this event (a client should
+    // not be notified every time a developer starts a work session).
     if (ticketRow.projectId) {
       const [projectRow] = await db
         .select({ managerId: project.managerId })
@@ -186,35 +160,9 @@ export const stopTimer = wrapServerAction('stopTimer', async function stopTimer(
 
   const ticketLink = (getPortalUrl()) + '/dashboard/tickets/' + log.ticketId
   if (ticketRow) {
-    if (ticketRow.clientId) {
-      recipients.push({
-        userId: ticketRow.clientId,
-        inApp: {
-          title: 'Work Completed on Your Ticket',
-          message: `A work session on ticket #${ticketRow.ticketNumber} (${ticketRow.title}) has been logged (${durationMinutes} minutes).`,
-          link: `/dashboard/tickets/${log.ticketId}`,
-          ticketId: log.ticketId,
-        },
-        email: {
-          templateData: {
-            ticketNumber: ticketRow.ticketNumber,
-            ticketTitle: ticketRow.title,
-            developerName: currentUser.name,
-            durationMinutes,
-            ticketLink,
-          },
-        },
-        teams: {
-          payload: {
-            ticketNumber: ticketRow.ticketNumber,
-            ticketTitle: ticketRow.title,
-            developerName: currentUser.name,
-            durationMinutes,
-            url: ticketLink,
-          },
-        },
-      })
-    }
+    // Canonical recipient policy: developer_completed_work → Manager ONLY.
+    // The client is deliberately NOT a recipient of this event (a client
+    // should not be notified every time a developer logs a work session).
     if (ticketRow.projectId) {
       const [projectRow] = await db
         .select({ managerId: project.managerId })
