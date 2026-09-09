@@ -15,6 +15,21 @@
 
 const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000'
 
+// If BACKEND_URL/NEXT_PUBLIC_BACKEND_URL is unset in a deployed (non-dev)
+// environment, every notification silently falls back to localhost:4000 —
+// unreachable from a deployed Frontend — and every email/Teams notification
+// fails at this bridge, 100% silently (the fetch() below never throws in a
+// way surfaced to the caller; see sendNotification's catch block). Logging
+// this loudly ONCE at module load makes that misconfiguration diagnosable
+// instead of invisible.
+if (process.env.NODE_ENV === 'production' && !process.env.BACKEND_URL && !process.env.NEXT_PUBLIC_BACKEND_URL) {
+  console.error(
+    '[EmailBackend] BACKEND_URL/NEXT_PUBLIC_BACKEND_URL is not configured in production — ' +
+    'falling back to http://localhost:4000, which is unreachable from a deployed Frontend. ' +
+    'EVERY email/Teams notification will silently fail until this is set.',
+  )
+}
+
 /**
  * Fire-and-forget email notification via the backend email service.
  *
