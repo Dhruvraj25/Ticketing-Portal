@@ -20,6 +20,37 @@ interface TestSendResult {
   mockMode?: boolean
   durationMs?: number
   messageId?: string
+  /** Present only on bridge-layer failures (before the request ever reached
+   *  the Teams webhook) — distinguishes "we couldn't even ask" from
+   *  "the webhook said no". Sanitized: never a secret, never a stack trace. */
+  provider?: string
+  stage?: 'network' | 'authentication' | 'authorization' | 'backend' | 'config'
+  code?: string
+}
+
+/** A human-readable, sanitized label for the failure banner — replaces the
+ *  old blanket "Delivery failed" / "Webhook Error" that collapsed every
+ *  failure stage (network, auth, backend, webhook) into one indistinguishable
+ *  message. */
+function describeFailure(result: TestSendResult): string {
+  switch (result.stage) {
+    case 'network':
+      return 'Could not reach the backend server'
+    case 'authentication':
+      return 'Backend session authentication failed (401)'
+    case 'authorization':
+      return 'Not authorized to send Teams test messages (403)'
+    case 'backend':
+      return `Backend error (HTTP ${result.statusCode ?? 'unknown'})`
+    case 'config':
+      return 'Teams configuration missing'
+    default:
+      // No `stage` means the request reached the real Teams webhook
+      // transport and IT rejected the message — report that specifically.
+      return result.statusCode
+        ? `Teams webhook rejected the request (HTTP ${result.statusCode})`
+        : 'Teams webhook delivery failed'
+  }
 }
 
 export function TeamsStatusClient() {
@@ -164,7 +195,7 @@ export function TeamsStatusClient() {
               <span className="font-semibold">
                 {testResult.success
                   ? (testResult.mockMode ? 'Mock message logged (dev mode)' : 'Message delivered via webhook')
-                  : 'Delivery failed'
+                  : describeFailure(testResult)
                 }
               </span>
               {testResult.durationMs !== undefined && (
@@ -190,12 +221,18 @@ export function TeamsStatusClient() {
               {testResult.message}
             </div>
 
-            {/* Error Details */}
+            {/* Error Details — labeled by the ACTUAL failure stage. Only the
+                default (no `stage`) case is a genuine webhook rejection;
+                network/authentication/authorization/backend failures happen
+                before the request ever reaches Teams and must never be
+                mislabeled as a "Webhook Error". */}
             {testResult.error && !testResult.success && (
               <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/15/50 px-3 py-2 space-y-1">
                 <div className="flex items-center gap-2">
                   <Terminal className="h-3 w-3 text-red-500 dark:text-red-400" />
-                  <span className="text-xs font-semibold text-red-700 dark:text-red-300">Webhook Error</span>
+                  <span className="text-xs font-semibold text-red-700 dark:text-red-300">
+                    {testResult.stage ? `Bridge Error (${testResult.code ?? testResult.stage})` : 'Webhook Error'}
+                  </span>
                 </div>
                 <p className="text-xs text-red-600 dark:text-red-400 font-mono">
                   {testResult.error}

@@ -74,3 +74,88 @@ test('sendNotification() still never throws to its caller — the fire-and-forge
   assert.match(fn, /catch \(err\) \{/)
   assert.doesNotMatch(fn, /throw /, 'must never throw to the caller — every ticket action must stay non-blocking')
 })
+
+// ============================================================================
+// THE ACTUAL root cause (this escalation) — session cookie was never forwarded
+// ============================================================================
+// Every /api/teams/* Backend route is gated by requireAuth, which validates
+// the session via auth.api.getSession({ headers: req.headers }) — Better
+// Auth reads the session token from the request's Cookie header. Confirmed
+// directly against a real running local backend:
+//   curl http://localhost:4000/api/teams/status            → 401 (no cookie)
+//   curl .../status -H "Cookie: session=garbage"            → 401 (invalid
+//     session — but the NEW [Auth] log line now correctly shows hasCookie=true
+//     here vs hasCookie=false for the first case, proving the two failure
+//     modes are now distinguishable)
+// app/actions/teams.ts's fetchFromBackend() never included a 'Cookie' header
+// at all — unlike lib/email-backend.ts's sendNotification(), which already
+// forwards it correctly. This alone fully explains all three reported
+// symptoms (queue stats always zero, "Delivery failed"/"Webhook Error", and
+// is a strong contributor to the generic Server Components crash) —
+// independent of, and in addition to, the URL-resolution bug fixed earlier.
+
+test('app/actions/teams.ts forwards the real session cookie on every backend call (both fetchFromBackend and fetchFromBackendSafe)', () => {
+  assert.match(TEAMS_ACTIONS_SRC, /import \{ headers \} from 'next\/headers'/)
+  assert.match(TEAMS_ACTIONS_SRC, /async function getSessionCookie\(\): Promise<string>/)
+  // Both the throwing helper (used by the 4 read-only status calls) and the
+  // non-throwing "safe" helper (used by the interactive test-send) must
+  // forward the cookie — this was previously present in NEITHER.
+  const fetchFromBackendFn = TEAMS_ACTIONS_SRC.slice(
+    TEAMS_ACTIONS_SRC.indexOf('async function fetchFromBackend('),
+    TEAMS_ACTIONS_SRC.indexOf('async function fetchFromBackendSafe'),
+  )
+  const fetchFromBackendSafeFn = TEAMS_ACTIONS_SRC.slice(
+    TEAMS_ACTIONS_SRC.indexOf('async function fetchFromBackendSafe'),
+    TEAMS_ACTIONS_SRC.indexOf('export const getTeamsStatus'),
+  )
+  assert.match(fetchFromBackendFn, /'Cookie': cookie/)
+  assert.match(fetchFromBackendSafeFn, /'Cookie': cookie/)
+})
+
+test('regression: the OLD headers object (Content-Type only, no Cookie) must never reappear', () => {
+  // The specific broken shape from before this fix — guards against a
+  // future edit accidentally dropping the Cookie header again.
+  assert.doesNotMatch(
+    TEAMS_ACTIONS_SRC,
+    /headers:\s*\{\s*'Content-Type': 'application\/json',\s*\.\.\.options\?\.headers,\s*\}/,
+  )
+})
+
+test('sendTeamsTestMessage returns a structured, sanitized failure (stage/code/message) instead of throwing a generic string', () => {
+  const fnStart = TEAMS_ACTIONS_SRC.indexOf('export const sendTeamsTestMessage')
+  const fnEnd = TEAMS_ACTIONS_SRC.indexOf('export const clearTeamsQueue')
+  const fn = TEAMS_ACTIONS_SRC.slice(fnStart, fnEnd)
+  assert.match(fn, /fetchFromBackendSafe</)
+  assert.match(fn, /stage: result\.stage/)
+  assert.match(fn, /code: result\.code/)
+  assert.doesNotMatch(fn, /throw /, 'the interactive test-send must never throw — it always returns a renderable result')
+})
+
+test('fetchFromBackendSafe distinguishes network / authentication / authorization / backend failure stages, and never throws', () => {
+  const fnStart = TEAMS_ACTIONS_SRC.indexOf('async function fetchFromBackendSafe')
+  const fnEnd = TEAMS_ACTIONS_SRC.indexOf('export const getTeamsStatus')
+  const fn = TEAMS_ACTIONS_SRC.slice(fnStart, fnEnd)
+  assert.match(fn, /stage: 'network'/)
+  assert.match(fn, /stage: 'authentication'/)
+  assert.match(fn, /res\.status === 401/)
+  assert.match(fn, /stage: 'authorization'/)
+  assert.match(fn, /res\.status === 403/)
+  assert.match(fn, /stage: 'backend'/)
+  assert.doesNotMatch(fn, /^\s*throw /m, 'fetchFromBackendSafe must catch every failure mode and return, never throw')
+})
+
+test('no secret, cookie value, or stack trace is ever included in a message returned to the client', () => {
+  const fnStart = TEAMS_ACTIONS_SRC.indexOf('async function fetchFromBackendSafe')
+  const fnEnd = TEAMS_ACTIONS_SRC.indexOf('export const getTeamsStatus')
+  const fn = TEAMS_ACTIONS_SRC.slice(fnStart, fnEnd)
+  // Every `message:` literal in this function must be a hardcoded,
+  // human-written sentence — never string-interpolate the cookie, a raw
+  // error object, or a stack trace into it.
+  const messageLines = [...fn.matchAll(/message:\s*(.+)/g)].map(m => m[1])
+  assert.ok(messageLines.length > 0, 'expected at least one message: field to check')
+  for (const line of messageLines) {
+    assert.doesNotMatch(line, /\$\{cookie\}/)
+    assert.doesNotMatch(line, /\.stack/)
+    assert.doesNotMatch(line, /err\.message(?!\)|\s*\?)/, 'raw error.message must not be interpolated directly into a client-facing message')
+  }
+})
