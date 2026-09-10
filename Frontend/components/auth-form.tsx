@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
+import { getFriendlyError } from '@/lib/error-utils'
 
 interface AuthFormProps {
   mode: 'sign-in' | 'sign-up'
@@ -223,18 +224,38 @@ export function AuthForm({ mode }: AuthFormProps) {
     try {
       if (isSignIn) {
         const result = await signIn.email({ email, password, rememberMe })
-        if (result.error) throw new Error(result.error.message || 'Invalid credentials')
+        if (result.error) {
+          const errMsg = result.error.message || ''
+          // Map specific Better Auth errors to user-friendly messages
+          if (/deactivated|banned/i.test(errMsg)) {
+            throw new Error('Your account has been deactivated. Please contact an administrator.')
+          }
+          if (/not.*found|no.*account|invalid.*credentials/i.test(errMsg)) {
+            throw new Error('Invalid email or password.')
+          }
+          if (/email.*not.*verified/i.test(errMsg)) {
+            throw new Error('Please verify your email address before signing in.')
+          }
+          // Generic login failure — never reveal which field was wrong
+          throw new Error('Invalid email or password.')
+        }
         router.push('/dashboard')
       } else {
         if (!name.trim()) {
           throw new Error('Please enter your full name.')
         }
         const result = await signUp.email({ name, email, password })
-        if (result.error) throw new Error(result.error.message || 'Registration failed')
+        if (result.error) {
+          const errMsg = result.error.message || ''
+          if (/already.*exists|duplicate|unique/i.test(errMsg)) {
+            throw new Error('An account with this email already exists.')
+          }
+          throw new Error(getFriendlyError(errMsg))
+        }
         router.push('/dashboard')
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred')
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -259,7 +280,7 @@ export function AuthForm({ mode }: AuthFormProps) {
         setResetEmail('')
       }, 3000)
     } catch (err) {
-      setResetError(err instanceof Error ? err.message : 'Could not send reset link. Please try again.')
+      setResetError(getFriendlyError(err))
     } finally {
       setResetSubmitting(false)
     }

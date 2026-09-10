@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
+import { getFriendlyError } from '@/lib/error-utils'
 import { format } from 'date-fns'
 import { PasswordField } from '@/components/ui/password-field'
 import { User, Loader2, Shield, UserPlus, Trash2, KeyRound, UserX, UserCheck, MoreHorizontal, Search, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ArrowUpDown, MessageSquare, Bell } from 'lucide-react'
@@ -54,7 +55,7 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
     setError(null)
     startTransition(async () => {
       try { await createUser(form); setForm({ name: '', email: '', password: '', role: 'client' }); onClose() }
-      catch (err) { setError(err instanceof Error ? err.message : 'Failed to create user') }
+      catch (err) { setError(getFriendlyError(err)) }
     })
   }
   return (
@@ -95,11 +96,11 @@ function ResetPasswordDialog({ user: targetUser, onClose }: { user: UserData | n
   const [error, setError] = useState<string | null>(null); const [success, setSuccess] = useState(false)
   const handleReset = () => {
     if (!targetUser) return; setError(null)
-    if (password !== confirm) { setError('Passwords do not match'); return }
-    if (password.length < 8) { setError('Password must be at least 8 characters'); return }
+    if (password !== confirm) { setError('Passwords do not match.'); return }
+    if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
     startTransition(async () => {
       try { await resetUserPassword(targetUser.id, password); setSuccess(true); setTimeout(() => { setSuccess(false); onClose() }, 1500) }
-      catch (err) { setError(err instanceof Error ? err.message : 'Failed to reset password') }
+      catch (err) { setError(getFriendlyError(err)) }
     })
   }
   return (
@@ -178,7 +179,7 @@ export default function UserManagementTablePaginated({ initialData, roleCounts, 
 
   const runAction = async (userId: string, fn: () => Promise<void>) => {
     setLoadingId(userId); setRowError(prev => ({ ...prev, [userId]: '' }))
-    try { await fn() } catch (err) { setRowError(prev => ({ ...prev, [userId]: err instanceof Error ? err.message : 'Action failed' })) } finally { setLoadingId(null) }
+    try { await fn() } catch (err) { setRowError(prev => ({ ...prev, [userId]: getFriendlyError(err) })) } finally { setLoadingId(null) }
   }
 
   const handleRoleChangeAction = (userId: string, newRole: UserRole) => runAction(userId, () => updateUserRole(userId, newRole))
@@ -193,7 +194,7 @@ export default function UserManagementTablePaginated({ initialData, roleCounts, 
     if (!deleteTarget) return
     startTransition(async () => {
       try { await deleteUser(deleteTarget.id); fetchData({ search: search || undefined, role: roleFilter !== 'all' ? roleFilter : undefined, sortBy, sortDir, page, pageSize: 50 }) }
-      catch (err) { setRowError(prev => ({ ...prev, [deleteTarget.id]: err instanceof Error ? err.message : 'Failed to delete' })) } finally { setDeleteTarget(null) }
+      catch (err) { setRowError(prev => ({ ...prev, [deleteTarget.id]: getFriendlyError(err) })) } finally { setDeleteTarget(null) }
     })
   }
 

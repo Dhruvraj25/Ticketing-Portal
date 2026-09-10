@@ -188,12 +188,19 @@ export const updateUserRole = wrapServerAction('updateUserRole', async function 
   const currentUser = await getUser()
 
   if (currentUser.role !== 'admin') {
-    throw new Error('Access denied')
+    throw new Error('You do not have permission to change user roles.')
   }
 
   if (userId === currentUser.id) {
-    throw new Error('Cannot change your own role')
+    throw new Error('You cannot change your own role.')
   }
+
+  if (!['admin', 'project_manager', 'developer', 'client'].includes(newRole)) {
+    throw new Error('The selected user role is not valid.')
+  }
+
+  const [target] = await db.select({ id: user.id }).from(user).where(eq(user.id, userId)).limit(1)
+  if (!target) throw new Error('The user could not be found.')
 
   await db
     .update(user)
@@ -255,10 +262,20 @@ export const createUser = wrapServerAction('createUser', async function createUs
   const currentUser = await getUser()
   if (currentUser.role !== 'admin') throw new Error('Access denied')
 
+  // ── Validation ────────────────────────────────────────────────────────
+  if (!data.name?.trim()) throw new Error('Please complete all required fields.')
+  if (!data.email?.trim()) throw new Error('Please complete all required fields.')
+  if (!data.password) throw new Error('Please complete all required fields.')
+  if (!['admin', 'project_manager', 'developer', 'client'].includes(data.role)) {
+    throw new Error('The selected user role is not valid.')
+  }
+
   // Emails are compared and stored lowercase so USER@X.COM and user@x.com are
   // the same account (case-insensitive email handling).
   const normalizedEmail = data.email.trim().toLowerCase()
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) throw new Error('Please enter a valid email address')
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    throw new Error('Please enter a valid email address.')
+  }
 
   // Check email uniqueness
   const [existing] = await db
@@ -266,9 +283,9 @@ export const createUser = wrapServerAction('createUser', async function createUs
     .from(user)
     .where(eq(user.email, normalizedEmail))
     .limit(1)
-  if (existing) throw new Error('A user with this email already exists')
+  if (existing) throw new Error('A user with this email address already exists.')
 
-  if (data.password.length < 8) throw new Error('Password must be at least 8 characters')
+  if (data.password.length < 8) throw new Error('Password must be at least 8 characters.')
 
   // disableSignUp is true, so we cannot call auth.api.signUpEmail.
   // Instead hash the password via Better Auth's internal context and insert directly.
@@ -280,10 +297,11 @@ export const createUser = wrapServerAction('createUser', async function createUs
   const accountId = crypto.randomUUID()
   const now = new Date()
 
+  // ── Step 1: Create user DB record ─────────────────────────────────────
   try {
     await db.insert(user).values({
       id: userId,
-      name: data.name,
+      name: data.name.trim(),
       email: normalizedEmail,
       emailVerified: true,
       role: data.role,
@@ -292,23 +310,23 @@ export const createUser = wrapServerAction('createUser', async function createUs
       updatedAt: now,
     })
   } catch (err: any) {
-    // Detect missing column errors (schema out of sync with database)
     const msg = err?.message || ''
-    // Detect missing column errors (schema out of sync with database)
-    // PostgreSQL error pattern: column "col_name" of relation "table_name" does not exist
-    if (msg.includes('does not exist') || msg.includes('welcome_email_sent')) {
-      console.error('[createUser] Schema mismatch detected. The database is missing a column that exists in the schema.', err)
-      throw new Error(
-        'Database schema out of sync with the application. ' +
-        'Run the database migration to add the missing column(s). ' +
-        'Execute: node scripts/add-welcome-email-column.mjs'
-      )
+    // Detect unique constraint violation (duplicate email race condition)
+    if (msg.includes('unique') || msg.includes('duplicate') || msg.includes('23505')) {
+      console.error('[createUser] Duplicate email (race condition):', normalizedEmail)
+      throw new Error('A user with this email address already exists.')
     }
-    // General database error
-    console.error('[createUser] Failed to create user:', err)
-    throw new Error(`Failed to create user: ${err?.message || 'Unknown database error'}`)
+    // Detect missing column errors (schema out of sync with database)
+    if (msg.includes('does not exist') || msg.includes('welcome_email_sent')) {
+      console.error('[createUser] Schema mismatch detected:', err)
+      throw new Error('A system error occurred. Please contact an administrator.')
+    }
+    // General database error — never expose SQL internals
+    console.error('[createUser] Database error creating user:', err)
+    throw new Error('We couldn\'t create the user right now. Please try again.')
   }
 
+  // ── Step 2: Create auth account ───────────────────────────────────────
   try {
     await db.insert(account).values({
       id: accountId,
@@ -320,10 +338,10 @@ export const createUser = wrapServerAction('createUser', async function createUs
       updatedAt: now,
     })
   } catch (err: any) {
-    console.error('[createUser] Failed to create account:', err)
+    console.error('[createUser] Auth account creation failed, rolling back user:', err)
     // Attempt cleanup of the user that was already inserted
-    db.delete(user).where(eq(user.id, userId)).catch(() => {})
-    throw new Error(`Failed to create user account: ${err?.message || 'Unknown error'}`)
+    await db.delete(user).where(eq(user.id, userId)).catch(() => {})
+    throw new Error('The user profile was created, but the login account could not be created. Please try again or contact an administrator.')
   }
 
   // Auto-create support wallet for client users
@@ -375,13 +393,13 @@ export const createUser = wrapServerAction('createUser', async function createUs
 
 export const deleteUser = wrapServerAction('deleteUser', async function deleteUser(userId: string) {
   const currentUser = await getUser()
-  if (currentUser.role !== 'admin') throw new Error('Access denied')
-  if (userId === currentUser.id) throw new Error('Cannot delete your own account')
+  if (currentUser.role !== 'admin') throw new Error('You do not have permission to delete users.')
+  if (userId === currentUser.id) throw new Error('You cannot delete your own account.')
 
   // Check target exists and is not an admin
   const [target] = await db.select({ role: user.role, name: user.name }).from(user).where(eq(user.id, userId)).limit(1)
-  if (!target) throw new Error('User not found')
-  if (target.role === 'admin') throw new Error('Cannot delete an admin account')
+  if (!target) throw new Error('The user could not be found. They may have already been deleted.')
+  if (target.role === 'admin') throw new Error('Admin accounts cannot be deleted.')
 
   // Check if user has related projects (client or manager)
   const [projectAsClient] = await db
@@ -398,7 +416,7 @@ export const deleteUser = wrapServerAction('deleteUser', async function deleteUs
 
   if (Number(projectAsClient?.count) > 0 || Number(projectAsManager?.count) > 0) {
     throw new Error(
-      `Cannot delete "${target.name}" because they are associated with one or more projects. ` +
+      'This user cannot be deleted because they have associated records. ' +
       'Reassign or delete their projects first, or deactivate the user instead.'
     )
   }
@@ -406,13 +424,15 @@ export const deleteUser = wrapServerAction('deleteUser', async function deleteUs
   try {
     // Delete user (sessions and accounts cascade via DB constraints)
     await db.delete(user).where(eq(user.id, userId))
-  } catch (err) {
+  } catch (err: any) {
+    const msg = err?.message || ''
+    // Foreign key constraint violation — user has related records
+    if (msg.includes('foreign key') || msg.includes('constraint') || msg.includes('23503')) {
+      console.error('[deleteUser] Dependency constraint:', err)
+      throw new Error('This user cannot be deleted because they have associated records. Try deactivating the user instead.')
+    }
     console.error('[deleteUser] Database error:', err)
-    throw new Error(
-      `Failed to delete "${target.name}". The user may have related records ` +
-      '(tickets, notifications, etc.) that prevent deletion. ' +
-      'Try deactivating the user instead.'
-    )
+    throw new Error('We couldn\'t delete the user right now. Please try again.')
   }
 
   revalidatePath('/dashboard/admin/users')
@@ -444,7 +464,7 @@ export const resetUserPassword = wrapServerAction('resetUserPassword', async fun
     throw new Error('Access denied')
   }
 
-  if (newPassword.length < 8) throw new Error('Password must be at least 8 characters')
+  if (newPassword.length < 8) throw new Error('Password must be at least 8 characters.')
 
   // Verify the user exists
   const [target] = await db
@@ -452,7 +472,7 @@ export const resetUserPassword = wrapServerAction('resetUserPassword', async fun
     .from(user)
     .where(eq(user.id, userId))
     .limit(1)
-  if (!target) throw new Error('User not found')
+  if (!target) throw new Error('The user could not be found.')
 
   // Managers may only reset passwords for clients/developers on projects they
   // manage — never for admins or other managers.
@@ -555,12 +575,12 @@ export const resetUserPassword = wrapServerAction('resetUserPassword', async fun
 
 export const toggleUserBanned = wrapServerAction('toggleUserBanned', async function toggleUserBanned(userId: string) {
   const currentUser = await getUser()
-  if (currentUser.role !== 'admin') throw new Error('Access denied')
-  if (userId === currentUser.id) throw new Error('Cannot deactivate your own account')
+  if (currentUser.role !== 'admin') throw new Error('You do not have permission to deactivate users.')
+  if (userId === currentUser.id) throw new Error('You cannot deactivate your own account.')
 
   const [target] = await db.select({ banned: user.banned, role: user.role }).from(user).where(eq(user.id, userId)).limit(1)
-  if (!target) throw new Error('User not found')
-  if (target.role === 'admin') throw new Error('Cannot deactivate an admin account')
+  if (!target) throw new Error('The user could not be found.')
+  if (target.role === 'admin') throw new Error('Admin accounts cannot be deactivated.')
 
   const newBanned = !target.banned
 

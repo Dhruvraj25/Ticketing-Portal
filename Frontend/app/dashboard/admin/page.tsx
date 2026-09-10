@@ -45,7 +45,7 @@ export default async function AdminPage() {
         {/* User Statistics */}
         <div data-tour="admin-user-stats" className="space-y-4">
           <h2 className="text-lg font-semibold text-foreground">User Statistics</h2>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <StatCard
               title="Total Users"
               value={roleCounts.total}

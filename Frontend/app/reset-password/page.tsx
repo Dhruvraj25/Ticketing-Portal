@@ -15,6 +15,7 @@ import {
   ArrowLeft,
   Loader2,
 } from 'lucide-react'
+import { getFriendlyError } from '@/lib/error-utils'
 
 function ResetPasswordForm() {
   const router = useRouter()
@@ -50,11 +51,13 @@ function ResetPasswordForm() {
   }, [token])
 
   const blockedReason =
-    tokenStatus === 'invalid' || tokenStatus === 'expired'
-      ? 'This password reset link is invalid or has expired. Please request a new one.'
-      : tokenStatus === 'role'
-        ? 'Password resets for your role are handled by our Support team.'
-        : null
+    tokenStatus === 'expired'
+      ? 'This onboarding link has expired. Please request a new one.'
+      : tokenStatus === 'invalid'
+        ? 'This onboarding link is invalid or no longer available.'
+        : tokenStatus === 'role'
+          ? 'Password resets for your role are handled by our Support team.'
+          : null
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -65,7 +68,7 @@ function ResetPasswordForm() {
       return
     }
     if (password.length < 8) {
-      setError('Password must be at least 8 characters long.')
+      setError('Password does not meet the required security requirements.')
       return
     }
     if (password !== confirm) {
@@ -82,7 +85,7 @@ function ResetPasswordForm() {
       setSuccess(true)
       setTimeout(() => router.push('/sign-in'), 2000)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not reset your password. Please try again.')
+      setError(getFriendlyError(err))
     } finally {
       setLoading(false)
     }

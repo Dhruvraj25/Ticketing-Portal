@@ -200,7 +200,7 @@ export const KpiCard = memo(function KpiCard({
   const inner = (
     <div
       className={cn(
-        'relative flex flex-col group rounded-2xl p-5 border transition-all',
+        'relative flex flex-col group rounded-xl p-3.5 border transition-all',
         'bg-white border-slate-200/90 dark:bg-slate-900 dark:border-slate-800',
         reportLink && 'hover:shadow-sm hover:border-slate-300 dark:hover:border-slate-700',
         'w-full',
@@ -208,27 +208,27 @@ export const KpiCard = memo(function KpiCard({
       )}
     >
       {/* Header: Title (left) + Icon (right) */}
-      <div className="flex justify-between items-start mb-3">
-        <span className="text-xs font-bold text-slate-600 dark:text-slate-400 truncate pr-2 leading-4">
+      <div className="flex justify-between items-start mb-2">
+        <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 truncate pr-2 leading-3.5">
           {title}
         </span>
         <div className={cn(
-          'flex items-center justify-center w-9 h-9 rounded-md shrink-0 shadow-sm',
+          'flex items-center justify-center w-7 h-7 rounded-md shrink-0 shadow-sm',
           theme.iconBg,
         )}>
-          <IconComponent className={cn('h-6 w-6', theme.iconColor)} />
+          <IconComponent className={cn('h-4 w-4', theme.iconColor)} />
         </div>
       </div>
       {/* Value + report arrow */}
       <div className="flex items-end justify-between gap-1">
         <h3 className={cn(
           'text-slate-900 dark:text-slate-100',
-          valueClassName ?? 'text-3xl font-bold leading-none tracking-tight',
+          valueClassName ?? 'text-2xl font-bold leading-none tracking-tight',
         )}>
           {value}
         </h3>
         {reportLink && (
-          <ArrowRight className="h-4 w-4 text-slate-800 group-hover:text-slate-500 dark:text-slate-600 dark:group-hover:text-slate-400 transition-colors shrink-0" />
+          <ArrowRight className="h-3.5 w-3.5 text-slate-800 group-hover:text-slate-500 dark:text-slate-600 dark:group-hover:text-slate-400 transition-colors shrink-0" />
         )}
       </div>
     </div>
