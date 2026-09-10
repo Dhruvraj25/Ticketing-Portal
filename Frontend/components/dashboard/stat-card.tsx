@@ -200,7 +200,7 @@ export const KpiCard = memo(function KpiCard({
   const inner = (
     <div
       className={cn(
-        'relative flex flex-col group rounded-xl p-3.5 border transition-all',
+        'relative flex flex-col group rounded-xl px-3 py-3 border transition-all',
         'bg-white border-slate-200/90 dark:bg-slate-900 dark:border-slate-800',
         reportLink && 'hover:shadow-sm hover:border-slate-300 dark:hover:border-slate-700',
         'w-full',
@@ -208,7 +208,7 @@ export const KpiCard = memo(function KpiCard({
       )}
     >
       {/* Header: Title (left) + Icon (right) */}
-      <div className="flex justify-between items-start mb-2">
+      <div className="flex justify-between items-start mb-1">
         <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 truncate pr-2 leading-3.5">
           {title}
         </span>

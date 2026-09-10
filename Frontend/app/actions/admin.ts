@@ -4,7 +4,7 @@ import { getCurrentUser as getUser } from '@/lib/auth-utils'
 import { getPortalUrl } from '@/lib/urls'
 import { unstable_cache } from 'next/cache'
 import { db } from '@/lib/db'
-import { ticket, timeLog, user, account, session, project, module as moduleTable, projectDeveloper, projectClient, supportWallet, walletTransaction } from '@/lib/db/schema'
+import { ticket, timeLog, user, account, session, project, module as moduleTable, projectDeveloper, projectClient, supportWallet, walletTransaction, comment, ticketHistory, attachment, notification, revisionHistory, notificationLog } from '@/lib/db/schema'
 import { and, eq, desc, sql, isNull, isNotNull, ne, count, inArray, gte, lte, sum } from 'drizzle-orm'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import type { UserRole } from '@/lib/types'
@@ -401,38 +401,95 @@ export const deleteUser = wrapServerAction('deleteUser', async function deleteUs
   if (!target) throw new Error('The user could not be found. They may have already been deleted.')
   if (target.role === 'admin') throw new Error('Admin accounts cannot be deleted.')
 
-  // Check if user has related projects (client or manager)
-  const [projectAsClient] = await db
-    .select({ count: count() })
-    .from(project)
-    .where(eq(project.clientId, userId))
-    .limit(1)
+  // ── Comprehensive dependency check ─────────────────────────────────────
+  // Every table with a foreign key referencing user.id must be checked.
+  // PostgreSQL defaults to RESTRICT for unconfigured FK constraints, so
+  // any row in ANY of these tables will block the DELETE.
+  // Tables with onDelete:'cascade' (session, account, ticketReview, etc.)
+  // are auto-cleaned and do NOT need pre-checks.
+  const [projectCount, ticketCount, commentCount, timeLogCount, historyCount,
+         attachmentCount, notificationCount, walletCount, walletTxCount,
+         revisionCount, notificationLogCount] = await Promise.all([
+    // Projects: clientId + managerId (onDelete: restrict)
+    db.select({ count: count() }).from(project)
+      .where(sql`${project.clientId} = ${userId} OR ${project.managerId} = ${userId}`)
+      .then(r => Number(r[0]?.count) || 0),
+    // Tickets: clientId, assignedToId, assignedById (no onDelete = RESTRICT)
+    db.select({ count: count() }).from(ticket)
+      .where(sql`${ticket.clientId} = ${userId} OR ${ticket.assignedToId} = ${userId} OR ${ticket.assignedById} = ${userId}`)
+      .then(r => Number(r[0]?.count) || 0),
+    // Comments: userId (no onDelete = RESTRICT)
+    db.select({ count: count() }).from(comment)
+      .where(eq(comment.userId, userId))
+      .then(r => Number(r[0]?.count) || 0),
+    // Time logs: userId (no onDelete = RESTRICT)
+    db.select({ count: count() }).from(timeLog)
+      .where(eq(timeLog.userId, userId))
+      .then(r => Number(r[0]?.count) || 0),
+    // Ticket history: userId (no onDelete = RESTRICT)
+    db.select({ count: count() }).from(ticketHistory)
+      .where(eq(ticketHistory.userId, userId))
+      .then(r => Number(r[0]?.count) || 0),
+    // Attachments: uploadedById (no onDelete = RESTRICT)
+    db.select({ count: count() }).from(attachment)
+      .where(eq(attachment.uploadedById, userId))
+      .then(r => Number(r[0]?.count) || 0),
+    // Notifications: userId (no onDelete = RESTRICT)
+    db.select({ count: count() }).from(notification)
+      .where(eq(notification.userId, userId))
+      .then(r => Number(r[0]?.count) || 0),
+    // Support wallets: clientId (onDelete: restrict)
+    db.select({ count: count() }).from(supportWallet)
+      .where(eq(supportWallet.clientId, userId))
+      .then(r => Number(r[0]?.count) || 0),
+    // Wallet transactions: performedBy (no onDelete = RESTRICT)
+    db.select({ count: count() }).from(walletTransaction)
+      .where(eq(walletTransaction.performedBy, userId))
+      .then(r => Number(r[0]?.count) || 0),
+    // Revision history: requestedById, reviewedById (no onDelete = RESTRICT)
+    db.select({ count: count() }).from(revisionHistory)
+      .where(sql`${revisionHistory.requestedById} = ${userId} OR ${revisionHistory.reviewedById} = ${userId}`)
+      .then(r => Number(r[0]?.count) || 0),
+    // Notification log: recipientUserId, triggeredBy (no onDelete = RESTRICT)
+    db.select({ count: count() }).from(notificationLog)
+      .where(sql`${notificationLog.recipientUserId} = ${userId} OR ${notificationLog.triggeredBy} = ${userId}`)
+      .then(r => Number(r[0]?.count) || 0),
+  ])
 
-  const [projectAsManager] = await db
-    .select({ count: count() })
-    .from(project)
-    .where(eq(project.managerId, userId))
-    .limit(1)
+  // Build a list of dependency types that have records
+  const deps: string[] = []
+  if (projectCount > 0) deps.push(`${projectCount} project(s)`)
+  if (ticketCount > 0) deps.push(`${ticketCount} ticket(s)`)
+  if (commentCount > 0) deps.push(`${commentCount} comment(s)`)
+  if (timeLogCount > 0) deps.push(`${timeLogCount} time log(s)`)
+  if (historyCount > 0) deps.push(`${historyCount} history record(s)`)
+  if (attachmentCount > 0) deps.push(`${attachmentCount} attachment(s)`)
+  if (notificationCount > 0) deps.push(`${notificationCount} notification(s)`)
+  if (walletCount > 0) deps.push(`${walletCount} support wallet(s)`)
+  if (walletTxCount > 0) deps.push(`${walletTxCount} wallet transaction(s)`)
+  if (revisionCount > 0) deps.push(`${revisionCount} revision record(s)`)
+  if (notificationLogCount > 0) deps.push(`${notificationLogCount} notification log(s)`)
 
-  if (Number(projectAsClient?.count) > 0 || Number(projectAsManager?.count) > 0) {
+  if (deps.length > 0) {
+    const depSummary = deps.slice(0, 3).join(', ') + (deps.length > 3 ? `, and ${deps.length - 3} more type(s)` : '')
+    console.error(`[deleteUser] User ${userId} has dependencies: ${deps.join('; ')}`)
     throw new Error(
-      'This user cannot be deleted because they have associated records. ' +
-      'Reassign or delete their projects first, or deactivate the user instead.'
+      `This account cannot be deleted because it is still associated with existing records ` +
+      `(${depSummary}). Please reassign or remove those associations first, or deactivate the user instead.`
     )
   }
 
+  // ── Delete user (sessions + accounts cascade via DB constraints) ──────
   try {
-    // Delete user (sessions and accounts cascade via DB constraints)
     await db.delete(user).where(eq(user.id, userId))
   } catch (err: any) {
     const msg = err?.message || ''
-    // Foreign key constraint violation — user has related records
     if (msg.includes('foreign key') || msg.includes('constraint') || msg.includes('23503')) {
-      console.error('[deleteUser] Dependency constraint:', err)
-      throw new Error('This user cannot be deleted because they have associated records. Try deactivating the user instead.')
+      console.error('[deleteUser] Foreign key constraint violation (missed dependency):', err)
+      throw new Error('This account cannot be deleted because it has associated records that were not detected. Please try deactivating the user instead.')
     }
     console.error('[deleteUser] Database error:', err)
-    throw new Error('We couldn\'t delete the user right now. Please try again.')
+    throw new Error('The account could not be deleted due to a server error. Please try again.')
   }
 
   revalidatePath('/dashboard/admin/users')

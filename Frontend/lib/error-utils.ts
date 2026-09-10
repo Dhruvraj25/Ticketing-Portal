@@ -48,7 +48,7 @@ const ERROR_MESSAGES: Record<ErrorCode, string> = {
   USER_CREATE_FAILED: 'We couldn\'t create the user right now. Please try again.',
   USER_DELETE_FAILED: 'We couldn\'t delete the user right now. Please try again.',
   USER_DELETE_FORBIDDEN: 'You do not have permission to delete this user.',
-  USER_DELETE_DEPENDENCY: 'This user cannot be deleted because they have associated records.',
+  USER_DELETE_DEPENDENCY: 'This account cannot be deleted because it is still associated with existing tickets, projects, or work records. Please reassign or remove those associations first, or deactivate the user instead.',
   AUTH_ACCOUNT_CREATE_FAILED: 'The user profile was created, but the login account could not be created. Please try again or contact an administrator.',
   EMAIL_SEND_FAILED: 'The user was created, but the onboarding email could not be sent.',
   EMAIL_PROVIDER_UNAUTHORIZED: 'The email service is not authorized to send this message. Please contact an administrator.',
@@ -96,6 +96,9 @@ const ERROR_PATTERNS: Array<{ pattern: RegExp; code: ErrorCode }> = [
 
   // Access
   { pattern: /access denied|unauthorized|not.*authenticated/i, code: 'FORBIDDEN' },
+
+  // Delete dependencies
+  { pattern: /associated records|cannot be deleted because.*existing|has associated records/i, code: 'USER_DELETE_DEPENDENCY' },
 
   // Database
   { pattern: /database.*error|prisma|sql|pg_|relation.*constraint|foreign.*key/i, code: 'INTERNAL_ERROR' },
