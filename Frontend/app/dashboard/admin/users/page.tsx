@@ -37,7 +37,7 @@ export default async function AdminUsersPage() {
           iconVariant="cyan"
         />
         </div>
-      <div className="space-y-6">
+      <div className="space-y-3">
         <div data-tour="admin-users-kpis" className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard title="Total Users" value={roleCounts.total} iconName="Users" delay={0} />
           <StatCard title="Clients" value={roleCounts.clients} iconName="Building2" delay={1} />

@@ -21,7 +21,6 @@ import {
 import { TICKET_PRIORITY_CONFIG, TICKET_CATEGORY_CONFIG, VALIDATION } from '@/lib/types'
 import type { TicketPriority, TicketCategory } from '@/lib/types'
 import { loadTicketDraft, saveTicketDraft, clearTicketDraft, resolveDraftSelection, hasDraftSelection } from '@/lib/ticket-draft'
-import { useAutoRefreshGuard } from '@/components/dashboard/auto-refresh-provider'
 import dynamic from 'next/dynamic'
 import { cn } from '@/lib/utils'
 import { stripHtml } from '@/lib/format'
@@ -91,11 +90,6 @@ const STEP_LABELS: Record<Step, string> = {
 export default function NewTicketPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  // Never let the portal-wide background refresh (AutoRefreshProvider) run
-  // underneath an in-progress ticket creation — a mid-typing router.refresh()
-  // could interrupt the fragile draft-restore lifecycle or drop staged image
-  // previews. Suppressed unconditionally for as long as this page is mounted.
-  useAutoRefreshGuard(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [step, setStep] = useState<Step>('details')
@@ -126,207 +120,23 @@ export default function NewTicketPage() {
   const [dragOver, setDragOver] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
 
-  // Guards the entire mount-time draft-restoration flow (init(), below).
-  // Radix's <Select> drives a hidden native <select> to stay form-compatible;
-  // when a controlled `value` is set programmatically to an id whose
-  // <SelectItem> was only just added to the list in the same update (exactly
-  // what happens when we restore a saved Project/Client/Module the instant
-  // its option list finishes loading), that native element can briefly have
-  // no matching <option>, and the browser's native reset fires a `change`
-  // event Radix forwards to us as onValueChange(''). Every dropdown's change
-  // handler checks this ref and ignores a "user cleared it" (empty-string)
-  // callback while a restore is in flight, so a spurious reset can never
-  // silently wipe a value we just restored. It never suppresses a GENUINE
-  // user action, because it is always false again once init() finishes.
-  const restoringDraftRef = useRef(false)
-
-  // Two-phase Module restoration. Even with restoringDraftRef, setting
-  // selectedModuleId in the SAME update as setModules(mods) still races
-  // Radix's hidden native <select>: the <SelectItem>/<option> for the
-  // restored module and the controlled `value` pointing at it would commit
-  // together, so the browser can momentarily have no matching <option> and
-  // silently resets the native element to "" (see restoringDraftRef comment
-  // for the full mechanism). Storing the resolved id here instead — and
-  // only calling setSelectedModuleId from the effect below, once `modules`
-  // has already rendered — means the option always exists in the DOM
-  // *before* the controlled value ever points at it.
-  const pendingModuleIdRef = useRef<string | null>(null)
-
-  // Single initialization/restoration flow (mount-only). Everything the page
-  // needs on first paint — user role, clients, projects, modules — is loaded
-  // here, and a saved draft (read exactly ONCE, into `draft` below) is
-  // restored as each dependent piece becomes available:
-  //   simple fields (no option list to wait for) -> restored immediately
-  //   clientId   -> restored once clients  are loaded
-  //   projectId  -> restored once projects are loaded (scoped to the
-  //                 restored client, if any)
-  //   moduleId   -> restored once modules  are loaded (scoped to the
-  //                 restored project)
-  // Keeping this as ONE effect (not two) means there is only one place that
-  // reads localStorage and only one order of operations — a second,
-  // independently-timed effect can never race this one or apply a
-  // different draft snapshot.
+  
+  // Restore simple fields from a saved draft.
+  // Project / Module / Client are restored inside load() so the restored
+  // dropdown values always resolve against freshly loaded option lists.
+  // NOTE: this effect deliberately runs AFTER the load() effect above, so a
+  // saved priority/category/environment always wins over the state defaults
+  // ('medium' / 'general' / '') that were in place while options loaded.
   useEffect(() => {
-    async function init() {
-      console.log('[CreateTicket] Initial load')
-      // Active for the FULL restoration flow — draft read, simple fields,
-      // client, projects, project, modules, module — cleared in `finally`
-      // below so it can never get stuck on if something throws partway.
-      restoringDraftRef.current = true
-      try {
-        // Read the draft exactly once. Every restoration below — simple
-        // fields now, Client/Project/Module as their option lists arrive —
-        // reads from this same snapshot, never re-reading localStorage.
-        const draft = loadTicketDraft()
-
-        // Simple fields have no async option list to wait for, so restore
-        // them right away — a saved value always wins over the useState
-        // defaults ('medium' / 'general' / '') that are otherwise in place
-        // while the rest of this function is still loading.
-        if (draft) {
-          if (draft.title) setTitle(draft.title)
-          if (draft.description) setDescription(draft.description)
-          if (draft.priority) setPriority(draft.priority as TicketPriority)
-          if (draft.category) setCategory(draft.category as TicketCategory)
-          if (draft.environment) setEnvironment(draft.environment)
-          if (draft.additionalInfo) setAdditionalInfo(draft.additionalInfo)
-        }
-
-        // Check user role via session
-        try {
-          const sessionRes = await fetch('/api/auth/me')
-          if (sessionRes.ok) {
-            const sessionData = await sessionRes.json()
-            console.log('[CreateTicket] User role:', sessionData.role)
-            setUserRole(sessionData.role || '')
-          }
-        } catch (e) {
-          console.warn('[CreateTicket] Failed to fetch user role:', e)
-        }
-
-        // Load clients for admin/manager
-        let clientList: ClientOption[] = []
-        try {
-          clientList = await getTicketFormClients()
-          console.log('[CreateTicket] Clients loaded:', clientList.length)
-          setClients(clientList)
-        } catch (e) {
-          console.warn('[CreateTicket] Failed to load clients:', e)
-        }
-
-        // A saved draft takes precedence over URL/default auto-selection so
-        // every dropdown selection survives a refresh (Save Draft requirement).
-        //
-        // NOTE: must check against `clientList` (the value just fetched above),
-        // not the `clients` state var — `clients` is captured from this effect's
-        // render closure (still the initial `[]`) since setClients() hasn't
-        // re-rendered yet. Checking against stale `clients` always fails,
-        // silently dropping the saved Client selection on every draft restore.
-        const draftClientId = resolveDraftSelection(draft?.clientId, clientList, (c) => c.id) ?? ''
-        if (draftClientId) setSelectedClientId(draftClientId)
-
-        const projs = draftClientId
-          ? await getTicketFormProjects(draftClientId)
-          : await getTicketFormProjects()
-        console.log('[CreateTicket] Projects loaded:', projs.length, JSON.stringify(projs.map(p => ({ id: p.id, name: p.projectName }))))
-        setProjects(projs)
-
-        // Prefer the draft's project, then the projectId search param, then the 'Support' project
-        const projectParam = searchParams.get('projectId')
-        let selectedProjId: string | null = resolveDraftSelection(draft?.projectId, projs, (p) => p.id)
-
-        if (selectedProjId) {
-          console.log('[CreateTicket] Restored project from draft:', selectedProjId)
-        } else if (projectParam && projs.find((p) => String(p.id) === projectParam)) {
-          selectedProjId = projectParam
-          console.log('[CreateTicket] Auto-selected project from URL param:', selectedProjId)
-        } else if (!hasDraftSelection(draft, 'projectId')) {
-          // Only auto-select the 'Support' project when the draft has NO saved
-          // project at all. If the user saved a draft with no project, the
-          // project must stay unselected (the draft is authoritative); a
-          // default here would silently override the saved (empty) state.
-          const supportProject = projs.find((p) =>
-            p.projectName.toLowerCase().includes('support')
-          )
-          if (supportProject) {
-            selectedProjId = String(supportProject.id)
-            console.log('[CreateTicket] Auto-selected Support project:', selectedProjId, supportProject.projectName)
-          }
-        }
-
-        if (selectedProjId) {
-          setSelectedProjectId(selectedProjId)
-          console.log('[CreateTicket] Loading modules for project:', selectedProjId)
-          setLoadingModules(true)
-          try {
-            const mods = await getTicketFormModules(Number(selectedProjId))
-            console.log('[CreateTicket] Modules response:', JSON.stringify(mods))
-            setModules(mods)
-
-            if (mods.length === 0) {
-              console.warn('[CreateTicket] No modules found for project:', selectedProjId)
-            }
-
-            // Prefer the draft's module, then the moduleId search param, then the 'Support' module
-            const moduleParam = searchParams.get('moduleId')
-            let restoredModuleId: string | null = resolveDraftSelection(draft?.moduleId, mods, (m) => m.id)
-            if (restoredModuleId) {
-              console.log('[CreateTicket] Restored module from draft:', restoredModuleId)
-            } else if (moduleParam && mods.find((m) => String(m.id) === moduleParam)) {
-              restoredModuleId = moduleParam
-              console.log('[CreateTicket] Auto-selected module from URL param:', moduleParam)
-            } else if (!hasDraftSelection(draft, 'moduleId')) {
-              const supportModule = mods.find((m) =>
-                m.moduleName.toLowerCase().includes('support')
-              )
-              if (supportModule) {
-                restoredModuleId = String(supportModule.id)
-                console.log('[CreateTicket] Auto-selected Support module:', restoredModuleId, supportModule.moduleName)
-              }
-            }
-            // Do NOT setSelectedModuleId here — that would land in the same
-            // commit as setModules(mods) above and hit the same Radix race
-            // that Project restoration does. Record it as pending instead;
-            // the effect below applies it once `modules` has actually
-            // rendered its <SelectItem>s.
-            if (restoredModuleId) pendingModuleIdRef.current = restoredModuleId
-          } catch (e) {
-            console.error('[CreateTicket] Failed to load modules:', e)
-          } finally {
-            setLoadingModules(false)
-          }
-        }
-      } catch (e) {
-        console.error('[CreateTicket] Initial load failed:', e)
-      } finally {
-        // Restoration (successful, partial, or failed) is over — every
-        // dropdown's onValueChange handler goes back to treating an empty
-        // callback as a genuine user action from here on.
-        restoringDraftRef.current = false
-      }
-    }
-    init()
+    const draft = loadTicketDraft()
+    if (!draft) return
+    if (draft.title) setTitle(draft.title)
+    if (draft.description) setDescription(draft.description)
+    if (draft.priority) setPriority(draft.priority as TicketPriority)
+    if (draft.category) setCategory(draft.category as TicketCategory)
+    if (draft.environment) setEnvironment(draft.environment)
+    if (draft.additionalInfo) setAdditionalInfo(draft.additionalInfo)
   }, [])
-
-  // Phase 2 of Module draft restoration (see pendingModuleIdRef above): runs
-  // whenever `modules` changes, i.e. strictly AFTER the module list has
-  // already committed and rendered its <SelectItem>s — never in the same
-  // update that set them. Only then do we point the controlled value at the
-  // pending id, so the matching <option> already exists in the DOM by the
-  // time Radix's hidden native <select> is asked to select it.
-  useEffect(() => {
-    const pendingId = pendingModuleIdRef.current
-    if (!pendingId) return
-    const stillValid = modules.some((m) => String(m.id) === pendingId)
-    if (stillValid) {
-      console.log('[CreateTicket] Applying pending module restoration:', pendingId)
-      setSelectedModuleId(pendingId)
-    }
-    // Resolved either way (applied, or no longer valid for this list) — a
-    // pending id must never carry over and get applied against some LATER,
-    // unrelated module list (e.g. after the user changes project).
-    pendingModuleIdRef.current = null
-  }, [modules])
 
   // When the user picks a different project we must clear the now-invalid
   // Module selection — but NOT when this handler is invoked programmatically
@@ -353,62 +163,15 @@ export default function NewTicketPage() {
 
   const handleProjectChange = useCallback(async (projectId: string) => {
     console.log('[CreateTicket] Project changed to:', projectId)
-    if (restoringDraftRef.current && !projectId) {
-      // Radix's Select emitted a spurious empty value while we were still
-      // restoring a saved Project — not a real user action. See the
-      // restoringDraftRef comment near its declaration for why this happens.
-      console.log('[CreateTicket] Ignoring empty Project change during draft restoration')
-      return
-    }
     setSelectedProjectId(projectId)
     setSelectedModuleId('')
     setModules([])
-    // A genuine project change makes any still-outstanding pending Module
-    // restoration meaningless — it belonged to the OLD project's module
-    // list. Clear it so it can never be misapplied to the new one.
-    pendingModuleIdRef.current = null
     if (!projectId) {
       console.log('[CreateTicket] Project deselected, clearing modules')
       return
     }
     await loadModulesForProject(projectId)
   }, [loadModulesForProject])
-
-  // When the user picks a different client we must clear the now-invalid
-  // Project/Module selection and reload the client's projects — but not when
-  // Radix emits a spurious empty callback while a saved Client is still
-  // being restored (see restoringDraftRef). Draft client restoration itself
-  // never calls this handler — it sets selectedClientId directly inside
-  // init() — so this guard only protects against the empty-emission quirk.
-  const handleClientChange = useCallback(async (clientId: string) => {
-    if (restoringDraftRef.current && !clientId) {
-      console.log('[CreateTicket] Ignoring empty Client change during draft restoration')
-      return
-    }
-    setSelectedClientId(clientId)
-    setSelectedProjectId('')
-    setSelectedModuleId('')
-    setModules([])
-    pendingModuleIdRef.current = null
-    if (clientId) {
-      const projs = await getTicketFormProjects(clientId)
-      setProjects(projs)
-    } else {
-      const projs = await getTicketFormProjects()
-      setProjects(projs)
-    }
-  }, [])
-
-  // Guards the Module Select the same way as Project/Client: ignore a
-  // spurious empty callback while a saved Module is still being restored,
-  // never a genuine user clearing it after restoration.
-  const handleModuleChange = useCallback((moduleId: string) => {
-    if (restoringDraftRef.current && !moduleId) {
-      console.log('[CreateTicket] Ignoring empty Module change during draft restoration')
-      return
-    }
-    setSelectedModuleId(moduleId)
-  }, [])
 
   function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
@@ -761,10 +524,7 @@ export default function NewTicketPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div data-tour="ticket-category" className="space-y-2">
                   <Label htmlFor="category">Category</Label>
-                  <Select value={category} onValueChange={(v) => {
-                    if (restoringDraftRef.current && !v) return
-                    setCategory(v as TicketCategory)
-                  }}>
+                  <Select value={category} onValueChange={(v) => setCategory(v as TicketCategory)}>
                     <SelectTrigger className="h-11 rounded-xl bg-input/50 border-border/50">
                       <SelectValue />
                     </SelectTrigger>
@@ -778,10 +538,7 @@ export default function NewTicketPage() {
 
                 <div className="space-y-2" data-tour="ticket-priority">
                   <Label htmlFor="priority">Priority</Label>
-                  <Select value={priority} onValueChange={(v) => {
-                    if (restoringDraftRef.current && !v) return
-                    setPriority(v as TicketPriority)
-                  }}>
+                  <Select value={priority} onValueChange={(v) => setPriority(v as TicketPriority)}>
                     <SelectTrigger className="h-11 rounded-xl bg-input/50 border-border/50">
                       <SelectValue />
                     </SelectTrigger>
@@ -799,7 +556,19 @@ export default function NewTicketPage() {
                   <Label htmlFor="client">
                     Client <span className="text-destructive">*</span>
                   </Label>
-                  <Select value={selectedClientId} onValueChange={handleClientChange}>
+                  <Select value={selectedClientId} onValueChange={async (clientId) => {
+                    setSelectedClientId(clientId)
+                    setSelectedProjectId('')
+                    setSelectedModuleId('')
+                    setModules([])
+                    if (clientId) {
+                      const projs = await getTicketFormProjects(clientId)
+                      setProjects(projs)
+                    } else {
+                      const projs = await getTicketFormProjects()
+                      setProjects(projs)
+                    }
+                  }}>
                     <SelectTrigger className="h-11 rounded-xl bg-input/50 border-border/50">
                       <SelectValue placeholder="Select client" />
                     </SelectTrigger>
@@ -846,7 +615,7 @@ export default function NewTicketPage() {
                   </Label>
                   <Select
                     value={selectedModuleId}
-                    onValueChange={handleModuleChange}
+                    onValueChange={setSelectedModuleId}
                     disabled={!selectedProjectId || loadingModules}
                   >
                     <SelectTrigger className="h-11 rounded-xl bg-input/50 border-border/50">
@@ -889,10 +658,7 @@ export default function NewTicketPage() {
                 <Label htmlFor="environment">
                   Environment <span className="text-destructive">*</span>
                 </Label>
-                <Select value={environment} onValueChange={(v) => {
-                  if (restoringDraftRef.current && !v) return
-                  setEnvironment(v)
-                }}>
+                <Select value={environment} onValueChange={setEnvironment}>
                   <SelectTrigger className="h-11 rounded-xl bg-input/50 border-border/50">
                     <SelectValue placeholder="Select environment" />
                   </SelectTrigger>
