@@ -95,17 +95,23 @@ function StatsSection({ consolidatedStats, userRole }: { consolidatedStats: Cons
         : 'sm:grid-cols-2 lg:grid-cols-4'
 
   return (
-    <div data-tour="dashboard-kpis" className={`grid grid-cols-1 gap-3 ${kpiGridClass}`}>
-      {cards.map((card) => (
-        <StatCard
-          key={card.title}
-          title={card.title}
-          value={card.value}
-          href={card.href}
-          iconName={card.iconName}
-          colorTheme={card.colorTheme}
-        />
-      ))}
+    // Width-only wrapper: the grid itself (columns/gap/breakpoints below) is
+    // unchanged — this just keeps the KPI row from stretching to the full
+    // dashboard content width and centers it, so individual cards read as
+    // compact rather than full-bleed.
+    <div className="max-w-[1200px] w-full mx-auto">
+      <div data-tour="dashboard-kpis" className={`grid grid-cols-1 gap-3 ${kpiGridClass}`}>
+        {cards.map((card) => (
+          <StatCard
+            key={card.title}
+            title={card.title}
+            value={card.value}
+            href={card.href}
+            iconName={card.iconName}
+            colorTheme={card.colorTheme}
+          />
+        ))}
+      </div>
     </div>
   )
 }
