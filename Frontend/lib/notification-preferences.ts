@@ -18,6 +18,7 @@
 // ============================================================================
 
 import { pool } from '@/lib/db'
+import { mergeProjectPreferenceOverClient } from '@/lib/notification-catalog'
 
 /** Canonical preference keys (mirrors backend src/lib/notification-preferences.ts). */
 export const NOTIFICATION_EVENT_CANONICAL: Record<string, string> = {
@@ -35,6 +36,10 @@ export const NOTIFICATION_EVENT_CANONICAL: Record<string, string> = {
   ticket_revision_requested: 'request_for_revision',
   ticket_closed: 'ticket_closed',
   ticket_reopened: 'ticket_reopened',
+  ticket_updated: 'ticket_updated',
+  ticket_comment: 'ticket_comment',
+  ticket_comment_added: 'ticket_comment',
+  comment_added: 'ticket_comment',
   // Estimates & hours
   estimate_requested: 'estimate_requested',
   estimate_approved: 'estimate_approved',
@@ -117,5 +122,59 @@ export async function loadDisabledInAppEvents(
       err instanceof Error ? err.message : String(err),
     )
     return index
+  }
+}
+
+/**
+ * Load the set of explicitly DISABLED in-app events for a PROJECT.
+ * PROJECT preferences are authoritative; legacy client rows are merged in as an
+ * inheritance fallback (project rows win). Fail-open on any DB error.
+ *
+ * This is the PROJECT-wise equivalent of loadDisabledInAppEvents() and is used
+ * whenever a dispatch has a project context.
+ */
+export async function loadDisabledInAppEventsForProject(
+  projectId: number,
+  clientId?: string,
+): Promise<Set<string>> {
+  const disabled = new Set<string>()
+  if (!projectId) return disabled
+
+  try {
+    const projectResult = await pool.query<{ eventType: string; enabled: boolean }>(
+      `SELECT "eventType", "enabled"
+         FROM project_notification_preferences
+        WHERE "projectId" = $1 AND "channel" = 'in_app'`,
+      [projectId],
+    )
+
+    let clientRows: { eventType: string; enabled: boolean }[] = []
+    if (clientId) {
+      const clientResult = await pool.query<{ eventType: string; enabled: boolean }>(
+        `SELECT "eventType", "enabled"
+           FROM notification_preferences
+          WHERE "clientId" = $1 AND "channel" = 'in_app'`,
+        [clientId],
+      )
+      clientRows = clientResult.rows
+    }
+
+    const merged = mergeProjectPreferenceOverClient(
+      projectResult.rows.map(r => ({ projectId, channel: 'in_app', eventType: r.eventType, enabled: r.enabled })),
+      clientRows.map(r => ({ clientId: clientId || '', channel: 'in_app', eventType: r.eventType, enabled: r.enabled })),
+    )
+
+    for (const [key, enabled] of merged) {
+      if (enabled) continue
+      const canonical = canonicalNotificationEvent(key.split(':')[1])
+      if (canonical) disabled.add(canonical)
+    }
+    return disabled
+  } catch (err) {
+    console.error(
+      '[NotificationPreference] project in-app preference lookup failed (proceeding with defaults) projectId=' +
+      projectId + ': ' + (err instanceof Error ? err.message : String(err)),
+    )
+    return disabled
   }
 }

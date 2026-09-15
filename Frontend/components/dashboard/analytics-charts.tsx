@@ -255,7 +255,7 @@ const DeveloperWorkloadChartBase = ({ data }: { data: DevStat[] }) => {
       <h3 className="text-sm font-semibold text-foreground mb-4">Resource Workload</h3>
       {barData.length === 0 ? (
         <div className="h-48 flex items-center justify-center">
-          <p className="text-sm text-muted-foreground">No developers found</p>
+          <p className="text-sm text-muted-foreground">No support engineers / developers found</p>
         </div>
       ) : (
         <ResponsiveContainer width="100%" height={Math.max(200, barData.length * 48)}>
@@ -307,7 +307,7 @@ const RevisionAnalyticsCardsBase = ({ data }: { data: RevisionAnalytics }) => {
   const items = [
     { label: 'Total Revisions', value: data.totalRevisions, color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-500/15 border-orange-200 dark:border-orange-500/30' },
     { label: 'Client Revisions', value: data.clientRevisions, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-500/15 border-blue-200 dark:border-blue-500/30' },
-    { label: 'Manager Revisions', value: data.managerRevisions, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-500/15 border-indigo-200 dark:border-indigo-500/30' },
+    { label: 'Support Manager Revisions', value: data.managerRevisions, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-500/15 border-indigo-200 dark:border-indigo-500/30' },
     { label: 'Admin Revisions', value: data.adminRevisions, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-500/15 border-amber-200 dark:border-amber-500/30' },
   ]
 
@@ -343,7 +343,7 @@ const DeveloperTimeTableBase = ({ data }: { data: DevStat[] }) => {
     <div className="rounded-xl bg-white dark:bg-slate-900 border border-border p-5 card-shadow">
       <h3 className="text-sm font-semibold text-foreground mb-4">Resource Time Logged</h3>
       {data.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-4">No developers found</p>
+        <p className="text-sm text-muted-foreground text-center py-4">No support engineers / developers found</p>
       ) : (
         <div className="space-y-2">
           {data

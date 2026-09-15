@@ -76,7 +76,7 @@ export const ReviewStep = memo(function ReviewStep({ state, managerList, existin
                   {state.projectName.split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 6) || 'PRJ'}-****
                 </span></div>
                 <div><span className="text-muted-foreground">Client:</span> <span className="font-medium">{clientName}</span></div>
-                <div><span className="text-muted-foreground">Manager:</span> <span className="font-medium">{managerName}</span></div>
+                <div><span className="text-muted-foreground">Support Manager:</span> <span className="font-medium">{managerName}</span></div>
                 {state.projectDescription && (
                   <div className="col-span-2"><span className="text-muted-foreground">Description:</span> {state.projectDescription}</div>
                 )}
@@ -84,7 +84,7 @@ export const ReviewStep = memo(function ReviewStep({ state, managerList, existin
             </ReviewSection>
           )}
 
-          <ReviewSection title="Modules" icon={<Layers className="h-4 w-4 text-emerald-500 dark:text-emerald-400" />} onEdit={() => state.mode === 'existing' ? onEdit(2) : onEdit(3)}>
+          <ReviewSection title="Modules / Service Areas" icon={<Layers className="h-4 w-4 text-emerald-500 dark:text-emerald-400" />} onEdit={() => state.mode === 'existing' ? onEdit(2) : onEdit(3)}>
             <div className="flex flex-wrap gap-2">
               {state.mode !== 'existing' ? (
                 <>

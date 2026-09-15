@@ -2,7 +2,7 @@ import { PageTimer } from '@/lib/performance-profiler'
 import { notFound } from 'next/navigation'
 import { getCurrentUser } from '@/app/actions/tickets'
 import { getUserList } from '@/app/actions/users'
-import { getProjectById, getProjectDevelopers, getProjectDetailAnalytics, getModuleAnalytics } from '@/app/actions/projects'
+import { getProjectById, getProjectDevelopers, getProjectDetailAnalytics, getModuleAnalytics, getProjectClientUsers } from '@/app/actions/projects'
 import { getModulesByProject } from '@/app/actions/modules'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,7 @@ import { ModuleManager } from '@/components/dashboard/module-manager'
 import { ProjectStats } from '@/components/dashboard/project-stats'
 import { ProjectAssignmentPanel } from '@/components/dashboard/project-assignment-panel'
 import { DeveloperAssignment } from '@/components/dashboard/developer-assignment'
+import { ProjectUsersSection } from '@/components/dashboard/project-users-section'
 import { ProjectAnalyticsSection } from '@/components/dashboard/project-analytics-section'
 
 export default async function ProjectDetailPage({
@@ -61,14 +62,26 @@ export default async function ProjectDetailPage({
     }
 
     let userList: { id: string; name: string; email: string; role: string }[] = []
+    let projectClientUsers: Awaited<ReturnType<typeof getProjectClientUsers>> = []
     if (isManagerOrAdmin) {
-      try { userList = await getUserList() } catch {}
+      try {
+        const [users, projUsers] = await Promise.all([
+          getUserList(),
+          getProjectClientUsers(projectId),
+        ])
+        userList = users
+        projectClientUsers = projUsers
+      } catch {}
     }
 
-    // Reassignment dropdowns must only ever offer role-matching accounts:
-    // Client select = client accounts only; Manager select = managers only.
-    // Developers/admins/other roles are never shown.
-    const clients = userList.filter((u) => u.role === 'client' && u.id !== project.clientId)
+    // The "Key User" (project.clientId) reassignment dropdown must only ever
+    // offer Approver Accounts already linked to THIS project via
+    // project_client — never an unrelated approver from another
+    // project/company, and never a Standard account. Manager select still
+    // draws from the global manager list; that behavior is unchanged.
+    const clients = projectClientUsers
+      .filter((u) => u.userType === 'approver' && u.id !== project.clientId)
+      .map((u) => ({ id: u.id, name: u.name, email: u.email }))
     const managers = userList.filter((u) => u.role === 'project_manager' && u.id !== project.managerId)
 
     pageTimer.mark('Render')
@@ -128,7 +141,7 @@ export default async function ProjectDetailPage({
             valueClassName="text-lg font-semibold leading-snug break-words"
           />
           <StatCard
-            title="Manager"
+            title="Support Manager"
             value={project.managerName || '—'}
             iconName="Briefcase"
             delay={3}
@@ -180,7 +193,7 @@ export default async function ProjectDetailPage({
                   <div className="p-1.5 rounded-lg bg-primary/10">
                     <Layers className="h-4 w-4 text-primary" />
                   </div>
-                  <h2 className="text-lg font-semibold text-foreground">Modules</h2>
+                  <h2 className="text-lg font-semibold text-foreground">Modules / Service Areas</h2>
                 </div>
                 <span className="text-sm text-muted-foreground">{modules.length} module{modules.length !== 1 ? 's' : ''}</span>
               </div>
@@ -203,7 +216,7 @@ export default async function ProjectDetailPage({
                   <span className="text-foreground font-normal truncate ml-2 max-w-[160px]">{project.clientName || '—'}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground flex items-center gap-1.5"><Users className="h-3.5 w-3.5 text-purple-400" /> Manager</span>
+                  <span className="text-muted-foreground flex items-center gap-1.5"><Users className="h-3.5 w-3.5 text-purple-400" /> Support Manager</span>
                   <span className="text-foreground font-normal truncate ml-2 max-w-[160px]">{project.managerName || '—'}</span>
                 </div>
                 {project.startDate && (
@@ -220,7 +233,7 @@ export default async function ProjectDetailPage({
             </div>
             </div>
 
-            {isManagerOrAdmin && userList.length > 0 && (
+            {isManagerOrAdmin && (userList.length > 0 || clients.length > 0) && (
               <ProjectAssignmentPanel
                 projectId={projectId}
                 currentClientId={project.clientId}
@@ -229,6 +242,15 @@ export default async function ProjectDetailPage({
                 managers={managers}
                 canAssignClient={isManagerOrAdmin}
                 canAssignManager={user.role === 'admin'}
+              />
+            )}
+
+            {isManagerOrAdmin && (
+              <ProjectUsersSection
+                projectId={projectId}
+                initialUsers={projectClientUsers}
+                canManage={isManagerOrAdmin}
+                canActivate={user.role === 'admin'}
               />
             )}
 

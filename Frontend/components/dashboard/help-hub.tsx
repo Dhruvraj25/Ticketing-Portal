@@ -27,7 +27,7 @@ import { useKeyboardShortcuts } from './keyboard-shortcuts-provider'
 /** Role-aware guide names — mirrors the Help Center's role-based guides. */
 const ROLE_GUIDE_LABELS: Record<UserRole, string> = {
   client: 'Client Guide',
-  project_manager: 'Manager Guide',
+  project_manager: 'Support Manager Guide',
   developer: 'Resource Guide',
   admin: 'Administrator Guide',
 }

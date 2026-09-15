@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import type { TicketHistoryWithUser } from '@/lib/types'
+import { formatActivityEntry, DETAIL_LINE_ACTIONS } from '@/lib/ticket-activity-format'
 import { cn } from '@/lib/utils'
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -9,7 +10,8 @@ import { cn } from '@/lib/utils'
 // Client view (isClient=true) only ever shows client-permitted events — the
 // server (getTicketHistory) already strips internal activity for clients, and
 // this whitelist is the DEFENSIVE second layer so accidental internal data can
-// never render. Internal employee names are suppressed for client views too.
+// never render. Internal employee names are suppressed for client views too
+// (falling back to a role label — see lib/ticket-activity-format.ts).
 // No 'use client' needed — this component has no hooks, events, or client state.
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -38,43 +40,11 @@ const CLIENT_VISIBLE_ACTIONS = new Set([
   'attachment_uploaded',
   'review_submitted',
   'review_updated',
+  'forwarded_to_client',
+  'revision_requested',
+  'revision_approved',
+  'revision_rejected',
 ])
-
-const actionConfig: Record<string, { label: string; color: string }> = {
-  created: { label: 'New support request created.', color: 'bg-emerald-500' },
-  status_changed: { label: 'Changed status', color: 'bg-blue-500' },
-  priority_changed: { label: 'Updated ticket priority', color: 'bg-blue-500' },
-  assigned: { label: 'Resource assigned to work on this request.', color: 'bg-purple-500' },
-  comment_added: { label: 'Added comment', color: 'bg-gray-50 dark:bg-slate-800/500' },
-  internal_comment_added: { label: 'Added internal note', color: 'bg-amber-500' },
-  timer_started: { label: 'Work has started.', color: 'bg-primary' },
-  timer_stopped: { label: 'Finished work', color: 'bg-primary' },
-  timer_paused: { label: 'Paused timer', color: 'bg-amber-500' },
-  timer_resumed: { label: 'Resumed timer', color: 'bg-primary' },
-  estimate_created: { label: 'Estimated work hours sent for approval.', color: 'bg-emerald-500' },
-  estimate_approved: { label: 'Estimated work hours approved.', color: 'bg-emerald-500' },
-  estimate_modified: { label: 'Estimate updated', color: 'bg-amber-500' },
-  clarification_requested: { label: 'Requested clarification', color: 'bg-sky-500' },
-  auto_approved: { label: 'Auto-approved', color: 'bg-gray-50 dark:bg-slate-800/500' },
-  revision_requested: { label: 'requested revision to estimate', color: 'bg-orange-500' },
-  estimate_sent: { label: 'Estimate sent to client', color: 'bg-sky-500' },
-  assigned_directly: { label: 'Assigned directly', color: 'bg-indigo-500' },
-  additional_hours_requested: { label: 'Additional support hours requested.', color: 'bg-amber-500' },
-  additional_hours_approved: { label: 'Additional hours approved', color: 'bg-emerald-500' },
-  additional_hours_auto_approved: { label: 'Additional hours auto-approved', color: 'bg-gray-50 dark:bg-slate-800/500' },
-  override_created: { label: 'Override ticket created', color: 'bg-red-500' },
-  forwarded_to_client: { label: 'Forwarded to client', color: 'bg-sky-500' },
-  reassigned: { label: 'Reassigned ticket', color: 'bg-purple-500' },
-  client_approved: { label: 'Support request completed.', color: 'bg-emerald-500' },
-  client_rejected: { label: 'Client requested changes', color: 'bg-orange-500' },
-  reopened_by_client: { label: 'Reopened by client', color: 'bg-red-500' },
-  revision_requested_resolution: { label: 'Client requested a revision.', color: 'bg-orange-500' },
-  revision_approved: { label: 'approved revision', color: 'bg-emerald-500' },
-  revision_rejected: { label: 'rejected revision', color: 'bg-red-500' },
-  attachment_uploaded: { label: 'Uploaded file', color: 'bg-sky-500' },
-  review_submitted: { label: 'Submitted a review.', color: 'bg-amber-500' },
-  review_updated: { label: 'Updated review.', color: 'bg-amber-400' },
-}
 
 export const TicketActivityTimeline = memo(function TicketActivityTimeline({ history, isClient }: TicketActivityTimelineProps) {
   // Defensive filter: clients only ever see whitelisted, client-permitted events.
@@ -93,44 +63,19 @@ export const TicketActivityTimeline = memo(function TicketActivityTimeline({ his
   return (
     <div className="space-y-3">
       {filteredHistory.map((item, index) => {
-        const config = actionConfig[item.action] || { label: item.action.replace(/_/g, ' '), color: 'bg-gray-50 dark:bg-slate-800/500' }
-        
+        const display = formatActivityEntry(item)
+
         return (
           <div key={item.id} className="flex gap-3">
             <div className="relative">
-              <div className={cn('w-2 h-2 rounded-full mt-2', config.color)} />
+              <div className={cn('w-2 h-2 rounded-full mt-2', display.color)} />
               {index < filteredHistory.length - 1 && (
                 <div className="absolute top-4 left-0.5 w-0.5 h-full bg-border" />
               )}
             </div>
             <div className="flex-1 pb-3">
-              <p className="text-sm text-foreground">
-                {item.userName ? (
-                  <>
-                    <span className="font-medium">{item.userName}</span>{' '}
-                    <span className="text-muted-foreground">{config.label.toLowerCase()}</span>
-                  </>
-                ) : (
-                  <span className="text-muted-foreground">{config.label}</span>
-                )}
-              </p>
-              {(item.action === 'status_changed' ||
-                item.action === 'priority_changed' ||
-                item.action === 'estimate_created' ||
-                item.action === 'estimate_approved' ||
-                item.action === 'estimate_rejected' ||
-                item.action === 'estimate_modified' ||
-                item.action === 'auto_approved' ||
-                item.action === 'additional_hours_requested' ||
-                item.action === 'additional_hours_approved' ||
-                item.action === 'additional_hours_auto_approved' ||
-                item.action === 'clarification_requested' ||
-                item.action === 'override_created' ||
-                item.action === 'client_rejected' ||
-                item.action === 'reopened_by_client' ||
-                item.action === 'revision_requested' ||
-                item.action === 'revision_approved' ||
-                item.action === 'revision_rejected') && item.newValue && (
+              <p className="text-sm text-foreground">{display.text}</p>
+              {DETAIL_LINE_ACTIONS.has(item.action) && item.newValue && (
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {item.newValue.substring(0, 150)}{item.newValue.length > 150 ? '...' : ''}
                 </p>

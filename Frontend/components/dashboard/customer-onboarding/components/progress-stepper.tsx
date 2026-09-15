@@ -7,7 +7,7 @@ import type { WizardStep } from '../hooks/use-onboarding'
 const steps = [
   { id: 1, label: 'User', icon: UserPlus },
   { id: 2, label: 'Project', icon: Building2 },
-  { id: 3, label: 'Modules', icon: Layers },
+  { id: 3, label: 'Modules / Service Areas', icon: Layers },
   { id: 4, label: 'Hours', icon: Wallet },
 ]
 

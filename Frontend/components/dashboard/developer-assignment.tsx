@@ -94,7 +94,7 @@ export function DeveloperAssignment({ projectId }: DeveloperAssignmentProps) {
       <Card className="p-5 bg-card/50 backdrop-blur-sm border-border/50">
         <div className="flex items-center gap-2 mb-4">
           <Users className="h-4 w-4 text-muted-foreground" />
-          <h3 className="font-semibold text-foreground">Developers</h3>
+          <h3 className="font-semibold text-foreground">Support Engineers / Developers</h3>
         </div>
         <div className="flex items-center justify-center py-4">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -107,7 +107,7 @@ export function DeveloperAssignment({ projectId }: DeveloperAssignmentProps) {
     <Card className="p-5 bg-card/50 backdrop-blur-sm border-border/50">
       <div className="flex items-center gap-2 mb-4">
         <Users className="h-4 w-4 text-primary" />
-        <h3 className="font-semibold text-foreground">Assigned Developers</h3>
+        <h3 className="font-semibold text-foreground">Assigned Support Engineers / Developers</h3>
         <Badge variant="outline" className="ml-auto text-xs">
           {developers.length}
         </Badge>
@@ -123,7 +123,7 @@ export function DeveloperAssignment({ projectId }: DeveloperAssignmentProps) {
       <div className="space-y-2 mb-4">
         {developers.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-3">
-            No developers assigned yet
+            No support engineers / developers assigned yet
           </p>
         ) : (
           developers.map((dev) => (
@@ -158,7 +158,7 @@ export function DeveloperAssignment({ projectId }: DeveloperAssignmentProps) {
         <div className="flex items-center gap-2">
           <Select value={selectedDevId} onValueChange={setSelectedDevId}>
             <SelectTrigger className="flex-1 bg-input/50 h-9 text-sm">
-              <SelectValue placeholder="Add developer..." />
+              <SelectValue placeholder="Add support engineer / developer..." />
             </SelectTrigger>
             <SelectContent>
               {availableDevs.map((dev) => (

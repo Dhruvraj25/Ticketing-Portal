@@ -26,6 +26,16 @@ export const assignClient = wrapServerAction('assignClient', async function assi
 
   if (!p) throw new Error('Project not found')
 
+  // Defensive server-side check — never trust that the UI only ever offers
+  // valid candidates. The "Key User" reassignment dropdown is scoped to this
+  // project's linked approver accounts (see getProjectClientUsers), but this
+  // guard protects the action itself regardless of caller.
+  const [targetUser] = await db.select({ role: user.role, userType: user.userType }).from(user).where(eq(user.id, clientId)).limit(1)
+  if (!targetUser) throw new Error('User not found')
+  if (targetUser.role !== 'client' || targetUser.userType !== 'approver') {
+    throw new Error('Only an Approver Account can be assigned as the project Key User')
+  }
+
   const now = new Date()
 
   // Update the project's primary client

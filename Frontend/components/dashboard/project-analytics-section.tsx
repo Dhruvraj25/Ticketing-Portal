@@ -88,13 +88,13 @@ export function ProjectAnalyticsSection({ projectId, initialAnalytics, initialMo
           delay={1}
         />
         <StatCard
-          title="Developer Hours"
+          title="Support Engineer / Developer Hours"
           value={`${analytics.developerHours}h`}
           iconName="Users"
           delay={2}
         />
         <StatCard
-          title="Manager Hours"
+          title="Support Manager Hours"
           value={`${analytics.managerHours}h`}
           iconName="Briefcase"
           delay={3}
@@ -216,7 +216,7 @@ export function ProjectAnalyticsSection({ projectId, initialAnalytics, initialMo
                             : 'bg-purple-500/20 text-purple-400 border-purple-500/30',
                         )}
                       >
-                        {dev.role === 'project_manager' ? 'Manager' : dev.role === 'admin' ? 'Admin' : 'Developer'}
+                        {dev.role === 'project_manager' ? 'Support Manager / Project Manager' : dev.role === 'admin' ? 'Admin' : 'Support Engineer / Developer'}
                       </Badge>
                     </div>
                     <span className="text-muted-foreground text-xs">

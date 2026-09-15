@@ -69,7 +69,7 @@ export const REPORT_TYPE_OPTIONS: { value: ReportType; label: string; category: 
   { value: 'wallet_history', label: 'Support Wallet History Report', category: 'Support Wallets' },
 
   // Customer Reviews
-  { value: 'customer_review', label: 'Customer Review Reports', category: 'Customer Reviews' },
+  { value: 'customer_review', label: 'Customer Feedback Reports', category: 'Customer Feedback' },
 ]
 
 export const REPORT_TYPE_LABELS: Record<string, string> = {}

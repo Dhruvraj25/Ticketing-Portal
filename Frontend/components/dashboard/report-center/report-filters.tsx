@@ -203,13 +203,13 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Developer</Label>
+                  <Label className="text-xs">Support Engineer / Developer</Label>
                   <Select value={developerId} onValueChange={setDeveloperId}>
                     <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border">
-                      <SelectValue placeholder="All developers" />
+                      <SelectValue placeholder="All support engineers / developers" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="__all__">All developers</SelectItem>
+                      <SelectItem value="__all__">All support engineers / developers</SelectItem>
                       {developers.map(d => (
                         <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
                       ))}
@@ -217,13 +217,13 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Module</Label>
+                  <Label className="text-xs">Module / Service Area</Label>
                   <Select value={moduleId} onValueChange={setModuleId}>
                     <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border">
-                      <SelectValue placeholder="All modules" />
+                      <SelectValue placeholder="All modules / service areas" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="__all__">All modules</SelectItem>
+                      <SelectItem value="__all__">All modules / service areas</SelectItem>
                       {projects.filter(p => !projectId || String(p.id) === projectId).map(p => (
                         <SelectItem key={p.id} value={String(p.id)}>
                           {p.projectName}

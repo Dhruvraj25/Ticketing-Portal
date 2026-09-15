@@ -63,6 +63,9 @@ export async function sendNotification(
         eventType,
         to,
         data,
+        // PROJECT scope (when present) makes the backend enforce the project's
+        // notification preferences for this event, not the legacy client rows.
+        projectId: (data as { projectId?: unknown })?.projectId,
         immediate: options?.immediate ?? false,
       }),
     })

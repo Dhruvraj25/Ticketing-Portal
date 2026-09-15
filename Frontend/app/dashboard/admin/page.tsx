@@ -59,13 +59,13 @@ export default async function AdminPage() {
               delay={1}
             />
             <StatCard
-              title="Managers"
+              title="Support Managers"
               value={roleCounts.project_managers}
               iconName="Users"
               delay={2}
             />
             <StatCard
-              title="Developers"
+              title="Support Engineers / Developers"
               value={roleCounts.developers}
               iconName="Code2"
               delay={3}

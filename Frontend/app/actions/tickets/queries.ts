@@ -771,7 +771,7 @@ export const getTicketHistory = wrapServerAction('getTicketHistory', async funct
       id: ticketHistory.id, ticketId: ticketHistory.ticketId, userId: ticketHistory.userId,
       action: ticketHistory.action, oldValue: ticketHistory.oldValue,
       newValue: ticketHistory.newValue, createdAt: ticketHistory.createdAt,
-      userName: user.name,
+      userName: user.name, userRole: user.role,
     })
     .from(ticketHistory)
     .leftJoin(user, eq(ticketHistory.userId, user.id))
@@ -782,8 +782,12 @@ export const getTicketHistory = wrapServerAction('getTicketHistory', async funct
 
   return history.map((h) => {
     if (!isClient) return { ...h, userName: h.userName || 'Unknown' }
-    // Client-safe: never expose internal employee names. Only the client's own
-    // account keeps a display name; internal actors render as plain events.
+    // Client-safe: never expose internal employees' actual NAMES. Only the
+    // client's own account keeps a display name; internal actors render with
+    // userName blanked out. userRole is still returned so the UI can fall
+    // back to a role label ("by Support Manager / Project Manager") instead
+    // of omitting the actor entirely — the role is not privacy-sensitive
+    // (it's the same info shown in role badges elsewhere in the product).
     const isSelf = h.userId === currentUser.id
     return { ...h, userName: isSelf ? (h.userName || 'You') : '' }
   })

@@ -105,6 +105,12 @@ export interface TicketHistoryWithUser {
   ticketId: number
   userId: string
   userName: string
+  /** Actor's role — used to render a role-label fallback when the actor's
+   *  name is redacted for client privacy (see lib/ticket-activity-format.ts).
+   *  Typed as `string` (not `UserRole`) since it comes straight off the
+   *  `user.role` text column via a left join and may be null when the
+   *  actor's user row can't be resolved. */
+  userRole: string | null
   action: string
   oldValue: string | null
   newValue: string | null
@@ -333,8 +339,8 @@ export const WALLET_STATUS_CONFIG: Record<WalletStatus, { label: string; color: 
 
 export const USER_ROLE_CONFIG: Record<UserRole, { label: string; color: string }> = {
   client: { label: 'Client', color: 'bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/30' },
-  developer: { label: 'Developer', color: 'bg-green-50 dark:bg-green-500/15 text-green-600 dark:text-green-400 border-green-200 dark:border-green-500/30' },
-  project_manager: { label: 'Project Manager', color: 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/30' },
+  developer: { label: 'Support Engineer / Developer', color: 'bg-green-50 dark:bg-green-500/15 text-green-600 dark:text-green-400 border-green-200 dark:border-green-500/30' },
+  project_manager: { label: 'Support Manager / Project Manager', color: 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/30' },
   admin: { label: 'Admin', color: 'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/30' },
 }
 

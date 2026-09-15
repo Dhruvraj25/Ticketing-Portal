@@ -330,7 +330,7 @@ export function TeamClient({ developers, devProjectsMap, isAdmin }: TeamClientPr
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Roles</SelectItem>
-                    <SelectItem value="developer">Developer</SelectItem>
+                    <SelectItem value="developer">Support Engineer / Developer</SelectItem>
                   </SelectContent>
                 </Select>
 
@@ -416,7 +416,7 @@ export function TeamClient({ developers, devProjectsMap, isAdmin }: TeamClientPr
                     </TableCell>
                     <TableCell>
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/30">
-                        Developer
+                        Support Engineer / Developer
                       </span>
                     </TableCell>
                     <TableCell>

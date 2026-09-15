@@ -13,7 +13,6 @@ import { TICKET_STATUS_CONFIG, TICKET_PRIORITY_CONFIG, TICKET_CATEGORY_CONFIG } 
 import { TicketStatus } from '@/lib/types'
 import { TicketStatusActions } from '@/components/dashboard/ticket-status-actions'
 import { PriorityEditor } from '@/components/dashboard/priority-editor'
-import { TicketDatesEditor } from '@/components/dashboard/ticket-dates-editor'
 import { PageTimer } from '@/lib/performance-profiler'
 
 // Lazy-loaded heavy interactive components (code-split)
@@ -124,7 +123,7 @@ async function RevisionHistoryWrapper({ ticketId, isManagerOrAdmin }: { ticketId
           // entries are "Request for Revision" — the two must stay visually
           // distinguishable and correctly attributed to their actual actor.
           const isRework = rev.requestedByRole === 'project_manager' || rev.requestedByRole === 'admin'
-          const actorLabel = rev.requestedByRole === 'project_manager' ? 'Manager' : rev.requestedByRole === 'admin' ? 'Admin' : 'Client'
+          const actorLabel = rev.requestedByRole === 'project_manager' ? 'Support Manager' : rev.requestedByRole === 'admin' ? 'Admin' : 'Client'
           return (
             <div key={rev.id} className="relative pl-6">
               {idx < Math.min(revisionHistoryEntries.length, 10) - 1 && (
@@ -424,7 +423,7 @@ export default async function TicketDetailPage({
                 )}
                 {ticket.moduleId && (
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground flex items-center gap-1.5"><Layers className="h-3 w-3" />Module</span>
+                    <span className="text-xs text-muted-foreground flex items-center gap-1.5"><Layers className="h-3 w-3" />Module / Service Area</span>
                     <span className="text-xs text-foreground">{ticket.moduleName}</span>
                   </div>
                 )}
@@ -444,22 +443,6 @@ export default async function TicketDetailPage({
                 </div>
               )}
             </div>
-
-            {/* Admin-only: edit ticket creation/closing dates (R24) */}
-            {user.role === 'admin' && (
-              <TicketDatesEditor
-                ticketId={ticket.id}
-                // ticket.createdAt / ticket.closedAt come from getTicketById, which is
-                // wrapped in unstable_cache — on a cache hit those values round-trip
-                // through JSON and arrive as ISO strings rather than Date instances
-                // (same reason every other date on this page goes through `new Date(...)`
-                // first). Closed tickets are the ones that actually hit this: closedAt is
-                // only non-null once a ticket is completed, so calling .toISOString()
-                // straight on it crashed specifically when opening a completed ticket.
-                createdAt={new Date(ticket.createdAt).toISOString()}
-                closedAt={ticket.closedAt ? new Date(ticket.closedAt).toISOString() : null}
-              />
-            )}
 
             {/* Sidebar: Attachments (streamed) */}
             <Suspense fallback={<div className="animate-pulse bg-white dark:bg-slate-900 border border-border rounded-xl p-4"><div className="h-3 w-24 bg-muted rounded mb-3" />{[1,2,3].map(i => <div key={i} className="h-8 bg-muted rounded mb-2" />)}</div>}>

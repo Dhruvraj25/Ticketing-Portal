@@ -37,7 +37,7 @@ export default async function ClientsManagementPage() {
           }
           icon={<Building2 className="h-5 w-5" />}
           iconVariant="cyan"
-          badge={`${user.role === 'admin' ? 'Admin' : 'Manager'}`}
+          badge={`${user.role === 'admin' ? 'Admin' : 'Support Manager'}`}
         />
       </div>
       <ClientsManagementClient clients={clients} role={user.role} />

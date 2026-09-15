@@ -23,9 +23,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/lib/utils'
 
 const REVIEW_STATUS_OPTIONS = [
-  { value: 'all', label: 'All Reviews' },
+  { value: 'all', label: 'All Customer Feedback' },
   { value: 'reviewed', label: 'Reviewed' },
-  { value: 'pending', label: 'Pending Review' },
+  { value: 'pending', label: 'Pending Feedback' },
 ]
 
 const STAR_RATING_OPTIONS = [
@@ -148,8 +148,8 @@ export default function CustomerReviewsPage() {
     <div className="space-y-5" data-tour="customer-reviews-center">
         <div data-tour="customer-reviews-header" className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6">
       <PageHeader
-          title="Customer Review Reports"
-          subtitle="Analyze customer feedback, resource performance, and review completion"
+          title="Customer Feedback Reports"
+          subtitle="Analyze customer feedback, resource performance, and feedback completion"
           icon={<Star className="h-5 w-5" />}
           iconVariant="purple"
           actions={
@@ -162,7 +162,7 @@ export default function CustomerReviewsPage() {
                 <ReportExport
                   columns={columns}
                   data={tableData}
-                  reportTitle="Customer Review Reports"
+                  reportTitle="Customer Feedback Reports"
                   summary={summary}
                 />
               </div>
@@ -266,13 +266,13 @@ export default function CustomerReviewsPage() {
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Module</Label>
+                    <Label className="text-xs">Module / Service Area</Label>
                     <Select value={moduleId} onValueChange={setModuleId}>
                       <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border">
-                        <SelectValue placeholder="All modules" />
+                        <SelectValue placeholder="All modules / service areas" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="__all__">All modules</SelectItem>
+                        <SelectItem value="__all__">All modules / service areas</SelectItem>
                         {formData.projects.filter(p => !projectId || String(p.id) === projectId).map(p => (<SelectItem key={p.id} value={String(p.id)}>{p.projectName}</SelectItem>))}
                       </SelectContent>
                     </Select>
@@ -290,10 +290,10 @@ export default function CustomerReviewsPage() {
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Review Status</Label>
+                    <Label className="text-xs">Feedback Status</Label>
                     <Select value={reviewStatus} onValueChange={setReviewStatus}>
                       <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border">
-                        <SelectValue placeholder="All reviews" />
+                        <SelectValue placeholder="All customer feedback" />
                       </SelectTrigger>
                       <SelectContent>
                         {REVIEW_STATUS_OPTIONS.map(o => (<SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>))}
@@ -312,13 +312,13 @@ export default function CustomerReviewsPage() {
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Manager</Label>
+                    <Label className="text-xs">Support Manager</Label>
                     <Select value={managerId} onValueChange={setManagerId}>
                       <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border">
-                        <SelectValue placeholder="All managers" />
+                        <SelectValue placeholder="All support managers" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="__all__">All managers</SelectItem>
+                        <SelectItem value="__all__">All support managers</SelectItem>
                         {(formData.managers || []).map((m: any) => (
                           <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                         ))}
@@ -371,25 +371,21 @@ export default function CustomerReviewsPage() {
             {/* Meta */}
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <div className="flex items-center gap-3">
-                <span className="font-medium text-foreground">Customer Review Reports</span>
+                <span className="font-medium text-foreground">Customer Feedback Reports</span>
                 <span>Generated: {new Date(report.meta.generatedAt).toLocaleString()}</span>
                 <span>{report.meta.totalRecords} records</span>
               </div>
-              <div className="flex items-center gap-2">
-                {report.meta.appliedFilters.filter(f => f !== 'customer review').map((f, i) => (
-                  <Badge key={i} variant="outline" className="text-[11px] rounded-lg">{f}</Badge>
-                ))}
-              </div>
+
             </div>
 
             {/* KPIs */}
             <div data-tour="customer-reviews-kpis" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               <KpiCard title="Total Closed Tickets" value={String(summary['Total Closed Tickets'] || 0)} icon="CheckCircle2" colorTheme="blue" />
-              <KpiCard title="Reviews Submitted" value={String(summary['Reviews Submitted'] || 0)} icon="MessageSquare" colorTheme="emerald" />
-              <KpiCard title="Pending Reviews" value={String(summary['Pending Reviews'] || 0)} icon="Clock" colorTheme="amber" />
+              <KpiCard title="Feedback Submitted" value={String(summary['Reviews Submitted'] || 0)} icon="MessageSquare" colorTheme="emerald" />
+              <KpiCard title="Pending Feedback" value={String(summary['Pending Reviews'] || 0)} icon="Clock" colorTheme="amber" />
               <KpiCard title="Average Rating" value={String(summary['Average Rating'] || 0)} icon="Star" colorTheme="purple" />
-              <KpiCard title="5 Star Reviews" value={String(summary['5 Star Reviews'] || 0)} icon="ThumbsUp" colorTheme="green" />
-              <KpiCard title="Low Rated Reviews" value={String(summary['Low Rated Reviews'] || 0)} icon="AlertTriangle" colorTheme="red" />
+              <KpiCard title="5 Star Feedback" value={String(summary['5 Star Reviews'] || 0)} icon="ThumbsUp" colorTheme="green" />
+              <KpiCard title="Low Rated Feedback" value={String(summary['Low Rated Reviews'] || 0)} icon="AlertTriangle" colorTheme="red" />
             </div>
 
             {/* Charts */}
@@ -401,7 +397,7 @@ export default function CustomerReviewsPage() {
                 <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-muted/50">
                   <FileText className="h-4 w-4 text-blue-500 dark:text-blue-400" />
                 </div>
-                <h3 className="text-sm font-semibold text-foreground">Customer Review Details</h3>
+                <h3 className="text-sm font-semibold text-foreground">Customer Feedback Details</h3>
                 <span className="text-xs text-muted-foreground">({filteredTableData.length})</span>
               </div>
               <div className="rounded-xl border border-border overflow-hidden">
@@ -415,7 +411,7 @@ export default function CustomerReviewsPage() {
                           <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Client</th>
                           <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Project</th>
                           <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Resource</th>
-                          <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Manager</th>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Support Manager</th>
                           <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Closed</th>
                           <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Reviewed</th>
                           <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Rating</th>
@@ -491,7 +487,7 @@ export default function CustomerReviewsPage() {
                       <thead>
                         <tr className="bg-muted/50 border-b border-border">
                           <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Resource</th>
-                          <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Reviews</th>
+                          <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Feedback</th>
                           <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Avg Rating</th>
                           <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">5★</th>
                           <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">4★</th>
@@ -546,10 +542,10 @@ export default function CustomerReviewsPage() {
                           <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Client</th>
                           <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Project</th>
                           <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Resource</th>
-                          <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Manager</th>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Support Manager</th>
                           <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Rating</th>
                           <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Comment</th>
-                          <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Review Date</th>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Feedback Date</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -584,7 +580,7 @@ export default function CustomerReviewsPage() {
                   <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-muted/50">
                     <Clock className="h-4 w-4 text-amber-500 dark:text-amber-400" />
                   </div>
-                  <h3 className="text-sm font-semibold text-foreground">Pending Review Tickets</h3>
+                  <h3 className="text-sm font-semibold text-foreground">Pending Feedback Tickets</h3>
                   <span className="text-xs text-muted-foreground">({filteredPendingData.length})</span>
                 </div>
                 <div className="rounded-xl border border-border overflow-hidden">

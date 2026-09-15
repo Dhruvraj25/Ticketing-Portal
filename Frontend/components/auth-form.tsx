@@ -300,8 +300,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             <p className="text-lg font-bold tracking-tight leading-none">Support Hero</p>
             <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
               Enterprise Ticketing Portal
-            </p>
-            <p className="mt-0.5 text-[9px] font-medium uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
+            </p>              <p className="mt-0.5 text-[8px] font-medium uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
               Product by Infinixo Technologies
             </p>
           </div>
@@ -328,7 +327,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             <p className="mt-1.5 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
               Enterprise Ticketing Portal
             </p>
-            <p className="mt-1 text-[9px] font-medium uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+            <p className="mt-1 text-[8px] font-medium uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
               Product by Infinixo Technologies
             </p>
           </div>

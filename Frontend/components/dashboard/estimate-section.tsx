@@ -118,7 +118,7 @@ export function EstimateSection({
         assignDirect: 'Ticket assigned successfully.',
         approveEstimate: 'Estimate approved successfully.',
         requestRevision: 'Revision requested successfully.',
-        assignDeveloper: 'Developer assigned successfully.',
+        assignDeveloper: 'Support engineer / developer assigned successfully.',
         requestAdditionalHours: 'Additional hours requested successfully.',
         approveAdditionalHours: 'Additional hours approved successfully.',
         declineAdditionalHours: 'Additional hours declined.',
@@ -280,7 +280,7 @@ export function EstimateSection({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="est-notes">Manager Notes</Label>
+              <Label htmlFor="est-notes">Support Manager Notes</Label>
               <Textarea
                 id="est-notes"
                 value={formNotes}
@@ -328,14 +328,14 @@ export function EstimateSection({
           >
             <div className="flex items-center gap-2">
               <UserRoundCog className="h-5 w-5 text-emerald-500 dark:text-emerald-400" />
-              <h3 className="font-semibold text-foreground">Assign Directly to Developer</h3>
+              <h3 className="font-semibold text-foreground">Assign Directly to Support Engineer / Developer</h3>
             </div>
 
             <div className="space-y-2">
-              <Label>Select Developer *</Label>
+              <Label>Select Support Engineer / Developer *</Label>
               <Select value={selectedDeveloperId} onValueChange={setSelectedDeveloperId}>
                 <SelectTrigger className="rounded-xl">
-                  <SelectValue placeholder="Choose a developer..." />
+                  <SelectValue placeholder="Choose a support engineer / developer..." />
                 </SelectTrigger>
                 <SelectContent>
                   {developers.map((dev) => (
@@ -435,7 +435,7 @@ export function EstimateSection({
 
           {estimateNotes && (
             <div className="mt-3 pt-3 border-t border-border/50">
-              <span className="text-muted-foreground text-xs">Manager Notes</span>
+              <span className="text-muted-foreground text-xs">Support Manager Notes</span>
               <p className="text-sm text-foreground mt-1">{estimateNotes}</p>
             </div>
           )}
@@ -538,12 +538,12 @@ export function EstimateSection({
           </div>
 
           <div className="space-y-2">
-            <Label>Assign Developer *</Label>
+            <Label>Assign Support Engineer / Developer *</Label>
             <div className="flex gap-2">
               <div className="flex-1">
                 <Select value={selectedDeveloperId} onValueChange={setSelectedDeveloperId}>
                   <SelectTrigger className="rounded-xl">
-                    <SelectValue placeholder="Choose a developer..." />
+                    <SelectValue placeholder="Choose a support engineer / developer..." />
                   </SelectTrigger>
                   <SelectContent>
                     {developers.map((dev) => (

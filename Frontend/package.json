@@ -15,12 +15,21 @@
     "test:reports": "node --experimental-strip-types --test tests/report-access.test.ts",
     "test:support-hours": "node --experimental-strip-types --test tests/support-hours-ui.test.ts",
     "test:ticket-draft": "node --experimental-strip-types --test tests/ticket-draft.test.ts",
-    "test:ticket-dates": "node --experimental-strip-types --test tests/admin-ticket-dates.test.ts",
+    "test:ticket-detail-page": "node --experimental-strip-types --test tests/ticket-detail-page.test.ts",
     "test:dashboard-clock": "node --experimental-strip-types --test tests/dashboard-clock.test.ts",
     "test:auto-refresh": "node --experimental-strip-types --test tests/auto-refresh.test.ts",
     "test:rework-start-work": "node --experimental-strip-types --test tests/rework-start-work.test.ts",
     "test:notification-delivery": "node --experimental-strip-types --test tests/notification-delivery-bridge.test.ts",
-    "test:auth-config-logging": "node --experimental-strip-types --test tests/auth-config-logging.test.ts"
+    "test:auth-config-logging": "node --experimental-strip-types --test tests/auth-config-logging.test.ts",
+    "test:activity-format": "node --experimental-strip-types --test tests/ticket-activity-format.test.ts",
+    "test:activity-visibility": "node --experimental-strip-types --test tests/activity-log-visibility.test.ts",
+    "test:historical-ticket": "node --experimental-strip-types --test tests/historical-ticket.test.ts",
+    "test:historical-ticket-integration": "node --experimental-strip-types --test tests/historical-ticket-integration.test.ts",
+    "test:module-selection": "node --experimental-strip-types --test tests/module-selection.test.ts",
+    "test:module-selection-integration": "node --experimental-strip-types --test tests/module-selection-integration.test.ts",
+    "test:project-code": "node --experimental-strip-types --test tests/project-code.test.ts",
+    "test:project-key-integration": "node --experimental-strip-types --test tests/project-key-integration.test.ts",
+    "test:project-users-integration": "node --experimental-strip-types --test tests/project-users-integration.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

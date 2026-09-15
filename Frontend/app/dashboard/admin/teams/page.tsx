@@ -1,6 +1,13 @@
 import { getCurrentUser } from '@/app/actions/tickets'
 import { redirect } from 'next/navigation'
-import { getTeamsStatus, getTeamsConfigValidation, getTeamsQueueStatus, getTeamsMonitorEvents } from '@/app/actions/teams'
+import {
+  getTeamsStatus,
+  getTeamsConfigValidation,
+  getTeamsQueueStatus,
+  getTeamsMonitorEvents,
+  getTeamsProjectChannels,
+  type ProjectTeamsChannelStatus,
+} from '@/app/actions/teams'
 import { PageHeader } from '@/components/dashboard/page-header-server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +22,7 @@ import {
   Shield,
 } from 'lucide-react'
 import { TeamsStatusClient } from './teams-status-client'
+import { ProjectChannelsClient } from './project-channels-client'
 
 interface TeamsStatusData {
   provider?: string
@@ -113,24 +121,27 @@ export default async function AdminTeamsPage() {
   const user = await getCurrentUser()
   if (user.role !== 'admin') redirect('/dashboard')
 
-  const [statusData, validationData, queueData, monitorData] = await Promise.all([
+  const [statusData, validationData, queueData, monitorData, projectsData] = await Promise.all([
     getTeamsStatus().catch(() => ({ status: 'disabled', message: 'Backend not reachable' })),
     getTeamsConfigValidation().catch(() => ({ valid: false, mockMode: true, results: [] })),
     getTeamsQueueStatus().catch(() => ({ stats: { totalProcessed: 0, totalFailed: 0, totalRetried: 0, currentDepth: 0, averageProcessingTimeMs: 0 }, entries: [] })),
     getTeamsMonitorEvents().catch(() => ({ stats: { messagesSent: 0, messagesFailed: 0, totalEvents: 0, logLines: 0 }, recentEvents: [] })),
+    // Per-project channel status — never contains the (secret) channel links.
+    getTeamsProjectChannels().catch(() => ({ projects: [] as ProjectTeamsChannelStatus[] })),
   ])
 
   const status = statusData as TeamsStatusData
   const validation = validationData as ValidationData
   const queue = queueData as QueueStatusData
   const monitor = monitorData as MonitorData
+  const projects = (projectsData as { projects?: ProjectTeamsChannelStatus[] }).projects ?? []
 
   return (
     <div className="space-y-6" data-tour="teams-integration">
       <div data-tour="teams-header">
       <PageHeader
-          title="Microsoft Teams Integration"
-          subtitle="Configure and monitor Teams notification delivery"
+          title="Microsoft Teams"
+          subtitle="Configure per-project Teams channels and monitor notification delivery"
           icon={<MessageSquare className="h-5 w-5" />}
           iconVariant="purple"
         />
@@ -178,6 +189,9 @@ export default async function AdminTeamsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Per-Project Teams Channels */}
+        <ProjectChannelsClient initialProjects={projects} />
 
         {/* Configuration Validation */}
         <Card data-tour="teams-validation">

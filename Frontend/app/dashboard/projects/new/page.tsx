@@ -154,15 +154,15 @@ export default function NewProjectPage() {
               </div>
 
               <div className="space-y-2" data-tour="new-project-manager">
-                <Label htmlFor="manager">Project Manager</Label>
+                <Label htmlFor="manager">Support Manager</Label>
                 <Select value={managerId} onValueChange={setManagerId}>
                   <SelectTrigger className="bg-input/50">
-                    <SelectValue placeholder="Select manager" />
+                    <SelectValue placeholder="Select support manager" />
                   </SelectTrigger>
                   <SelectContent>
                     {managers.length === 0 ? (
                       <SelectItem value="no-managers" disabled>
-                        No managers available
+                        No support managers available
                       </SelectItem>
                     ) : (
                       managers.map((m) => (

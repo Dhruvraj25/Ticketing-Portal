@@ -101,7 +101,7 @@ export default async function ModuleDetailPage({
     },
     {
       icon: <Hash className="h-3.5 w-3.5" />,
-      label: 'Module ID',
+      label: 'Module / Service Area ID',
       value: <span className="font-medium text-foreground">#{mod.id}</span>,
     },
     {
@@ -151,7 +151,7 @@ export default async function ModuleDetailPage({
           </PageHeaderIcon>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
-              <span className="text-sm font-mono text-muted-foreground">Module #{mod.id}</span>
+              <span className="text-sm font-mono text-muted-foreground">Module / Service Area #{mod.id}</span>
               {statusBadge(moduleStatus, FALLBACK_BADGE)}
             </div>
             <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -166,7 +166,7 @@ export default async function ModuleDetailPage({
                 <Link href={`/dashboard/modules/${mod.id}/edit`}>
                   <Button variant="outline" size="sm" className="rounded-xl">
                     <Edit className="mr-2 h-4 w-4" />
-                    Edit Module
+                    Edit Module / Service Area
                   </Button>
                 </Link>
               </div>
@@ -197,7 +197,7 @@ export default async function ModuleDetailPage({
           <div className="p-1.5 rounded-lg bg-primary/10">
             <Layers className="h-4 w-4 text-primary" />
           </div>
-          <h2 className="text-lg font-semibold text-foreground">Module Information</h2>
+          <h2 className="text-lg font-semibold text-foreground">Module / Service Area Information</h2>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">

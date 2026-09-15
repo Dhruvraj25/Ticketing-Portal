@@ -103,7 +103,7 @@ export function RevisionApprovalActions({ pendingRevisions, ticketId }: Revision
                     {rev.requestedByName}
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    ({rev.requestedByRole === 'project_manager' ? 'Manager' : rev.requestedByRole === 'admin' ? 'Admin' : 'Client'})
+                    ({rev.requestedByRole === 'project_manager' ? 'Support Manager' : rev.requestedByRole === 'admin' ? 'Admin' : 'Client'})
                   </span>
                 </div>
                 <span className="text-xs text-muted-foreground shrink-0 flex items-center gap-1">

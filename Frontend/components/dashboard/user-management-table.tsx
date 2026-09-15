@@ -86,8 +86,8 @@ interface UserManagementTableProps {
 
 const ROLES: { value: UserRole; label: string }[] = [
   { value: 'admin', label: 'Admin' },
-  { value: 'project_manager', label: 'Project Manager' },
-  { value: 'developer', label: 'Developer' },
+  { value: 'project_manager', label: 'Support Manager / Project Manager' },
+  { value: 'developer', label: 'Support Engineer / Developer' },
   { value: 'client', label: 'Client' },
 ]
 

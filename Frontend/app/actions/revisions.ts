@@ -299,14 +299,19 @@ export const requestRevision = wrapServerAction('requestRevision', async functio
       })
       .returning()
 
-    // Log to activity history
-    const actionLabel = currentUser.role === 'client'
+    // Log to activity history. Client-initiated revision requests use
+    // 'revision_requested' (client-visible — see CLIENT_VISIBLE_HISTORY_ACTIONS).
+    // Manager/admin Rework uses the DISTINCT 'rework_requested' action so it
+    // can never be exposed to the client (internal-only, matches the
+    // dispatchNotification eventType: 'rework' used below for this branch).
+    const isClientRequest = currentUser.role === 'client'
+    const actionLabel = isClientRequest
       ? 'Revision requested by client (pending manager approval)'
       : `Sent back for rework by ${currentUser.role === 'project_manager' ? 'manager' : 'admin'}`
     await tx.insert(ticketHistory).values({
       ticketId: data.ticketId,
       userId: currentUser.id,
-      action: 'revision_requested',
+      action: isClientRequest ? 'revision_requested' : 'rework_requested',
       newValue: `${actionLabel}: #${newRevisionNumber}: ${data.revisionNotes.substring(0, 200)}`,
     })
 

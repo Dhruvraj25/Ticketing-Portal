@@ -96,7 +96,7 @@ export default function EditModulePage() {
             <Layers className="h-5 w-5" />
           </PageHeaderIcon>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Edit Module</h1>
+            <h1 className="text-2xl font-bold text-foreground">Edit Module / Service Area</h1>
             <p className="text-sm text-muted-foreground">{moduleName}</p>
           </div>
         </div>
@@ -115,7 +115,7 @@ export default function EditModulePage() {
               <Layers className="h-5 w-5" />
             </PageHeaderIcon>
             <div>
-              <h1 className="text-2xl font-bold text-foreground">Edit Module</h1>
+              <h1 className="text-2xl font-bold text-foreground">Edit Module / Service Area</h1>
               <p className="text-sm text-muted-foreground">{moduleName}</p>
             </div>
           </div>
@@ -124,7 +124,7 @@ export default function EditModulePage() {
 
       <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2" data-tour="edit-module-name">
-            <Label htmlFor="moduleName">Module Name</Label>
+            <Label htmlFor="moduleName">Module / Service Area Name</Label>
             <Input
               id="moduleName"
               value={moduleName}

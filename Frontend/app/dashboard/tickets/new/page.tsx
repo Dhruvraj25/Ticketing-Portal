@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { createTicket, getTicketFormProjects, getTicketFormModules, getTicketFormClients } from '@/app/actions/tickets'
+import { createTicket, getTicketFormProjects, getTicketFormModules, getModulesForClient, getTicketFormClients, getCurrentUser } from '@/app/actions/tickets'
 import { saveAttachment } from '@/app/actions/attachments'
 import { PageTimer } from '@/lib/performance-profiler'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,7 @@ import { PageHeaderIcon } from '@/components/dashboard/page-header-icon'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -20,7 +21,9 @@ import {
 } from '@/components/ui/select'
 import { TICKET_PRIORITY_CONFIG, TICKET_CATEGORY_CONFIG, VALIDATION } from '@/lib/types'
 import type { TicketPriority, TicketCategory } from '@/lib/types'
+import type { TicketType } from '@/lib/historical-ticket'
 import { loadTicketDraft, saveTicketDraft, clearTicketDraft, resolveDraftSelection, hasDraftSelection } from '@/lib/ticket-draft'
+import { zonedInputToUtcDate } from '@/lib/datetime'
 import dynamic from 'next/dynamic'
 import { cn } from '@/lib/utils'
 import { stripHtml } from '@/lib/format'
@@ -53,6 +56,8 @@ import {
   FileText,
   Monitor,
   User,
+  CalendarClock,
+  Wallet,
 } from 'lucide-react'
 import Link from 'next/link'
 interface StagedImage {
@@ -114,13 +119,52 @@ export default function NewTicketPage() {
   const [selectedModuleId, setSelectedModuleId] = useState<string>('')
   const [loadingModules, setLoadingModules] = useState(false)
 
+  // Ticket Type (admin/manager only) — On Behalf of Client / Historical.
+  // Defaults to 'on_behalf', which is today's normal staff-creates-for-a-
+  // client flow, so leaving this untouched changes nothing for existing users.
+  const [ticketType, setTicketType] = useState<TicketType>('on_behalf')
+  const [estimateApprovalRequired, setEstimateApprovalRequired] = useState(false)
+  const [supportHoursConsumed, setSupportHoursConsumed] = useState('')
+  const [historicalDateInput, setHistoricalDateInput] = useState('')
+  const [historicalClosingDateInput, setHistoricalClosingDateInput] = useState('')
 
+  const isStaff = userRole === 'admin' || userRole === 'project_manager'
 
   const [stagedImages, setStagedImages] = useState<StagedImage[]>([])
   const [dragOver, setDragOver] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
 
-  
+  // Load the current user's role and the staff-only client list (and, for a
+  // client user, their own project list) once on mount.
+  useEffect(() => {
+    (async () => {
+      try {
+        const me = await getCurrentUser()
+        setUserRole(me.role)
+        if (me.role === 'admin' || me.role === 'project_manager') {
+          const clientList = await getTicketFormClients()
+          setClients(clientList)
+        } else if (me.role === 'client') {
+          const [projs, mods] = await Promise.all([
+            getTicketFormProjects(),
+            getModulesForClient(),
+          ])
+          setProjects(projs)
+          setModules(mods)
+        }
+      } catch (e) {
+        console.error('[CreateTicket] Failed to load initial form data:', e)
+      }
+    })()
+  }, [])
+
+  // "On Behalf of Client" automatically turns Estimate Approval Required ON
+  // (spec requirement) — the toggle is rendered disabled for this type so the
+  // user can't uncheck it back off.
+  useEffect(() => {
+    if (ticketType === 'on_behalf') setEstimateApprovalRequired(true)
+  }, [ticketType])
+
   // Restore simple fields from a saved draft.
   // Project / Module / Client are restored inside load() so the restored
   // dropdown values always resolve against freshly loaded option lists.
@@ -161,17 +205,34 @@ export default function NewTicketPage() {
     }
   }, [])
 
+  // No project selected → show every module/service area for the current
+  // client (all of their projects), not an empty/disabled list. selectedClientId
+  // is only ever set for staff — a client-role user has none, and
+  // getModulesForClient() with no argument resolves to their own id server-side.
+  const loadModulesForClient = useCallback(async (clientId: string) => {
+    setLoadingModules(true)
+    try {
+      const mods = await getModulesForClient(clientId || undefined)
+      setModules(mods)
+    } catch (e) {
+      console.error('[CreateTicket] Failed to fetch modules for client:', e)
+    } finally {
+      setLoadingModules(false)
+    }
+  }, [])
+
   const handleProjectChange = useCallback(async (projectId: string) => {
     console.log('[CreateTicket] Project changed to:', projectId)
     setSelectedProjectId(projectId)
     setSelectedModuleId('')
     setModules([])
     if (!projectId) {
-      console.log('[CreateTicket] Project deselected, clearing modules')
+      console.log('[CreateTicket] Project deselected, loading all modules for the client')
+      await loadModulesForClient(selectedClientId)
       return
     }
     await loadModulesForProject(projectId)
-  }, [loadModulesForProject])
+  }, [loadModulesForProject, loadModulesForClient, selectedClientId])
 
   function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
@@ -234,13 +295,43 @@ export default function NewTicketPage() {
       setError('Please select a project.')
       return
     }
-    if (!selectedModuleId) {
-      setError('Please select a module.')
-      return
-    }
     if (!environment) {
       setError('Please select an environment.')
       return
+    }
+    if (isStaff && !selectedClientId) {
+      setError('Please select a client.')
+      return
+    }
+
+    let historicalCreatedAt: Date | null = null
+    let historicalClosedAt: Date | null = null
+    if (isStaff && ticketType === 'historical') {
+      const hours = Number(supportHoursConsumed)
+      if (!supportHoursConsumed || !Number.isFinite(hours) || hours <= 0) {
+        setError('Support Hour Consumed must be a number greater than 0.')
+        return
+      }
+      if (!historicalDateInput) {
+        setError('Historical Ticket Date is required.')
+        return
+      }
+      historicalCreatedAt = zonedInputToUtcDate(historicalDateInput)
+      if (!historicalCreatedAt) {
+        setError('Historical Ticket Date is invalid.')
+        return
+      }
+      if (historicalClosingDateInput) {
+        historicalClosedAt = zonedInputToUtcDate(historicalClosingDateInput)
+        if (!historicalClosedAt) {
+          setError('Closing Date is invalid.')
+          return
+        }
+        if (historicalClosedAt.getTime() < historicalCreatedAt.getTime()) {
+          setError('Closing Date cannot be earlier than the Historical Ticket Date.')
+          return
+        }
+      }
     }
 
     setLoading(true)
@@ -252,8 +343,17 @@ export default function NewTicketPage() {
         priority,
         category,
         projectId: Number(selectedProjectId),
-        moduleId: Number(selectedModuleId),
+        moduleId: selectedModuleId ? Number(selectedModuleId) : null,
         clientId: selectedClientId || undefined,
+        ...(isStaff ? {
+          ticketType,
+          estimateApprovalRequired: ticketType === 'on_behalf' ? true : estimateApprovalRequired,
+          ...(ticketType === 'historical' ? {
+            supportHoursConsumed: Number(supportHoursConsumed),
+            historicalCreatedAt: historicalCreatedAt!.toISOString(),
+            historicalClosedAt: historicalClosedAt ? historicalClosedAt.toISOString() : null,
+          } : {}),
+        } : {}),
       })
 
       for (const staged of stagedImages) {
@@ -281,8 +381,13 @@ export default function NewTicketPage() {
     }
   }
 
+  const ticketTypeFieldsFilled = !isStaff || (
+    !!selectedClientId &&
+    (ticketType !== 'historical' || (!!supportHoursConsumed && !!historicalDateInput))
+  )
+
   const canGoNext = step === 'details'
-    ? title.trim() && description.trim() && selectedProjectId && selectedModuleId && environment
+    ? title.trim() && description.trim() && selectedProjectId && environment && ticketTypeFieldsFilled
     : true
   const stepIndex = STEPS.indexOf(step)
 
@@ -297,12 +402,16 @@ export default function NewTicketPage() {
       setError('Please select a project.')
       return
     }
-    if (!selectedModuleId) {
-      setError('Please select a module.')
-      return
-    }
     if (!environment) {
       setError('Please select an environment.')
+      return
+    }
+    if (isStaff && !selectedClientId) {
+      setError('Please select a client.')
+      return
+    }
+    if (isStaff && ticketType === 'historical' && (!supportHoursConsumed || !historicalDateInput)) {
+      setError('Support Hour Consumed and Historical Ticket Date are required for a Historical ticket.')
       return
     }
     setStep(s)
@@ -562,11 +671,16 @@ export default function NewTicketPage() {
                     setSelectedModuleId('')
                     setModules([])
                     if (clientId) {
-                      const projs = await getTicketFormProjects(clientId)
+                      const [projs, mods] = await Promise.all([
+                        getTicketFormProjects(clientId),
+                        getModulesForClient(clientId),
+                      ])
                       setProjects(projs)
+                      setModules(mods)
                     } else {
                       const projs = await getTicketFormProjects()
                       setProjects(projs)
+                      setModules([])
                     }
                   }}>
                     <SelectTrigger className="h-11 rounded-xl bg-input/50 border-border/50">
@@ -584,6 +698,97 @@ export default function NewTicketPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              )}
+
+              {/* Ticket Type — admin/project_manager only (Phase 3) */}
+              {isStaff && (
+                <div className="space-y-4 p-4 rounded-xl bg-muted/20 border border-border/50" data-tour="ticket-type">
+                  <div className="space-y-2">
+                    <Label htmlFor="ticketType">
+                      Ticket Type <span className="text-destructive">*</span>
+                    </Label>
+                    <Select value={ticketType} onValueChange={(v) => setTicketType(v as TicketType)}>
+                      <SelectTrigger className="h-11 rounded-xl bg-input/50 border-border/50">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="on_behalf">On Behalf of Client</SelectItem>
+                        <SelectItem value="historical">Historical</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <Label htmlFor="estimateApprovalRequired" className="text-sm">Estimate Approval Required</Label>
+                      <p className="text-xs text-muted-foreground">
+                        {ticketType === 'on_behalf'
+                          ? 'Automatically enabled for tickets created on behalf of a client.'
+                          : ticketType === 'historical'
+                          ? 'Not applicable — a historical ticket is created already closed.'
+                          : 'Off by default. When on, the ticket follows the normal manager estimate → client approval workflow.'}
+                      </p>
+                    </div>
+                    <Switch
+                      id="estimateApprovalRequired"
+                      checked={ticketType === 'on_behalf' ? true : estimateApprovalRequired}
+                      onCheckedChange={setEstimateApprovalRequired}
+                      disabled={ticketType !== 'on_behalf'}
+                    />
+                  </div>
+
+                  {ticketType === 'historical' && (
+                    <div className="space-y-4 pt-2 border-t border-border/50">
+                      <div className="space-y-2">
+                        <Label htmlFor="supportHoursConsumed" className="flex items-center gap-1.5">
+                          <Wallet className="h-3.5 w-3.5 text-muted-foreground" />
+                          Support Hour Consumed <span className="text-destructive">*</span>
+                        </Label>
+                        <Input
+                          id="supportHoursConsumed"
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={supportHoursConsumed}
+                          onChange={(e) => setSupportHoursConsumed(e.target.value)}
+                          placeholder="e.g. 10"
+                          className="h-11 rounded-xl bg-input/50 border-border/50"
+                        />
+                        <p className="text-xs text-muted-foreground">Deducted from the client's Support Wallet when the ticket is created.</p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="historicalDate" className="flex items-center gap-1.5">
+                            <CalendarClock className="h-3.5 w-3.5 text-muted-foreground" />
+                            Historical Ticket Date <span className="text-destructive">*</span>
+                          </Label>
+                          <Input
+                            id="historicalDate"
+                            type="datetime-local"
+                            value={historicalDateInput}
+                            onChange={(e) => setHistoricalDateInput(e.target.value)}
+                            className="h-11 rounded-xl bg-input/50 border-border/50"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="historicalClosingDate" className="flex items-center gap-1.5">
+                            <CalendarClock className="h-3.5 w-3.5 text-muted-foreground" />
+                            Closing Date <span className="font-normal text-muted-foreground">(optional)</span>
+                          </Label>
+                          <Input
+                            id="historicalClosingDate"
+                            type="datetime-local"
+                            value={historicalClosingDateInput}
+                            onChange={(e) => setHistoricalClosingDateInput(e.target.value)}
+                            className="h-11 rounded-xl bg-input/50 border-border/50"
+                          />
+                          <p className="text-xs text-muted-foreground">Defaults to the Historical Ticket Date when left empty.</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -611,33 +816,35 @@ export default function NewTicketPage() {
 
                 <div className="space-y-2" data-tour="ticket-module">
                   <Label htmlFor="module">
-                    Module <span className="text-destructive">*</span>
+                    Module / Service Area <span className="font-normal text-muted-foreground">(optional)</span>
                   </Label>
                   <Select
                     value={selectedModuleId}
                     onValueChange={setSelectedModuleId}
-                    disabled={!selectedProjectId || loadingModules}
+                    disabled={(isStaff && !selectedClientId) || loadingModules}
                   >
                     <SelectTrigger className="h-11 rounded-xl bg-input/50 border-border/50">
                       <SelectValue placeholder={
                         loadingModules ? 'Loading...'
-                        : !selectedProjectId ? 'Select project first'
-                        : selectedProjectId && modules.length === 0 ? 'No modules available'
-                        : 'Select module'
+                        : isStaff && !selectedClientId ? 'Select a client first'
+                        : modules.length === 0 ? 'No modules / service areas available'
+                        : 'Select module / service area'
                       } />
                     </SelectTrigger>
                     <SelectContent>
-                      {modules.length === 0 && selectedProjectId ? (
+                      {modules.length === 0 && !(isStaff && !selectedClientId) ? (
                         <div className="px-3 py-6 text-center">
                           <Layers className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-                          <p className="text-sm text-muted-foreground">No modules found for this project</p>
+                          <p className="text-sm text-muted-foreground">
+                            {selectedProjectId ? 'No modules / service areas found for this project' : 'No modules / service areas found for this client'}
+                          </p>
                           <p className="text-xs text-muted-foreground/60 mt-1">
-                            Modules are created during project setup. Contact your project manager to add modules.
+                            Modules / Service Areas are created during project setup. Contact your support manager to add modules / service areas.
                           </p>
                         </div>
                       ) : modules.length === 0 ? (
                         <div className="px-3 py-6 text-center">
-                          <p className="text-sm text-muted-foreground">Select a project first</p>
+                          <p className="text-sm text-muted-foreground">Select a client first</p>
                         </div>
                       ) : (
                         modules.map((m) => (
@@ -766,10 +973,10 @@ export default function NewTicketPage() {
                     </p>
                   </div>
                   <div className="p-4 rounded-xl bg-muted/30 border border-border/50">
-                    <p className="text-xs text-muted-foreground mb-1 font-medium uppercase tracking-wider">Module</p>
+                    <p className="text-xs text-muted-foreground mb-1 font-medium uppercase tracking-wider">Module / Service Area</p>
                     <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
                       <Layers className="h-3.5 w-3.5 text-muted-foreground" />
-                      {modules.find((m) => String(m.id) === selectedModuleId)?.moduleName || 'Selected'}
+                      {modules.find((m) => String(m.id) === selectedModuleId)?.moduleName || 'None'}
                     </p>
                   </div>
                   <div className="p-4 rounded-xl bg-muted/30 border border-border/50">
@@ -780,6 +987,21 @@ export default function NewTicketPage() {
                     </p>
                   </div>
                 </div>
+
+                {/* Ticket Type (admin/manager only) */}
+                {isStaff && (
+                  <div className="p-4 rounded-xl bg-muted/30 border border-border/50">
+                    <p className="text-xs text-muted-foreground mb-1 font-medium uppercase tracking-wider">Ticket Type</p>
+                    <p className="text-sm font-medium text-foreground">
+                      {ticketType === 'historical' ? 'Historical' : 'On Behalf of Client'}
+                    </p>
+                    {ticketType === 'historical' && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {supportHoursConsumed || 0}h will be deducted from the client's Support Wallet · dated {historicalDateInput || '—'}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Additional Info */}
                 {additionalInfo && (

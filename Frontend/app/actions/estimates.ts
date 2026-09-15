@@ -142,7 +142,9 @@ export const approveEstimate = wrapServerAction('approveEstimate', async functio
     userId: currentUser.id,
     action: 'estimate_approved',
     oldValue: 'estimate_pending',
-    newValue: `estimate_approved (${t.estimatedHours}h)`,
+    // Just the hours — formatActivityEntry() builds the full
+    // "[Name] (Client) estimate approved (Xh)" line from this dynamically.
+    newValue: `${t.estimatedHours}h`,
   })
 
   // Notify manager

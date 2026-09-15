@@ -120,7 +120,21 @@ async function fetchFromBackendSafe<T = unknown>(path: string, options?: Request
   }
   if (!res.ok) {
     const text = await res.text().catch(() => '')
-    return { ok: false, stage: 'backend', code: 'BACKEND_ERROR_' + res.status, statusCode: res.status, message: 'The backend returned an unexpected error (HTTP ' + res.status + ').' + (text ? ' ' + text.slice(0, 300) : '') }
+    // The backend returns a structured { error, code } body for channel
+    // configuration failures. Surface its exact (already sanitized) error
+    // message/code so the admin sees a useful reason — never a secret.
+    let code = 'BACKEND_ERROR_' + res.status
+    let message = 'The backend returned an unexpected error (HTTP ' + res.status + ').'
+    let parsed: { error?: unknown; code?: unknown } | null = null
+    try {
+      parsed = JSON.parse(text) as { error?: unknown; code?: unknown }
+    } catch {
+      parsed = null
+    }
+    if (parsed && typeof parsed.code === 'string' && parsed.code) code = parsed.code
+    if (parsed && typeof parsed.error === 'string' && parsed.error) message = parsed.error
+    else if (!parsed && text) message = message + ' ' + text.slice(0, 300)
+    return { ok: false, stage: 'backend', code, statusCode: res.status, message: message }
   }
 
   const data = await res.json().catch(() => undefined)
@@ -172,4 +186,102 @@ export const clearTeamsQueue = wrapServerAction('clearTeamsQueue', async functio
 
 export const resetTeamsMonitor = wrapServerAction('resetTeamsMonitor', async function resetTeamsMonitor() {
   return fetchFromBackend('/monitor/reset', { method: 'POST' })
+})
+
+// ─── Per-Project Teams Channels (Phase 7) ──────────────────────────────────
+// SECURITY: the backend NEVER returns the stored webhook URL — only status
+// fields (configured / enabled / updatedAt). The admin can replace a link but
+// can never read the existing one back.
+
+export interface ProjectTeamsChannelStatus {
+  projectId: number
+  projectName: string
+  projectCode: string
+  projectStatus: string
+  configured: boolean
+  enabled: boolean
+  updatedAt: string | null
+}
+
+export interface TeamsChannelMutationResult {
+  success: boolean
+  projectId?: number
+  configured?: boolean
+  enabled?: boolean
+  updatedAt?: string
+  removed?: boolean
+  routing?: string
+  statusCode?: number
+  message?: string
+  error?: string
+  code?: string
+  stage?: BackendCallResult['stage']
+}
+
+/** Project list with Teams channel status — admin only (backend enforces it). */
+export const getTeamsProjectChannels = wrapServerAction('getTeamsProjectChannels', async function getTeamsProjectChannels() {
+  return fetchFromBackend('/projects') as Promise<{ projects: ProjectTeamsChannelStatus[] }>
+})
+
+/**
+ * Create or update a project's Teams channel.
+ * Pass `webhookUrl` to set/replace the link; pass only `enabled` to toggle an
+ * existing channel without re-entering the link.
+ */
+export const saveTeamsProjectChannel = wrapServerAction('saveTeamsProjectChannel', async function saveTeamsProjectChannel(
+  projectId: number,
+  input: { webhookUrl?: string; enabled?: boolean },
+): Promise<TeamsChannelMutationResult> {
+  const result = await fetchFromBackendSafe<Record<string, unknown>>('/projects/' + projectId + '/channel', {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  })
+  if (!result.ok) {
+    return {
+      success: false,
+      projectId,
+      code: result.code ?? 'TEAMS_CHANNEL_SAVE_FAILED',
+      message: result.message ?? 'Could not save the Teams channel configuration.',
+      stage: result.stage,
+    }
+  }
+  return { success: true, projectId, ...(result.data as Record<string, unknown>) } as TeamsChannelMutationResult
+})
+
+/** Remove a project's Teams channel configuration. */
+export const removeTeamsProjectChannel = wrapServerAction('removeTeamsProjectChannel', async function removeTeamsProjectChannel(
+  projectId: number,
+): Promise<TeamsChannelMutationResult> {
+  const result = await fetchFromBackendSafe<Record<string, unknown>>('/projects/' + projectId + '/channel', {
+    method: 'DELETE',
+  })
+  if (!result.ok) {
+    return {
+      success: false,
+      projectId,
+      code: result.code ?? 'TEAMS_CHANNEL_REMOVE_FAILED',
+      message: result.message ?? 'Could not remove the Teams channel configuration.',
+      stage: result.stage,
+    }
+  }
+  return { success: true, projectId, removed: true, ...(result.data as Record<string, unknown>) } as TeamsChannelMutationResult
+})
+
+/** Send a test message to one project's configured Teams channel. */
+export const sendTeamsProjectTestMessage = wrapServerAction('sendTeamsProjectTestMessage', async function sendTeamsProjectTestMessage(
+  projectId: number,
+): Promise<TeamsChannelMutationResult> {
+  const result = await fetchFromBackendSafe<Record<string, unknown>>('/projects/' + projectId + '/test', {
+    method: 'POST',
+  })
+  if (!result.ok) {
+    return {
+      success: false,
+      projectId,
+      code: result.code ?? 'TEAMS_CHANNEL_TEST_FAILED',
+      message: result.message ?? 'Could not send the test message.',
+      stage: result.stage,
+    }
+  }
+  return { success: true, projectId, ...(result.data as Record<string, unknown>) } as TeamsChannelMutationResult
 })

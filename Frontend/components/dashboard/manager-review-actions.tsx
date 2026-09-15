@@ -196,7 +196,7 @@ export function ManagerReviewActions({ ticketId, developers, ticketNumber, revis
             className="gap-2"
           >
             <UserRoundCog className="h-4 w-4" />
-            Reassign Developer
+            Reassign Support Engineer / Developer
           </Button>
         </div>
         {error && <p className="text-sm text-destructive mt-3">{error}</p>}
@@ -206,17 +206,17 @@ export function ManagerReviewActions({ ticketId, developers, ticketNumber, revis
       <Dialog open={reassignDialogOpen} onOpenChange={setReassignDialogOpen}>
         <DialogContent className="bg-card border-border/50">
           <DialogHeader>
-            <DialogTitle>Reassign Developer</DialogTitle>
+            <DialogTitle>Reassign Support Engineer / Developer</DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              Select a developer to reassign this ticket to. The status will reset to
+              Select a support engineer / developer to reassign this ticket to. The status will reset to
               &quot;Assigned&quot;.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="developer-select">Developer</Label>
+            <Label htmlFor="developer-select">Support Engineer / Developer</Label>
             <Select value={selectedDeveloperId} onValueChange={setSelectedDeveloperId}>
               <SelectTrigger id="developer-select" className="bg-input/50 border-border/50">
-                <SelectValue placeholder="Select a developer..." />
+                <SelectValue placeholder="Select a support engineer / developer..." />
               </SelectTrigger>
               <SelectContent className="bg-popover border-border/50">
                 {developers.map((dev) => (

@@ -369,7 +369,7 @@ export function ProjectsPageClient({ user, projects, isManagerOrAdmin }: Project
               className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border border-border/50 text-muted-foreground hover:text-foreground hover:border-border transition-colors"
               onClick={() => {
                 const csv = [
-                  ['Project Name', 'Code', 'Status', 'Client', 'Manager', 'Tickets', 'Modules', 'Progress'].join(','),
+                  ['Project Name', 'Code', 'Status', 'Client', 'Support Manager', 'Tickets', 'Modules / Service Areas', 'Progress'].join(','),
                   ...filteredProjects.map((p) =>
                     [
                       `"${p.projectName}"`,
@@ -438,10 +438,10 @@ export function ProjectsPageClient({ user, projects, isManagerOrAdmin }: Project
 
                   <Select value={selectedManager} onValueChange={(v) => { setSelectedManager(v); setCurrentPage(1) }}>
                     <SelectTrigger className="w-[160px] h-9 rounded-xl bg-muted/20 border-border/50 text-sm">
-                      <SelectValue placeholder="Manager" />
+                      <SelectValue placeholder="Support Manager" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Managers</SelectItem>
+                      <SelectItem value="all">All Support Managers</SelectItem>
                       {managerOptions.map((m) => (                          <SelectItem key={m.name} value={m.name} className="truncate">{m.name}</SelectItem>
                       ))}
                     </SelectContent>
@@ -503,9 +503,9 @@ export function ProjectsPageClient({ user, projects, isManagerOrAdmin }: Project
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Project</TableHead>
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Key</TableHead>
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</TableHead>
-                <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Manager</TableHead>
+                <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Support Manager</TableHead>
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider text-center">Team Size</TableHead>
-                <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider text-center">Modules</TableHead>
+                <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider text-center">Modules / Service Areas</TableHead>
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider text-center">Tickets</TableHead>
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Progress</TableHead>
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Updated</TableHead>
@@ -706,7 +706,7 @@ const ProjectActions = memo(function ProjectActions({ project, isManagerOrAdmin 
                             <DropdownMenuItem asChild>
                               <Link href={`/dashboard/projects/${project.id}`} className="cursor-pointer flex items-center">
                                 <Layers className="mr-2 h-4 w-4" />
-                                Manage Modules
+                                Manage Modules / Service Areas
                               </Link>
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />

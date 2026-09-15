@@ -128,7 +128,7 @@ export async function getActualVsEstimatedReport(filters: ReportFilters, current
       { key: 'ticketNumber', label: 'Task', type: 'text' },
       { key: 'title', label: 'Title', type: 'text' },
       { key: 'project', label: 'Project', type: 'text' },
-      { key: 'developer', label: 'Developer', type: 'text' },
+      { key: 'developer', label: 'Support Engineer / Developer', type: 'text' },
       { key: 'estimatedHours', label: 'Estimated Hours', type: 'number' },
       { key: 'actualHours', label: 'Actual Hours', type: 'number' },
       { key: 'variance', label: 'Variance (h)', type: 'number' },

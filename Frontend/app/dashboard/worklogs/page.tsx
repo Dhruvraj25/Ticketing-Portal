@@ -151,7 +151,7 @@ export default async function WorklogsPage() {
               delay={2}
             />
             <StatCard
-              title="Active Developers"
+              title="Active Support Engineers / Developers"
               value={productivity.filter((e: { totalMinutes: number }) => e.totalMinutes > 0).length}
               iconName="Users"
               delay={3}

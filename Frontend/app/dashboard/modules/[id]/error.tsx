@@ -23,7 +23,7 @@ export default function ModuleDetailError({
       </div>
       <h1 className="text-2xl font-bold text-foreground mb-2">Something went wrong</h1>
       <p className="text-sm text-muted-foreground mb-6 max-w-md">
-        The module details could not be loaded. Please try again.
+        The module / service area details could not be loaded. Please try again.
       </p>
       <div className="flex items-center gap-3">
         <Button variant="outline" className="rounded-xl" onClick={() => reset()}>
@@ -32,7 +32,7 @@ export default function ModuleDetailError({
         <Link href="/dashboard/modules">
           <Button variant="ghost" className="rounded-xl">
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Modules
+            Back to Modules / Service Areas
           </Button>
         </Link>
       </div>

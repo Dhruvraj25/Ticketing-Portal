@@ -378,7 +378,7 @@ export function AttachmentUploader({
                     {getFileTypeLabel(a.mimeType, a.filename)} &middot; {a.uploadedByName}
                     {a.uploadedByRole && a.uploadedByRole !== 'unknown' && (
                       <span className="ml-1 text-[11px] px-1 py-0.5 rounded bg-muted/40">
-                        {a.uploadedByRole === 'project_manager' ? 'Manager' : a.uploadedByRole === 'admin' ? 'Admin' : a.uploadedByRole.charAt(0).toUpperCase() + a.uploadedByRole.slice(1)}
+                        {a.uploadedByRole === 'project_manager' ? 'Support Manager' : a.uploadedByRole === 'admin' ? 'Admin' : a.uploadedByRole === 'developer' ? 'Support Engineer / Developer' : a.uploadedByRole.charAt(0).toUpperCase() + a.uploadedByRole.slice(1)}
                       </span>
                     )} &middot;{' '}
                     {formatDistanceToNow(new Date(a.createdAt), { addSuffix: true })}

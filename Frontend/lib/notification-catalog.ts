@@ -54,6 +54,8 @@ export const NOTIFICATION_EVENTS: NotificationEventDefinition[] = [
   { eventType: 'request_for_revision', label: 'Revision requested', group: 'Tickets', aliases: ['revision_requested', 'ticket_revision_requested'] },
   { eventType: 'ticket_closed', label: 'Ticket closed', group: 'Tickets' },
   { eventType: 'ticket_reopened', label: 'Ticket reopened', group: 'Tickets' },
+  { eventType: 'ticket_updated', label: 'Ticket updated', group: 'Tickets' },
+  { eventType: 'ticket_comment', label: 'Ticket comment', group: 'Tickets', aliases: ['ticket_comment_added', 'comment_added'] },
   // ── Estimates & hours (approval workflow) ──────────────────────────────
   { eventType: 'estimate_requested', label: 'Estimate awaiting approval', group: 'Approvals' },
   { eventType: 'estimate_approved', label: 'Estimate approved', group: 'Approvals' },
@@ -146,6 +148,36 @@ export function indexPreferences(
     map.set(key, row.enabled)
   }
   return map
+}
+
+/**
+ * Combine PROJECT preference rows (authoritative) with LEGACY CLIENT rows
+ * (inheritance fallback). A project row always wins; keys the project does not
+ * define keep the client value. Mirrors the backend implementation.
+ */
+export interface ProjectPreferenceRow {
+  projectId: number
+  channel: string
+  eventType: string
+  enabled: boolean
+}
+
+export function mergeProjectPreferenceOverClient(
+  projectRows: ProjectPreferenceRow[],
+  clientRows: NotificationPreferenceRow[],
+): Map<string, boolean> {
+  const merged = new Map<string, boolean>()
+  for (const row of clientRows) {
+    const canonical = canonicalNotificationEvent(row.eventType)
+    if (!canonical) continue
+    merged.set(row.channel + ':' + canonical, row.enabled)
+  }
+  for (const row of projectRows) {
+    const canonical = canonicalNotificationEvent(row.eventType)
+    if (!canonical) continue
+    merged.set(row.channel + ':' + canonical, row.enabled)
+  }
+  return merged
 }
 
 /**

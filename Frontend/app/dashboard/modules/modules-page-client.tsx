@@ -204,10 +204,10 @@ export function ModulesPageClient({ user, projects, modules, statsMap }: Modules
               <Layers className="h-5 w-5" />
             </PageHeaderIcon>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Modules</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Modules / Service Areas</h1>
               <p className="text-xs font-mono text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5">
                 <span className="text-amber-500/80 dark:text-amber-400/80">✨</span>
-                Manage and organize project modules
+                Manage and organize project modules / service areas
               </p>
             </div>
           </div>
@@ -216,7 +216,7 @@ export function ModulesPageClient({ user, projects, modules, statsMap }: Modules
             <Button asChild className="rounded-xl font-mono font-bold text-xs h-9 shadow-sm">
               <Link href="/dashboard/modules/create">
                 <Plus className="mr-1.5 h-4 w-4" />
-                New Module
+                New Module / Service Area
               </Link>
             </Button>
           </div>
@@ -230,8 +230,8 @@ export function ModulesPageClient({ user, projects, modules, statsMap }: Modules
         animate={{ opacity: 1 }}
         className="grid grid-cols-2 sm:grid-cols-4 gap-4"
       >
-        <StatCard title="Total Modules" value={stats.total} iconName="Layers" delay={0} />
-        <StatCard title="Active Modules" value={stats.active} iconName="Briefcase" delay={1} />
+        <StatCard title="Total Modules / Service Areas" value={stats.total} iconName="Layers" delay={0} />
+        <StatCard title="Active Modules / Service Areas" value={stats.active} iconName="Briefcase" delay={1} />
         <StatCard title="Completed" value={stats.completed} iconName="CheckCircle2" delay={2} />
         <StatCard title="Archived" value={stats.archived} iconName="Layers" delay={3} />
       </motion.div>
@@ -340,7 +340,7 @@ export function ModulesPageClient({ user, projects, modules, statsMap }: Modules
         <p className="text-sm text-muted-foreground flex items-center gap-2">
           {searchLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Showing <span className="font-medium text-foreground">{filteredModules.length}</span>{' '}
-          {filteredModules.length === 1 ? 'module' : 'modules'}
+          {filteredModules.length === 1 ? 'module / service area' : 'modules / service areas'}
           {hasFilters && ' (filtered)'}
         </p>
       </div>
@@ -357,18 +357,18 @@ export function ModulesPageClient({ user, projects, modules, statsMap }: Modules
               <Layers className="h-10 w-10 text-muted-foreground/50" />
             </div>
             <p className="font-semibold text-foreground text-lg">
-              {hasFilters ? 'No modules match your filters' : 'No modules yet'}
+              {hasFilters ? 'No modules / service areas match your filters' : 'No modules / service areas yet'}
             </p>
             <p className="text-sm text-muted-foreground">
               {hasFilters
                 ? 'Try adjusting your search or filter criteria.'
-                : 'Create your first module to organize tickets within a project.'}
+                : 'Create your first module / service area to organize tickets within a project.'}
             </p>
             {!hasFilters && (
               <Link href="/dashboard/modules/create">
                 <Button>
                   <Plus className="mr-1.5 h-4 w-4" />
-                  New Module
+                  New Module / Service Area
                 </Button>
               </Link>
             )}
@@ -379,7 +379,7 @@ export function ModulesPageClient({ user, projects, modules, statsMap }: Modules
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30">
-                <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Module Name</TableHead>
+                <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Module / Service Area Name</TableHead>
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Description</TableHead>
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Project</TableHead>
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</TableHead>
@@ -510,13 +510,13 @@ const ModuleTableRow = memo(function ModuleTableRow({
               {/* View Module → dedicated module detail page (not the generic tickets list) */}
               <Link href={`/dashboard/modules/${mod.id}`} className="cursor-pointer flex items-center">
                 <Eye className="mr-2 h-4 w-4" />
-                View Module
+                View Module / Service Area
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link href={`/dashboard/modules/${mod.id}/edit`} className="cursor-pointer flex items-center">
                 <Edit3 className="mr-2 h-4 w-4" />
-                Edit Module
+                Edit Module / Service Area
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
@@ -531,7 +531,7 @@ const ModuleTableRow = memo(function ModuleTableRow({
               className="text-destructive cursor-pointer flex items-center"
             >
               <Trash2 className="mr-2 h-4 w-4" />
-              Delete Module
+              Delete Module / Service Area
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

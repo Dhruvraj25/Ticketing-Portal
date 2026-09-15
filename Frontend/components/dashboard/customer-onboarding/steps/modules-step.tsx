@@ -70,8 +70,8 @@ export const ModulesStep = memo(function ModulesStep({ state, errors, existingMo
               <Layers className="h-5 w-5 text-white" />
             </div>
             <div>
-              <CardTitle>Module Creation & Selection</CardTitle>
-              <CardDescription>Create new modules or select from existing ones</CardDescription>
+              <CardTitle>Module / Service Area Creation & Selection</CardTitle>
+              <CardDescription>Create new modules / service areas or select from existing ones</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -84,13 +84,13 @@ export const ModulesStep = memo(function ModulesStep({ state, errors, existingMo
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Create New Modules</h3>
+              <h3 className="text-sm font-semibold">Create New Modules / Service Areas</h3>
               <Button variant="outline" size="sm" onClick={addModule}>
-                <Plus className="h-3.5 w-3.5 mr-1" /> Add Module
+                <Plus className="h-3.5 w-3.5 mr-1" /> Add Module / Service Area
               </Button>
             </div>
             {state.newModules.length === 0 && (
-              <p className="text-sm text-muted-foreground italic">No new modules added yet.</p>
+              <p className="text-sm text-muted-foreground italic">No new modules / service areas added yet.</p>
             )}
             <AnimatePresence>
               {state.newModules.map((mod, i) => (
@@ -104,9 +104,9 @@ export const ModulesStep = memo(function ModulesStep({ state, errors, existingMo
                   <div className="flex-1 space-y-3">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
-                        <Label className="text-xs">Module Name</Label>
+                        <Label className="text-xs">Module / Service Area Name</Label>
                         <Input
-                          placeholder="Module name"
+                          placeholder="Module / Service Area name"
                           value={mod.name}
                           onChange={e => updateModule(i, 'name', e.target.value)}
                         />
@@ -136,11 +136,11 @@ export const ModulesStep = memo(function ModulesStep({ state, errors, existingMo
 
           {existingModules.length > 0 && (
             <div className="space-y-3 border-t pt-4">
-              <h3 className="text-sm font-semibold">Select Existing Modules</h3>
+              <h3 className="text-sm font-semibold">Select Existing Modules / Service Areas</h3>
               <div className="relative mb-3">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search modules..."
+                  placeholder="Search modules / service areas..."
                   value={state.moduleSearch}
                   onChange={e => onFieldChange('moduleSearch', e.target.value)}
                   className="pl-9"
@@ -163,7 +163,7 @@ export const ModulesStep = memo(function ModulesStep({ state, errors, existingMo
                     </label>
                   ))
                 ) : (
-                  <p className="text-sm text-muted-foreground text-center py-4">No modules found</p>
+                  <p className="text-sm text-muted-foreground text-center py-4">No modules / service areas found</p>
                 )}
               </div>
             </div>
@@ -171,13 +171,13 @@ export const ModulesStep = memo(function ModulesStep({ state, errors, existingMo
 
           <div className="p-3 rounded-lg bg-muted/50 border text-sm">
             <p className="font-medium">
-              Total modules: <span className="text-primary">{state.newModules.length + state.selectedExistingModules.length}</span>
+              Total modules / service areas: <span className="text-primary">{state.newModules.length + state.selectedExistingModules.length}</span>
             </p>
             {state.newModules.length > 0 && (
-              <p className="text-xs text-muted-foreground mt-1">{state.newModules.length} new module(s)</p>
+              <p className="text-xs text-muted-foreground mt-1">{state.newModules.length} new module(s) / service area(s)</p>
             )}
             {state.selectedExistingModules.length > 0 && (
-              <p className="text-xs text-muted-foreground">{state.selectedExistingModules.length} existing module(s)</p>
+              <p className="text-xs text-muted-foreground">{state.selectedExistingModules.length} existing module(s) / service area(s)</p>
             )}
           </div>
         </CardContent>

@@ -10,21 +10,7 @@ import type { ProjectStatus } from '@/lib/types'
 import { wrapServerAction } from '@/lib/performance-profiler'
 import { getCurrentUser } from '@/lib/auth-utils'
 import { dispatchNotification } from '@/lib/notify-all'
-
-// ============================================================================
-// HELPERS
-// ============================================================================
-
-function generateProjectCode(name: string): string {
-  const prefix = name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 6) || 'PRJ'
-  const suffix = Date.now().toString(36).slice(-4).toUpperCase()
-  return `${prefix}-${suffix}`
-}
+import { deriveProjectCodeBase, withUniqueProjectCode } from '@/lib/project-code'
 
 // ============================================================================
 // CREATE
@@ -63,20 +49,24 @@ export const createProject = wrapServerAction('createProject', async function cr
     if (descErr) throw new Error(descErr)
   }
 
-  const projectCode = generateProjectCode(data.projectName)
+  const projectCodeBase = deriveProjectCodeBase(data.projectName)
 
-  const [newProject] = await db
-    .insert(project)
-    .values({
-      projectName: data.projectName,
-      projectCode,
-      clientId: data.clientId,
-      managerId: data.managerId,
-      description: data.description ?? null,
-      startDate: data.startDate ?? null,
-      status: 'active',
-    })
-    .returning()
+  const newProject = await withUniqueProjectCode(projectCodeBase, async (projectCode) => {
+    const [inserted] = await db
+      .insert(project)
+      .values({
+        projectName: data.projectName,
+        projectCode,
+        clientId: data.clientId,
+        managerId: data.managerId,
+        description: data.description ?? null,
+        startDate: data.startDate ?? null,
+        status: 'active',
+      })
+      .returning()
+    return inserted
+  })
+  const projectCode = newProject.projectCode
 
   // Auto-create support wallet for the new project
   try {

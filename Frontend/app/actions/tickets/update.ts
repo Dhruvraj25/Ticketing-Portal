@@ -115,64 +115,6 @@ export const updateTicketStatus = wrapServerAction('updateTicketStatus', async f
 
 // ── Assignment ─────────────────────────────────────────────────────────────
 
-// ── Admin Ticket Date Editing (Admin only) ─────────────────────────────────
-
-/**
- * Admin-only correction of a ticket's creation / closing timestamps.
- * Neither managers, developers nor clients may alter these dates.
- */
-export const updateTicketDates = wrapServerAction('updateTicketDates', async function updateTicketDates(ticketId: number, dates: { createdAt?: string | null; closedAt?: string | null }) {
-  const currentUser = await getUser()
-  if (currentUser.role !== 'admin') {
-    throw new Error('Only admins can edit ticket dates')
-  }
-
-  const [t] = await db.select().from(ticket).where(eq(ticket.id, ticketId)).limit(1)
-  if (!t) throw new Error('Ticket not found')
-
-  const patch: Record<string, unknown> = { updatedAt: new Date() }
-  let effectiveCreatedAt: Date = t.createdAt
-  let nextClosedAt: Date | null = t.closedAt
-
-  if (dates.createdAt !== undefined && dates.createdAt !== null && dates.createdAt !== '') {
-    const created = new Date(dates.createdAt)
-    if (isNaN(created.getTime())) throw new Error('Invalid creation date')
-    patch.createdAt = created
-    effectiveCreatedAt = created
-  }
-
-  if (dates.closedAt !== undefined) {
-    if (dates.closedAt === null || dates.closedAt === '') {
-      nextClosedAt = null
-      patch.closedAt = null
-    } else {
-      const closed = new Date(dates.closedAt)
-      if (isNaN(closed.getTime())) throw new Error('Invalid closing date')
-      if (closed.getTime() < effectiveCreatedAt.getTime()) {
-        throw new Error('Closing date cannot be earlier than the creation date')
-      }
-      nextClosedAt = closed
-      patch.closedAt = closed
-    }
-  }
-
-  await db.update(ticket).set(patch).where(eq(ticket.id, ticketId))
-
-  await db.insert(ticketHistory).values({
-    ticketId,
-    userId: currentUser.id,
-    action: 'dates_changed',
-    oldValue: `created: ${t.createdAt ? new Date(t.createdAt).toISOString() : ''} | closed: ${t.closedAt ? new Date(t.closedAt).toISOString() : ''}`,
-    newValue: `created: ${effectiveCreatedAt ? new Date(effectiveCreatedAt).toISOString() : ''} | closed: ${nextClosedAt ? new Date(nextClosedAt).toISOString() : ''}`,
-  })
-
-  revalidatePath('/dashboard')
-  revalidatePath(`/dashboard/tickets/${ticketId}`)
-  revalidateTag('consolidated-dashboard-stats', { expire: 60 })
-  revalidateTag('ticket-by-id', { expire: 60 })
-  return { success: true }
-})
-
 // ── Ticket Priority Editing (Manager/Admin only) ───────────────────────────
 
 export const updateTicketPriority = wrapServerAction('updateTicketPriority', async function updateTicketPriority(ticketId: number, priority: string) {
@@ -933,26 +875,35 @@ export const getTicketFormClients = wrapServerAction('getTicketFormClients', asy
   return clients
 })
 
+// Resolves every ACTIVE project id a client is associated with, whether via
+// their own project.clientId (the primary/owning account) or via the
+// project_client junction table (secondary org accounts — e.g. an "approver"
+// account distinct from the primary client account). This is the one place
+// that union-dedup query lives; getTicketFormProjects and getModulesForClient
+// both call it so the two lists (projects, modules) never disagree about
+// which projects belong to a given client.
+async function getClientProjectIds(clientId: string): Promise<Set<number>> {
+  const [directProjects, linkedProjectIds] = await Promise.all([
+    db.select({ id: project.id })
+      .from(project).where(and(eq(project.clientId, clientId), eq(project.status, 'active'))),
+    db.select({ projectId: projectClient.projectId })
+      .from(projectClient)
+      .where(eq(projectClient.userId, clientId)),
+  ])
+
+  return new Set<number>([
+    ...directProjects.map((p) => p.id),
+    ...linkedProjectIds.map((pc) => pc.projectId),
+  ])
+}
+
 export const getTicketFormProjects = wrapServerAction('getTicketFormProjects', async function getTicketFormProjects(clientId?: string) {
   const currentUser = await getUser()
-  
-  if (currentUser.role === 'client') {
-    // Check both: direct project.clientId match AND project_client junction table
-    // This ensures ALL client users (primary + secondary) can see their projects.
-    const [directProjects, linkedProjectIds] = await Promise.all([
-      db.select({ id: project.id, projectName: project.projectName, projectCode: project.projectCode })
-        .from(project).where(and(eq(project.clientId, currentUser.id), eq(project.status, 'active'))).orderBy(project.projectName),
-      db.select({ projectId: projectClient.projectId })
-        .from(projectClient)
-        .where(eq(projectClient.userId, currentUser.id)),
-    ])
 
-    // Collect all unique project IDs
-    const projectIds = new Set([
-      ...directProjects.map((p) => p.id),
-      ...linkedProjectIds.map((pc) => pc.projectId),
-    ])
+  const resolvedClientId = currentUser.role === 'client' ? currentUser.id : clientId
 
+  if (resolvedClientId) {
+    const projectIds = await getClientProjectIds(resolvedClientId)
     if (projectIds.size === 0) return []
 
     return db.select({ id: project.id, projectName: project.projectName, projectCode: project.projectCode })
@@ -960,30 +911,7 @@ export const getTicketFormProjects = wrapServerAction('getTicketFormProjects', a
       .where(and(inArray(project.id, [...projectIds]), eq(project.status, 'active')))
       .orderBy(project.projectName)
   }
-  
-  if (clientId) {
-    // Check both: direct project.clientId match AND project_client junction table for the selected client
-    const [directProjects, linkedProjectIds] = await Promise.all([
-      db.select({ id: project.id, projectName: project.projectName, projectCode: project.projectCode })
-        .from(project).where(and(eq(project.clientId, clientId), eq(project.status, 'active'))).orderBy(project.projectName),
-      db.select({ projectId: projectClient.projectId })
-        .from(projectClient)
-        .where(eq(projectClient.userId, clientId)),
-    ])
 
-    const projectIds = new Set([
-      ...directProjects.map((p) => p.id),
-      ...linkedProjectIds.map((pc) => pc.projectId),
-    ])
-
-    if (projectIds.size === 0) return []
-
-    return db.select({ id: project.id, projectName: project.projectName, projectCode: project.projectCode })
-      .from(project)
-      .where(and(inArray(project.id, [...projectIds]), eq(project.status, 'active')))
-      .orderBy(project.projectName)
-  }
-  
   return db.select({ id: project.id, projectName: project.projectName, projectCode: project.projectCode })
     .from(project).where(eq(project.status, 'active')).orderBy(project.projectName)
 })
@@ -994,4 +922,31 @@ export const getTicketFormModules = wrapServerAction('getTicketFormModules', asy
     .from(moduleTable).where(and(eq(moduleTable.projectId, projectId), eq(moduleTable.status, 'active'))).orderBy(moduleTable.moduleName)
   console.log('[getTicketFormModules] Found modules:', JSON.stringify(mods))
   return mods
+})
+
+// Phase 4: every module/service area across every project associated with a
+// client (used on ticket creation when no specific project has been chosen
+// yet). Uses the same client→project resolution as getTicketFormProjects, so
+// "all modules for this client" and "all projects for this client" always
+// agree on which projects count.
+export const getModulesForClient = wrapServerAction('getModulesForClient', async function getModulesForClient(clientId?: string) {
+  const currentUser = await getUser()
+
+  let resolvedClientId: string | undefined
+  if (currentUser.role === 'client') {
+    // Never trust a passed clientId for a client's own identity.
+    resolvedClientId = currentUser.id
+  } else if (currentUser.role === 'admin' || currentUser.role === 'project_manager') {
+    resolvedClientId = clientId
+  }
+
+  if (!resolvedClientId) return []
+
+  const projectIds = await getClientProjectIds(resolvedClientId)
+  if (projectIds.size === 0) return []
+
+  return db.select({ id: moduleTable.id, moduleName: moduleTable.moduleName })
+    .from(moduleTable)
+    .where(and(inArray(moduleTable.projectId, [...projectIds]), eq(moduleTable.status, 'active')))
+    .orderBy(moduleTable.moduleName)
 })

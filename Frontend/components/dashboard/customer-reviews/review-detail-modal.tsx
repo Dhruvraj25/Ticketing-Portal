@@ -89,7 +89,7 @@ export function ReviewDetailModal({ ticketId, open, onClose }: ReviewDetailProps
                   <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <h2 className="text-base font-semibold text-foreground">Review Details</h2>
+                  <h2 className="text-base font-semibold text-foreground">Customer Feedback Details</h2>
                   <p className="text-xs text-muted-foreground">Ticket #{detail?.ticketNumber || '...'}</p>
                 </div>
               </div>
@@ -124,7 +124,7 @@ export function ReviewDetailModal({ ticketId, open, onClose }: ReviewDetailProps
                       <InfoRow label="Title" value={detail.title} colSpan />
                       <InfoRow label="Client" value={detail.clientName} />
                       <InfoRow label="Project" value={detail.projectName} />
-                      <InfoRow label="Module" value={detail.moduleName} />
+                      <InfoRow label="Module / Service Area" value={detail.moduleName} />
                       <InfoRow
                         label="Priority"
                         value={
@@ -141,7 +141,7 @@ export function ReviewDetailModal({ ticketId, open, onClose }: ReviewDetailProps
                   <Section title="Assignment Information" icon={<User className="h-4 w-4 text-emerald-500 dark:text-emerald-400" />}>
                     <div className="grid grid-cols-2 gap-4">
                       <InfoRow label="Assigned Resource" value={detail.assignedToName} />
-                      <InfoRow label="Manager" value={detail.managerName} />
+                      <InfoRow label="Support Manager" value={detail.managerName} />
                     </div>
                   </Section>
 
@@ -165,7 +165,7 @@ export function ReviewDetailModal({ ticketId, open, onClose }: ReviewDetailProps
 
                       {detail.reviewCreatedAt && (
                         <InfoRow
-                          label="Review Date"
+                          label="Feedback Date"
                           value={format(new Date(detail.reviewCreatedAt), 'MMMM d, yyyy')}
                         />
                       )}

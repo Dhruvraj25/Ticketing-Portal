@@ -27,4 +27,13 @@ export const CLIENT_VISIBLE_HISTORY_ACTIONS: ReadonlySet<string> = new Set([
   'attachment_uploaded',
   'review_submitted',
   'review_updated',
+  'forwarded_to_client',
+  // 'revision_requested' is ONLY ever written for client-initiated revision
+  // requests (see revisions.ts requestRevision + estimates.ts rejectEstimate).
+  // The internal manager/admin "Rework" path writes the DISTINCT
+  // 'rework_requested' action instead specifically so it can never appear
+  // here — the client must never learn who sent a ticket back or why.
+  'revision_requested',
+  'revision_approved',
+  'revision_rejected',
 ])

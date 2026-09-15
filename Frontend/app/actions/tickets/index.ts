@@ -31,7 +31,6 @@ export type {
 export {
   updateTicketStatus,
   updateTicketPriority,
-  updateTicketDates,
   assignTicket,
   managerForwardToClient,
   managerReassignDeveloper,
@@ -41,6 +40,7 @@ export {
   getTicketFormClients,
   getTicketFormProjects,
   getTicketFormModules,
+  getModulesForClient,
 } from './update'
 
 export {

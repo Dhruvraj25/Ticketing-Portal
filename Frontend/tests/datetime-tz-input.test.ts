@@ -2,9 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { formatForDateTimeInput, zonedInputToUtcDate } from '../lib/datetime.ts'
 
-// Covers the admin ticket-dates editor (TicketDatesEditor): the
-// <input type="datetime-local"> must round-trip through the project's
-// resolved display timezone (fmtTz/resolveDisplayTimezone), not the
+// Covers every <input type="datetime-local"> date/time picker in the portal
+// (e.g. historical ticket creation): the value must round-trip through the
+// project's resolved display timezone (fmtTz/resolveDisplayTimezone), not the
 // browser's OS timezone, so what's typed matches what's displayed.
 
 test('formatForDateTimeInput renders wall-clock fields in the given IANA timezone', () => {

@@ -26,7 +26,6 @@ export {
   // Update
   updateTicketStatus,
   updateTicketPriority,
-  updateTicketDates,
   assignTicket,
   managerForwardToClient,
   managerReassignDeveloper,
@@ -35,6 +34,7 @@ export {
   getTicketFormClients,
   getTicketFormProjects,
   getTicketFormModules,
+  getModulesForClient,
   // Comments
   addComment,
   getComments,

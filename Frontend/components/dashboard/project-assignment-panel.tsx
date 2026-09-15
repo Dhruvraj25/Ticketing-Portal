@@ -95,9 +95,9 @@ export function ProjectAssignmentPanel({
       )}
 
       <div className="space-y-4">
-        {/* Client Assignment */}
+        {/* Key User Assignment (the project's primary Approver Account) */}
         <div>
-          <label className="text-xs text-muted-foreground block mb-1.5">Client</label>
+          <label className="text-xs text-muted-foreground block mb-1.5">Key User</label>
           <div className="flex items-center gap-2">
             <Select
               value={clientId}
@@ -105,7 +105,7 @@ export function ProjectAssignmentPanel({
               disabled={!canAssignClient}
             >
               <SelectTrigger className="flex-1 bg-input/50 h-9 text-sm">
-                <SelectValue placeholder="Select client" />
+                <SelectValue placeholder="Select key user" />
               </SelectTrigger>
               <SelectContent>
                 {clients.map((c) => (
@@ -134,7 +134,7 @@ export function ProjectAssignmentPanel({
 
         {/* Manager Assignment */}
         <div>
-          <label className="text-xs text-muted-foreground block mb-1.5">Project Manager</label>
+          <label className="text-xs text-muted-foreground block mb-1.5">Support Manager</label>
           <div className="flex items-center gap-2">
             <Select
               value={managerId}
@@ -142,7 +142,7 @@ export function ProjectAssignmentPanel({
               disabled={!canAssignManager}
             >
               <SelectTrigger className="flex-1 bg-input/50 h-9 text-sm">
-                <SelectValue placeholder="Select manager" />
+                <SelectValue placeholder="Select support manager" />
               </SelectTrigger>
               <SelectContent>
                 {managers.map((m) => (

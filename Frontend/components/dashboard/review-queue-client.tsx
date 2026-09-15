@@ -53,7 +53,7 @@ function exportAs(exportFormat: 'csv' | 'excel', tickets: TicketWithRelations[])
 
   if (exportFormat === 'csv') {
     const csv = [
-      ['Ticket ID', 'Title', 'Status', 'Priority', 'Project', 'Client', 'Developer', 'Resolved Date'].join(','),
+      ['Ticket ID', 'Title', 'Status', 'Priority', 'Project', 'Client', 'Support Engineer / Developer', 'Resolved Date'].join(','),
       ...tickets.map((t) =>
         [
           t.ticketNumber,
@@ -245,10 +245,10 @@ export function ReviewQueueClient({ resolvedTickets, developers }: ReviewQueueCl
             </Select>
             <Select value={developerFilter} onValueChange={setDeveloperFilter}>
             <SelectTrigger className="w-[160px] h-9 rounded-xl bg-muted/20 border-border/50 text-sm">
-              <SelectValue placeholder="Developer" />
+              <SelectValue placeholder="Support Engineer / Developer" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Developers</SelectItem>
+              <SelectItem value="all">All Support Engineers / Developers</SelectItem>
               {developerOptions.map((d) => (
                 <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
               ))}

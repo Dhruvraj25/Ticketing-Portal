@@ -24,16 +24,12 @@ import type {
 } from '@/lib/types'
 import { isValidPhoneForCountry } from '@/lib/phone'
 import { dispatchNotification } from '@/lib/notify-all'
+import { deriveProjectCodeBase, withUniqueProjectCode } from '@/lib/project-code'
 
 const PASSWORD_MIN_LENGTH = 12
 
 function validateEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-}
-
-function generateProjectCode(name: string): string {
-  const prefix = (name.split(/\s+/).map((w: string) => w[0]).join('').toUpperCase().slice(0, 6)) || 'PRJ'
-  return `${prefix}-${Date.now().toString(36).slice(-4).toUpperCase()}`
 }
 
 function canCreateOnboarding(role: UserRole): boolean {
@@ -103,7 +99,7 @@ export const createCustomerOnboarding = wrapServerAction(
       throw new Error(`A project named "${data.project.projectName.trim()}" already exists.`)
     }
 
-    const projectCode = generateProjectCode(data.project.projectName)
+    const projectCodeBase = deriveProjectCodeBase(data.project.projectName)
 
     if (!data.modules || data.modules.length === 0) {
       throw new Error('At least one module is required.')
@@ -177,7 +173,13 @@ export const createCustomerOnboarding = wrapServerAction(
     let result: OnboardingResult
 
     try {
-      result = await db.transaction(async (tx) => {
+      // Retrying the ENTIRE transaction (not just the project insert) is safe
+      // here: a failed transaction rolls back every write inside it —
+      // including the user/account inserts above — so a retry with a fresh
+      // projectCode candidate starts from a clean slate (fresh crypto.randomUUID()
+      // ids, no already-committed rows to collide with) rather than replaying
+      // a partial, already-persisted state.
+      result = await withUniqueProjectCode(projectCodeBase, (projectCode) => db.transaction(async (tx) => {
         // Create FIRST client user as the project owner/client
         const firstUser = data.clientUsers[0]
         const primaryUserFullName = `${firstUser.firstName.trim()} ${firstUser.lastName.trim()}`
@@ -372,7 +374,7 @@ export const createCustomerOnboarding = wrapServerAction(
           validUntil: data.supportWallet.supportEndDate,
           success: true,
         }
-      })
+      }))
     } catch (error: any) {
       // ── Extract PostgreSQL error details ────────────────────────────
       const pgError = extractPgError(error)

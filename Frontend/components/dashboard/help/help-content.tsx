@@ -620,7 +620,7 @@ export interface HelpContentProps {
 
 const ROLE_GUIDE_META: Record<string, { title: string; description: string; color: string; bgColor: string }> = {
   client:          { title: 'My User Guide',           description: 'Step-by-step instructions to manage your tickets and account.',                 color: 'text-blue-600 dark:text-blue-400',      bgColor: 'bg-blue-50 dark:bg-blue-500/15 border-blue-200 dark:border-blue-500/30' },
-  project_manager: { title: 'Manager User Guide',       description: 'Tools and workflows to manage projects, tickets, and your team.',              color: 'text-indigo-600 dark:text-indigo-400',    bgColor: 'bg-indigo-50 dark:bg-indigo-500/15 border-indigo-200 dark:border-indigo-500/30' },
+  project_manager: { title: 'Support Manager User Guide', description: 'Tools and workflows to manage projects, tickets, and your team.',              color: 'text-indigo-600 dark:text-indigo-400',    bgColor: 'bg-indigo-50 dark:bg-indigo-500/15 border-indigo-200 dark:border-indigo-500/30' },
   developer:       { title: 'Resource User Guide',      description: 'Instructions for working on assigned tickets and tracking your time.',          color: 'text-amber-600 dark:text-amber-400',    bgColor: 'bg-amber-50 dark:bg-amber-500/15 border-amber-200 dark:border-amber-500/30' },
   admin:           { title: 'Administrator User Guide', description: 'System administration, user management, and configuration.',                     color: 'text-emerald-600 dark:text-emerald-400',  bgColor: 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 dark:border-emerald-500/30' },
 }

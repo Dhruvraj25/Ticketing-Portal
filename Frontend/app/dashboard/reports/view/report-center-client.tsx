@@ -210,11 +210,7 @@ export function ReportCenterClient() {
                     <span>Generated: {new Date(report.meta.generatedAt).toLocaleString()}</span>
                     <span>{report.meta.totalRecords} records</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {report.meta.appliedFilters.filter(f => f !== 'report type').map((f, i) => (
-                      <Badge key={i} variant="outline" className="text-[11px] rounded-lg">{f}</Badge>
-                    ))}
-                  </div>
+
                 </div>
 
                 {/* Summary Cards */}

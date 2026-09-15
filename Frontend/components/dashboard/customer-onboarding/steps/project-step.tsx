@@ -212,14 +212,14 @@ export const ProjectStep = memo(function ProjectStep({ state, errors, managerLis
                     className={errors.projectName ? 'border-destructive' : ''}
                   />
                 </Field>
-                <Field name="manager" label="Project Manager" required error={errors.selectedManager}>
+                <Field name="manager" label="Support Manager" required error={errors.selectedManager}>
                   <Select
                     value={state.selectedManager}
                     onValueChange={(v) => onFieldChange('selectedManager', v)}
                     disabled={currentUserRole === 'project_manager'}
                   >
                     <SelectTrigger className={errors.selectedManager ? 'border-destructive' : ''}>
-                      <SelectValue placeholder="Select a manager" />
+                      <SelectValue placeholder="Select a support manager" />
                     </SelectTrigger>
                     <SelectContent>
                       {managerList.map(m => (

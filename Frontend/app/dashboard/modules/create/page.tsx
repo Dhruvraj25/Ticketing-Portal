@@ -85,9 +85,9 @@ export default function CreateModulePage() {
                 <Layers className="h-5 w-5" />
               </PageHeaderIcon>
               <div>
-                <h1 className="text-2xl font-bold text-foreground">Create Module</h1>
+                <h1 className="text-2xl font-bold text-foreground">Create Module / Service Area</h1>
                 <p className="text-sm text-muted-foreground">
-                  Add a new module to organize tickets within a project
+                  Add a new module / service area to organize tickets within a project
                 </p>
               </div>
             </div>
@@ -127,7 +127,7 @@ export default function CreateModulePage() {
             </div>
 
             <div className="space-y-2" data-tour="create-module-name">
-              <Label htmlFor="moduleName">Module Name</Label>
+              <Label htmlFor="moduleName">Module / Service Area Name</Label>
               <Input
                 id="moduleName"
                 value={moduleName}
@@ -177,7 +177,7 @@ export default function CreateModulePage() {
                 ) : (
                   <>
                     <Layers className="mr-2 h-4 w-4" />
-                    Create Module
+                    Create Module / Service Area
                   </>
                 )}
               </Button>

@@ -46,6 +46,16 @@ export interface DispatchOptions {
   eventType: string
   /** User ID of the actor, or 'system' for scheduled/system events. */
   triggeredBy: string
+  /**
+   * PROJECT this event belongs to. When present, the project's notification
+   * preferences are authoritative for every recipient (internal staff
+   * included); the legacy client rows are only an inheritance fallback. When
+   * absent (account-level events) the legacy per-client/per-user behavior is
+   * preserved.
+   */
+  projectId?: number
+  /** Ticket's client owner — inheritance-fallback scope for project events. */
+  clientId?: string
   recipients: DispatchRecipient[]
   /**
    * Duplicate protection. Default: enabled.

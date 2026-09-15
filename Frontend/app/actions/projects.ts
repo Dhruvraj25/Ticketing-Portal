@@ -26,6 +26,9 @@ export {
   assignDeveloper,
   removeDeveloper,
   getProjectDevelopers,
+  // Project Users (Phase 6)
+  getProjectClientUsers,
+  addUserToProject,
   // Analytics
   getProjectDetailAnalytics,
   getModuleAnalytics,
@@ -36,4 +39,5 @@ export type {
   ProjectListFilters,
   ProjectListResult,
   ProjectListItem,
+  ProjectClientUser,
 } from './projects/index'

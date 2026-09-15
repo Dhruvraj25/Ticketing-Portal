@@ -134,9 +134,9 @@ export async function getModuleReport(filters: ReportFilters, currentUser: Curre
   })
 
   return {
-    meta: { totalRecords: withStats.length, generatedAt: new Date().toISOString(), appliedFilters: Object.entries(filters).filter(([_, v]) => v).map(([k]) => k.replace(/_/g, ' ')), summary: { 'Total Modules': withStats.length, 'Total Tickets': withStats.reduce((s, m) => s + m.ticketCount, 0) } },
+    meta: { totalRecords: withStats.length, generatedAt: new Date().toISOString(), appliedFilters: Object.entries(filters).filter(([_, v]) => v).map(([k]) => k.replace(/_/g, ' ')), summary: { 'Total Modules / Service Areas': withStats.length, 'Total Tickets': withStats.reduce((s, m) => s + m.ticketCount, 0) } },
     columns: [
-      { key: 'moduleName', label: 'Module', type: 'text' },
+      { key: 'moduleName', label: 'Module / Service Area', type: 'text' },
       { key: 'status', label: 'Status', type: 'badge' },
       { key: 'ticketCount', label: 'Tickets', type: 'number' },
       { key: 'closedCount', label: 'Closed', type: 'number' },

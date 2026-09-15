@@ -30,6 +30,7 @@ import { sendTeamsNotificationToUser } from '@/lib/teams-backend'
 import {
   canonicalNotificationEvent,
   loadDisabledInAppEvents,
+  loadDisabledInAppEventsForProject,
 } from '@/lib/notification-preferences'
 
 // ─── Pure types & helpers ────────────────────────────────────────────────────
@@ -91,7 +92,7 @@ export type {
 export async function dispatchNotification(
   options: DispatchOptions,
 ): Promise<DispatchResult[]> {
-  const { eventType, triggeredBy, recipients, metadata } = options
+  const { eventType, triggeredBy, recipients, metadata, projectId, clientId } = options
   const dedup = options.dedup === false ? null : (options.dedup ?? {})
 
   // 1. Recipient deduplication (Phase 9): one notification set per user.
@@ -116,7 +117,18 @@ export async function dispatchNotification(
   // in-app rows, so it enforces the In-App channel here; Email and Teams are
   // enforced server-side on the backend bridge routes. Recipients who
   // explicitly disabled this event on the In-App channel are skipped.
-  const disabledInApp = await loadDisabledInAppEvents(userIds)
+  //
+  // PROJECT-wise: when the event belongs to a project, the PROJECT's in-app
+  // preferences are authoritative for EVERY recipient (internal staff
+  // included); legacy client rows are merged in only as an inheritance
+  // fallback. Account-level events keep the legacy per-client lookup.
+  let disabledInApp = new Map<string, Set<string>>()
+  let projectDisabledInApp: Set<string> | null = null
+  if (projectId) {
+    projectDisabledInApp = await loadDisabledInAppEventsForProject(projectId, clientId)
+  } else {
+    disabledInApp = await loadDisabledInAppEvents(userIds)
+  }
   const canonicalEvent = canonicalNotificationEvent(eventType)
 
   const results: DispatchResult[] = []
@@ -186,8 +198,11 @@ export async function dispatchNotification(
       teams: 'not_requested',
     }
 
-    const inAppDisabled = canonicalEvent !== null
-      && (disabledInApp.get(recipient.userId)?.has(canonicalEvent) ?? false)
+    const inAppDisabled = canonicalEvent !== null && (
+      projectDisabledInApp
+        ? projectDisabledInApp.has(canonicalEvent)
+        : (disabledInApp.get(recipient.userId)?.has(canonicalEvent) ?? false)
+    )
 
     if (channels.includes('inApp') && recipient.inApp) {
       if (inAppDisabled) {
@@ -210,6 +225,9 @@ export async function dispatchNotification(
       const emailEventType = recipient.email.eventType ?? eventType
       sendNotification(emailEventType, user.email, {
         ...recipient.email.templateData,
+        // Carry the project scope so the backend enforces PROJECT preferences.
+        ...(projectId ? { projectId } : {}),
+        ...(clientId ? { clientId } : {}),
         recipientName: user.name || undefined,
         recipientEmail: user.email,
       }).catch((err: Error) => {
@@ -220,7 +238,11 @@ export async function dispatchNotification(
 
     if (channels.includes('teams') && recipient.teams) {
       const teamsEventType = recipient.teams.eventType ?? eventType
-      sendTeamsNotificationToUser(recipient.userId, teamsEventType, recipient.teams.payload).catch((err: Error) => {
+      sendTeamsNotificationToUser(recipient.userId, teamsEventType, {
+        ...recipient.teams.payload,
+        // Explicit project scope wins over anything the payload carried.
+        ...(projectId ? { projectId } : {}),
+      }).catch((err: Error) => {
         console.error(`[NotifyDispatcher] teams failed for ${teamsEventType} → ${recipient.userId}:`, err.message)
       })
       channelResults.teams = 'sent'

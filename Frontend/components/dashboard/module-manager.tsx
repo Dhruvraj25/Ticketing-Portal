@@ -99,7 +99,7 @@ export function ModuleManager({ projectId, initialModules, canManage }: ModuleMa
   }
 
   async function handleDelete(moduleId: number) {
-    if (!confirm('Are you sure you want to delete this module? Tickets linked to it will have their module reference removed.')) {
+    if (!confirm('Are you sure you want to delete this module / service area? Tickets linked to it will have their module reference removed.')) {
       return
     }
     setLoading(true)
@@ -140,9 +140,9 @@ export function ModuleManager({ projectId, initialModules, canManage }: ModuleMa
       <div className="space-y-4">
         <div className="py-8 text-center">
           <Layers className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-          <p className="text-sm text-muted-foreground">No modules defined yet</p>
+          <p className="text-sm text-muted-foreground">No modules / service areas defined yet</p>
           <p className="text-xs text-muted-foreground/60 mt-1">
-            Modules help organize tickets into logical groups within the project
+            Modules / Service Areas help organize tickets into logical groups within the project
           </p>
         </div>
         {canManage && (
@@ -153,7 +153,7 @@ export function ModuleManager({ projectId, initialModules, canManage }: ModuleMa
             className="w-full"
           >
             <Plus className="mr-2 h-4 w-4" />
-            Add Module
+            Add Module / Service Area
           </Button>
         )}
       </div>
@@ -179,14 +179,14 @@ export function ModuleManager({ projectId, initialModules, canManage }: ModuleMa
               <Input
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
-                placeholder="Module name"
+                placeholder="Module / Service Area name"
                 className="bg-input/50"
                 autoFocus
               />
               <Textarea
                 value={editDescription}
                 onChange={(e) => setEditDescription(e.target.value)}
-                placeholder="Module description (optional)"
+                placeholder="Module / Service Area description (optional)"
                 rows={2}
                 className="bg-input/50 resize-none"
               />
@@ -274,7 +274,7 @@ export function ModuleManager({ projectId, initialModules, canManage }: ModuleMa
           <Input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            placeholder="Module name"
+            placeholder="Module / Service Area name"
             className="bg-input/50"
             autoFocus
             required
@@ -282,7 +282,7 @@ export function ModuleManager({ projectId, initialModules, canManage }: ModuleMa
           <Textarea
             value={newDescription}
             onChange={(e) => setNewDescription(e.target.value)}
-            placeholder="Module description (optional)"
+            placeholder="Module / Service Area description (optional)"
             rows={2}
             className="bg-input/50 resize-none"
           />
@@ -317,7 +317,7 @@ export function ModuleManager({ projectId, initialModules, canManage }: ModuleMa
           className="w-full"
         >
           <Plus className="mr-2 h-4 w-4" />
-          Add Module
+          Add Module / Service Area
         </Button>
       )}
     </div>
