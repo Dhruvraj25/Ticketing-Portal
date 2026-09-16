@@ -11,6 +11,7 @@ import type { TicketStatus } from '@/lib/types'
 import { dispatchNotification, shouldNotifyWalletLow, shouldNotifyWalletEmpty, WALLET_LOW_THRESHOLD } from '@/lib/notify-all'
 import { VALIDATION, validateField } from '@/lib/types'
 import { wrapServerAction } from '@/lib/performance-profiler'
+import { deductWalletHoursAtomic, buildWalletInsufficientError } from '@/lib/wallet-validation'
 
 export const clearManagerAnalyticsCache = wrapServerAction('clearManagerAnalyticsCache', async function clearManagerAnalyticsCache() {
   // Clears all in-memory analytics caches imported from history module
@@ -292,6 +293,7 @@ export const assignTicket = wrapServerAction('assignTicket', async function assi
       triggeredBy: currentUser.id,
       dedup: { scope: `ticket:${ticketId}` },
       recipients,
+      projectId: t.projectId ?? undefined,
     })
   }
 
@@ -336,6 +338,7 @@ export const managerForwardToClient = wrapServerAction('managerForwardToClient',
     // cycle). revisionCount only increases on each rework/revision, so it's a
     // stable, already-tracked per-cycle marker — no new column needed.
     dedup: { scope: `ticket:${ticketId}:cycle:${t.revisionCount || 0}` },
+    projectId: t.projectId ?? undefined,
     recipients: [
       {
         userId: t.clientId,
@@ -457,39 +460,77 @@ export const clientApproveTicket = wrapServerAction('clientApproveTicket', async
   if (t.clientId !== currentUser.id) throw new Error('Access denied')
   if (t.status !== 'client_review') throw new Error('Ticket is not awaiting your approval')
 
-  await db.update(ticket).set({ status: 'closed', closedAt: new Date(), updatedAt: new Date() }).where(eq(ticket.id, ticketId))
+  const estimatedHours = t.estimatedHours || 0
+  const additionalHours = t.additionalHoursApproved ? (t.additionalHoursRequested || 0) : 0
+  // NOTE: approved additional hours are already folded into estimatedHours
+  // (approveAdditionalHours / the auto-approval job update estimatedHours to
+  // the new total). Adding additionalHoursRequested again here would deduct
+  // the additional hours TWICE, so the deduction is just estimatedHours.
+  const totalDeduction = estimatedHours
 
-  await db.insert(ticketHistory).values({
-    ticketId, userId: currentUser.id, action: 'client_approved', newValue: 'closed',
+  // One wallet per client — resolved once before the transaction. This
+  // pre-transaction snapshot is used only for the wallet-low/-empty
+  // threshold-crossing comparison and the walletTransaction audit log's
+  // "previousBalance" field (cosmetic); the actual never-negative guarantee
+  // comes from the atomic conditional UPDATE inside the transaction below,
+  // not from this snapshot.
+  let wallet: typeof supportWallet.$inferSelect | undefined
+  if (t.clientId && totalDeduction > 0) {
+    const [w] = await db.select().from(supportWallet).where(eq(supportWallet.clientId, t.clientId)).limit(1)
+    wallet = w
+  }
+
+  // Section 6/12/19/20: the ticket status change, the wallet deduction, and
+  // the activity-log entry all succeed together or all roll back together —
+  // a ticket must never end up "closed" with a deduction that didn't (or
+  // couldn't safely) happen, and the wallet must never be touched for a
+  // close that doesn't end up committing. This is a deliberate behavior
+  // change from the previous implementation: a ticket can now fail to close
+  // if the client's wallet balance has become insufficient since the
+  // estimate was approved (e.g. another ticket for the same client closed
+  // and consumed hours in the interim) — the client sees a clear error
+  // instead of the wallet silently going negative.
+  let deductionResult: { remainingHours: number } | null = null
+  const previousRemaining = wallet?.remainingHours ?? null
+
+  await db.transaction(async (tx) => {
+    const ticketUpdate: Record<string, unknown> = { status: 'closed', closedAt: new Date(), updatedAt: new Date() }
+
+    if (wallet && totalDeduction > 0) {
+      const deducted = await deductWalletHoursAtomic(tx, wallet.id, totalDeduction)
+      if (!deducted) {
+        // Insufficient balance at the moment of closing — get the TRUE
+        // current value for the error message rather than reporting the
+        // (possibly now-stale) pre-transaction snapshot.
+        const [current] = await tx.select({ remainingHours: supportWallet.remainingHours }).from(supportWallet).where(eq(supportWallet.id, wallet.id)).limit(1)
+        throw buildWalletInsufficientError(totalDeduction, current?.remainingHours ?? wallet.remainingHours)
+      }
+      deductionResult = deducted
+      ticketUpdate.consumedHours = totalDeduction
+
+      await tx.insert(walletTransaction).values({
+        walletId: wallet.id, transactionType: 'Deduct Hours', hours: totalDeduction,
+        previousBalance: wallet.remainingHours, newBalance: deducted.remainingHours,
+        reason: `Ticket #${t.ticketNumber} closed`,
+        remarks: `${totalDeduction}h deducted on ticket close (est: ${estimatedHours}h${additionalHours > 0 ? `, additional: ${additionalHours}h` : ''}) - ${t.title}`,
+        performedBy: currentUser.name || currentUser.id,
+      })
+    }
+
+    await tx.update(ticket).set(ticketUpdate).where(eq(ticket.id, ticketId))
+
+    await tx.insert(ticketHistory).values({
+      ticketId, userId: currentUser.id, action: 'client_approved', newValue: 'closed',
+    })
   })
 
-  // Wallet deduction — one wallet per client
-  if (t.clientId) {
+  // Post-commit: wallet-low/wallet-empty alerts, firing only after a
+  // SUCCESSFUL, committed deduction (never for a close that didn't deduct,
+  // and never for one that aborted).
+  if (wallet && deductionResult && previousRemaining !== null) {
     try {
-      const [wallet] = await db.select().from(supportWallet).where(eq(supportWallet.clientId, t.clientId)).limit(1)
-      if (wallet) {
-        const estimatedHours = t.estimatedHours || 0
-        const additionalHours = t.additionalHoursApproved ? (t.additionalHoursRequested || 0) : 0
-        // NOTE: approved additional hours are already folded into estimatedHours
-        // (approveAdditionalHours / the auto-approval job update estimatedHours to
-        // the new total). Adding additionalHoursRequested again here would deduct
-        // the additional hours TWICE, so the deduction is just estimatedHours.
-        const totalDeduction = estimatedHours
-        if (totalDeduction > 0) {
-          // Phase 8: capture the balance BEFORE deduction so alerts only fire on
-          // an actual threshold CROSSING, not on every ticket close.
-          const previousRemaining = wallet.remainingHours
-          const newConsumed = wallet.consumedHours + totalDeduction
-          const newRemaining = Math.max(0, wallet.remainingHours - totalDeduction)
-          await db.update(supportWallet).set({ consumedHours: newConsumed, remainingHours: newRemaining, updatedAt: new Date() }).where(eq(supportWallet.id, wallet.id))
-          await db.insert(walletTransaction).values({
-            walletId: wallet.id, transactionType: 'Deduct Hours', hours: totalDeduction,
-            previousBalance: wallet.remainingHours, newBalance: newRemaining,
-            reason: `Ticket #${t.ticketNumber} closed`,
-            remarks: `${totalDeduction}h deducted on ticket close (est: ${estimatedHours}h${additionalHours > 0 ? `, additional: ${additionalHours}h` : ''}) - ${t.title}`,
-            performedBy: currentUser.name || currentUser.id,
-          })
-          await db.update(ticket).set({ consumedHours: totalDeduction, updatedAt: new Date() }).where(eq(ticket.id, ticketId))
+      {
+        const newRemaining = (deductionResult as { remainingHours: number }).remainingHours
 
           // Send Wallet Low alert ONLY when crossing below the threshold.
           // (In-App + Email + Teams to client; Email + Teams to manager.)
@@ -547,6 +588,7 @@ export const clientApproveTicket = wrapServerAction('clientApproveTicket', async
               triggeredBy: currentUser.id,
               dedup: { scope: `wallet:${wallet.id}` },
               recipients,
+              projectId: t.projectId ?? undefined,
             })
           }
 
@@ -605,12 +647,15 @@ export const clientApproveTicket = wrapServerAction('clientApproveTicket', async
               triggeredBy: currentUser.id,
               dedup: { scope: `wallet:${wallet.id}` },
               recipients,
+              projectId: t.projectId ?? undefined,
             })
           }
-        }
       }
     } catch (err) {
-      console.error('[clientApproveTicket] wallet deduction failed:', err)
+      // The deduction already committed inside the transaction above — a
+      // failure here is purely a best-effort alert/notification problem,
+      // never a reason to undo or fail the (already-successful) ticket close.
+      console.error('[clientApproveTicket] wallet-low/-empty notification failed:', err)
     }
   }
 
@@ -725,6 +770,7 @@ export const clientApproveTicket = wrapServerAction('clientApproveTicket', async
       triggeredBy: currentUser.id,
       dedup: { scope: `ticket:${ticketId}:close:${closeCycle}` },
       recipients: closedRecipients,
+      projectId: t.projectId ?? undefined,
     })
   }
 

@@ -8,7 +8,7 @@ import type {
 } from '@/app/actions/dashboard'
 import { StatCard, type KpiColorTheme } from '@/components/dashboard/stat-card'
 import { TicketStatus } from '@/lib/types'
-import { TicketList } from '@/components/dashboard/ticket-card'
+import { RecentTicketsScroll } from '@/components/dashboard/recent-tickets-scroll'
 import { PageHeader, CurrentDate } from '@/components/dashboard/page-header-server'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
@@ -88,11 +88,11 @@ function StatsSection({ consolidatedStats, userRole }: { consolidatedStats: Cons
   // Clients always get 4 cards (Pending Revisions is excluded), managers/admins
   // get 5, and 6 cards (pending estimates included) flow into 2 neat rows of 3.
   const kpiGridClass =
-    cards.length >= 6
-      ? 'sm:grid-cols-3 lg:grid-cols-3'
-      : cards.length === 5
-        ? 'sm:grid-cols-2 lg:grid-cols-5'
-        : 'sm:grid-cols-2 lg:grid-cols-4'
+    cards.length >= 3
+      ? 'sm:grid-cols-5 lg:grid-cols-5'
+      : cards.length === 3
+        ? 'sm:grid-cols-2 lg:grid-cols-3'
+        : 'sm:grid-cols-2 lg:grid-cols-3'
 
   return (
     // Width-only wrapper: the grid itself (columns/gap/breakpoints below) is
@@ -130,9 +130,11 @@ function StatsSection({ consolidatedStats, userRole }: { consolidatedStats: Cons
 
 function RecentTicketsSection({
   recentTickets,
+  recentTicketsHasMore,
   userRole,
 }: {
   recentTickets: any[]
+  recentTicketsHasMore: boolean
   userRole: string
 }) {
   return (
@@ -147,8 +149,9 @@ function RecentTicketsSection({
           </Button>
         </Link>
       </div>
-      <TicketList
-        tickets={recentTickets}
+      <RecentTicketsScroll
+        initialTickets={recentTickets}
+        initialHasMore={recentTicketsHasMore}
         showClient={userRole !== 'client'}
         // Assignee (developer) is internal — never surfaced to clients (R15).
         showAssignee={userRole !== 'developer' && userRole !== 'client'}
@@ -189,7 +192,7 @@ export const revalidate = 30
 export default async function DashboardPage() {
   // ── PHASE 3: Only await critical data — sidebar streams separately ────
   const criticalData = await getDashboardCriticalData()
-  const { user, consolidatedStats, recentTickets, projectMetrics, renewalStatus } = criticalData
+  const { user, consolidatedStats, recentTickets, recentTicketsHasMore, projectMetrics, renewalStatus } = criticalData
 
   const roleSubtitle = {
     client: 'System-wide overview of projects and tickets',
@@ -242,6 +245,7 @@ export default async function DashboardPage() {
           {/* CRITICAL: Recent Tickets — data already loaded */}
           <RecentTicketsSection
             recentTickets={recentTickets}
+            recentTicketsHasMore={recentTicketsHasMore}
             userRole={user.role}
           />
 

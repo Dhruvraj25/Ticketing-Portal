@@ -159,6 +159,10 @@ export const addWalletHours = async function addWalletHours(data: {
     triggeredBy: currentUser.id,
     dedup: { scope: `wallet:${data.walletId}:txn:${txn.id}` },
     recipients,
+    // Wallets are not always project-scoped — only pass projectId when this
+    // one actually is (a client-level wallet with no project falls back to
+    // the legacy per-client/default resolution, unchanged).
+    projectId: w.projectId ?? undefined,
   })
 
   // Phase 8: hours were added — reset the wallet alert state so a future

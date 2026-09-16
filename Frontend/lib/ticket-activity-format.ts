@@ -12,8 +12,13 @@ import { USER_ROLE_CONFIG, type UserRole } from './types.ts'
 // falls back to the role label ("by Support Manager / Project Manager")
 // instead of omitting the actor entirely.
 //
-// 'estimate_approved' uses a distinct format specified separately:
-// "[Name] (Role) estimate approved (Xh)".
+// 'estimate_approved' capitalizes "By" ("Estimate approved By [actor]") per
+// the approved client-facing wording — every other action uses lowercase
+// "by". This is deliberate, not a typo: it is the one action whose wording
+// was explicitly specified with a capital B. Hours are NOT baked into this
+// line — they render as a secondary detail line (see DETAIL_LINE_ACTIONS)
+// sourced from ticketHistory.newValue, which is written by the estimate
+// approval write-site (app/actions/estimates.ts).
 // ────────────────────────────────────────────────────────────────────────────
 
 export interface ActivityEntryInput {
@@ -41,11 +46,10 @@ export const ACTION_LABELS: Record<string, { label: string; color: string }> = {
   timer_paused: { label: 'Paused timer', color: 'bg-amber-500' },
   timer_resumed: { label: 'Resumed timer', color: 'bg-primary' },
   estimate_created: { label: 'Estimate hours sent for approval', color: 'bg-emerald-500' },
-  // estimate_approved has its own special-format renderer — see
-  // formatActivityEntry() below. Its label here is only used as a fallback.
-  estimate_approved: { label: 'Estimated work hours approved', color: 'bg-emerald-500' },
+  // estimate_approved capitalizes "By" — see formatActivityEntry() below.
+  estimate_approved: { label: 'Estimate approved', color: 'bg-emerald-500' },
   estimate_modified: { label: 'Estimate updated', color: 'bg-amber-500' },
-  estimate_rejected: { label: 'Estimate rejected', color: 'bg-orange-500' },
+  estimate_rejected: { label: 'Estimate hours request rejected', color: 'bg-orange-500' },
   clarification_requested: { label: 'Requested clarification', color: 'bg-sky-500' },
   auto_approved: { label: 'Auto-approved', color: 'bg-gray-50 dark:bg-slate-800/500' },
   estimate_sent: { label: 'Estimate sent to client', color: 'bg-sky-500' },
@@ -59,9 +63,11 @@ export const ACTION_LABELS: Record<string, { label: string; color: string }> = {
   client_approved: { label: 'Support request marked as completed', color: 'bg-emerald-500' },
   client_rejected: { label: 'Client requested changes', color: 'bg-orange-500' },
   reopened_by_client: { label: 'Reopened by client', color: 'bg-red-500' },
-  // Client-initiated revision request (see revisions.ts requestRevision and
-  // estimates.ts rejectEstimate). Client-visible.
-  revision_requested: { label: 'Customer requested revision', color: 'bg-orange-500' },
+  // Client-initiated revision request (see revisions.ts requestRevision).
+  // Client-visible. Label is deliberately actor-neutral (not "Customer
+  // requested revision") — the "by {actor}" suffix already carries the real
+  // identity; the label must never presume who performed the action.
+  revision_requested: { label: 'Revision requested', color: 'bg-orange-500' },
   // Internal manager/admin "Rework" — deliberately NEVER added to
   // CLIENT_VISIBLE_HISTORY_ACTIONS. Distinct action code from
   // 'revision_requested' so it can never leak to the client.
@@ -78,6 +84,7 @@ export const DETAIL_LINE_ACTIONS = new Set([
   'status_changed',
   'priority_changed',
   'estimate_created',
+  'estimate_approved',
   'estimate_rejected',
   'estimate_modified',
   'auto_approved',
@@ -106,32 +113,20 @@ function resolveActor(entry: ActivityEntryInput): string | null {
   return roleLabel(entry.userRole)
 }
 
-/** Parses the "Xh" hours string stored in ticketHistory.newValue for estimate_approved. */
-function parseHours(newValue?: string | null): string | null {
-  if (!newValue) return null
-  const match = newValue.match(/(\d+(?:\.\d+)?)\s*h/i)
-  return match ? `${match[1]}h` : null
-}
-
 export function formatActivityEntry(entry: ActivityEntryInput): ActivityDisplay {
   const config = ACTION_LABELS[entry.action] || {
     label: entry.action.replace(/_/g, ' '),
     color: 'bg-gray-50 dark:bg-slate-800/500',
   }
 
-  // Requirement 5 — special format, not the standard "label by actor" pattern:
-  // "[Name] (Role) estimate approved (Xh)"
+  const actor = resolveActor(entry)
+
+  // estimate_approved capitalizes "By" — see the block comment above
+  // formatActivityEntry(). Every other action uses lowercase "by".
   if (entry.action === 'estimate_approved') {
-    const actor = resolveActor(entry)
-    const role = roleLabel(entry.userRole)
-    const hours = parseHours(entry.newValue)
-    const roleTag = role ? ` (${role})` : ''
-    const hoursTag = hours ? ` (${hours})` : ''
-    if (actor) return { text: `${actor}${roleTag} estimate approved${hoursTag}`, color: config.color }
-    return { text: `Estimate approved${hoursTag}`, color: config.color }
+    return { text: actor ? `${config.label} By ${actor}` : config.label, color: config.color }
   }
 
-  const actor = resolveActor(entry)
   return {
     text: actor ? `${config.label} by ${actor}` : config.label,
     color: config.color,

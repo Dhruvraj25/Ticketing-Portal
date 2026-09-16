@@ -21,7 +21,7 @@ export { createProject, updateProject, updateProjectStatus, archiveProject, dele
 export { assignClient, assignManager, assignDeveloper, removeDeveloper, getProjectDevelopers } from './assignments'
 
 // Project Users (Phase 6)
-export { getProjectClientUsers, addUserToProject } from './users'
+export { getProjectClientUsers, addUserToProject, removeUserFromProject } from './users'
 export type { ProjectClientUser } from './users'
 
 // Analytics

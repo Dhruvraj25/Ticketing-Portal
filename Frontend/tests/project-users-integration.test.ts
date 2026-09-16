@@ -115,9 +115,10 @@ test('addUserToProject: an existing user already linked to the project is reject
 
 test('addUserToProject: the project_client insert for an existing user is ALSO guarded by a catch that maps a unique-violation to the same friendly duplicate message (race-condition backstop)', () => {
   const body = functionBody(USERS_SRC, 'export const addUserToProject')
-  const tryIdx = body.indexOf('try {\n      await db.insert(projectClient)')
-  assert.ok(tryIdx >= 0)
-  const catchBlock = body.slice(tryIdx, tryIdx + 400)
+  const tryMatch = body.match(/try \{\s*await db\.insert\(projectClient\)/)
+  assert.ok(tryMatch, 'expected a try block wrapping the project_client insert')
+  const tryIdx = tryMatch.index!
+  const catchBlock = body.slice(tryIdx, tryIdx + 500)
   assert.match(catchBlock, /23505/)
   assert.match(catchBlock, /This user is already part of this project\./)
 })

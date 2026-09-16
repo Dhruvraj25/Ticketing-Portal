@@ -65,12 +65,17 @@ export const approveRevision = wrapServerAction('approveRevision', async functio
       .set({ status: 'in_progress', resolvedAt: null, updatedAt: new Date() })
       .where(eq(ticket.id, rev.ticketId))
 
-    // Log activity
+    // Log activity. Detail line deliberately omits the approver's name —
+    // 'revision_approved' is client-visible (the client's own revision
+    // request), but the internal manager/admin who approved it must not be
+    // named in the detail text (the main line's actor already resolves via
+    // the standard role-label fallback for internal actors — see
+    // resolveActor() in ticket-activity-format.ts).
     await tx.insert(ticketHistory).values({
       ticketId: rev.ticketId,
       userId: currentUser.id,
       action: 'revision_approved',
-      newValue: `Revision #${rev.revisionNumber} approved by ${currentUser.name}`,
+      newValue: `Revision #${rev.revisionNumber} approved`,
     })
   })
 
@@ -117,6 +122,7 @@ export const approveRevision = wrapServerAction('approveRevision', async functio
     triggeredBy: currentUser.id,
     dedup: { scope: `revision:${rev.id}` },
     recipients,
+    projectId: t.projectId ?? undefined,
   })
 
   revalidatePath('/dashboard')
@@ -173,12 +179,14 @@ export const rejectRevision = wrapServerAction('rejectRevision', async function 
       .set({ status: 'client_review', updatedAt: new Date() })
       .where(eq(ticket.id, rev.ticketId))
 
-    // Log activity
+    // Log activity. Same privacy rule as approveRevision above — the
+    // internal reviewer's name is never baked into the client-visible detail
+    // text, only the reason they gave.
     await tx.insert(ticketHistory).values({
       ticketId: rev.ticketId,
       userId: currentUser.id,
       action: 'revision_rejected',
-      newValue: `Revision #${rev.revisionNumber} rejected by ${currentUser.name}: ${reason}`,
+      newValue: `Revision #${rev.revisionNumber} rejected: ${reason}`,
     })
   })
 
@@ -188,6 +196,7 @@ export const rejectRevision = wrapServerAction('rejectRevision', async function 
     eventType: 'revision_rejected',
     triggeredBy: currentUser.id,
     dedup: { scope: `revision:${rev.id}` },
+    projectId: t.projectId ?? undefined,
     recipients: [
       {
         userId: rev.requestedById,
@@ -305,9 +314,13 @@ export const requestRevision = wrapServerAction('requestRevision', async functio
     // can never be exposed to the client (internal-only, matches the
     // dispatchNotification eventType: 'rework' used below for this branch).
     const isClientRequest = currentUser.role === 'client'
+    // Detail-line text names the actual authenticated actor, never a generic
+    // role word — the ticketHistory row's userId already identifies them
+    // authoritatively; this text must not contradict or duplicate that with
+    // a role-inferred placeholder.
     const actionLabel = isClientRequest
-      ? 'Revision requested by client (pending manager approval)'
-      : `Sent back for rework by ${currentUser.role === 'project_manager' ? 'manager' : 'admin'}`
+      ? `Revision requested by ${currentUser.name} (pending manager approval)`
+      : `Sent back for rework by ${currentUser.name}`
     await tx.insert(ticketHistory).values({
       ticketId: data.ticketId,
       userId: currentUser.id,

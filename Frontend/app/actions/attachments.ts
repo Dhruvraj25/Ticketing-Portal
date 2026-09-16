@@ -51,17 +51,22 @@ export const saveAttachment = wrapServerAction('saveAttachment', async function 
     })
     .returning()
 
-  // Create activity timeline entry for the upload with role information
+  // Create activity timeline entry for the upload.
   try {
-    const roleLabel = { client: 'Client', developer: 'Developer', project_manager: 'Manager', admin: 'Admin' }[currentUser.role as string] || currentUser.role
     const fileSizeStr = data.sizeBytes >= 1024 * 1024
       ? `${(data.sizeBytes / (1024 * 1024)).toFixed(1)} MB`
       : `${(data.sizeBytes / 1024).toFixed(1)} KB`
+    // Detail text deliberately omits the actor's name/role — 'attachment_uploaded'
+    // is client-visible, and the uploader's identity is already resolved
+    // privacy-safely for the main line via ticket-activity-format.ts
+    // (real name for the client's own uploads, role-label fallback for
+    // internal uploaders). Baking the name into this detail string would
+    // leak an internal actor's identity unconditionally.
     await db.insert(ticketHistory).values({
       ticketId: data.ticketId,
       userId: currentUser.id,
       action: 'attachment_uploaded',
-      newValue: `${roleLabel} ${currentUser.name} uploaded "${data.filename}" (${fileSizeStr})`,
+      newValue: `"${data.filename}" (${fileSizeStr})`,
     })
   } catch (err) {
     // Non-critical — don't fail the upload if timeline entry fails

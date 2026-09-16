@@ -3,7 +3,10 @@ import { getDevelopers } from '@/app/actions/users'
 import { getProjectNames } from '@/app/actions/projects'
 import { TicketsPageClient } from './tickets-page-client'
 
-const TICKETS_PER_PAGE = 25
+// Infinite-scroll batch size — initial server-rendered load fetches only the
+// first 20 tickets; TicketsPageClient fetches subsequent 20-ticket pages
+// client-side as the user scrolls (see TICKETS_PAGE_SIZE there, kept in sync).
+const TICKETS_PER_PAGE = 20
 
 export default async function TicketsPage({
   searchParams,

@@ -22,6 +22,7 @@ export {
   getClientRenewalStatus,
   logRenewalReminderActivity,
   checkClientCanCreateTicket,
+  getMyWalletThresholdStatus,
   recalculateWallet,
   // Assign hours
   addWalletHours,

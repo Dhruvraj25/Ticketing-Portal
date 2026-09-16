@@ -76,6 +76,7 @@ export interface DashboardCriticalData {
   user: DashboardUser
   consolidatedStats: ConsolidatedStats
   recentTickets: any[]
+  recentTicketsHasMore: boolean
   projectMetrics: ProjectMetricsResult | null
   renewalStatus: RenewalStatus
 }
@@ -98,7 +99,14 @@ const RECENT_TICKETS_CACHE_TTL = 30 // Recent tickets stale-by-30s is fine for d
 // lived here. Both implementations were identical — same FILTER query, same return shape.
 // The shared version uses cache tag 'consolidated-dashboard-stats' (60s TTL).
 
-async function _getRecentTicketsImpl(userId: string, role: string, limit = 5, userType?: string | null) {
+// Dashboard "Recent Tickets" — infinite scroll page size (20 per batch, per
+// the dashboard's infinite-scroll requirement). Reused by both the initial
+// SSR fetch (page 1) and every subsequent client-triggered "load more" call.
+// NOT exported: a 'use server' file may only export async functions — see
+// getRecentTicketsPage below for the client-callable entry point.
+const RECENT_TICKETS_PAGE_SIZE = 20
+
+async function _getRecentTicketsImpl(userId: string, role: string, limit = 5, userType?: string | null, page = 1) {
   const conditions: any[] = []
   if (role === 'client') {
     // Client Approver org scope — own + standard accounts of the same client.
@@ -111,10 +119,17 @@ async function _getRecentTicketsImpl(userId: string, role: string, limit = 5, us
     }
   } else if (role === 'developer') conditions.push(eq(ticket.assignedToId, userId))
 
-  // For LIMIT 5, correlated subqueries are MORE efficient than CTEs.
-  // Each subquery is a targeted PK index seek (~0.1ms each, 5 rows = ~0.5ms total).
-  // CTEs would scan the ENTIRE user/attachment tables before joining to 5 rows.
+  const safePage = Math.max(1, page)
+  const offset = (safePage - 1) * limit
+
+  // For small LIMITs, correlated subqueries are MORE efficient than CTEs.
+  // Each subquery is a targeted PK index seek (~0.1ms each). CTEs would scan
+  // the ENTIRE user/attachment tables before joining to a handful of rows.
   // This is the opposite of getTicketsList (large result sets) where CTEs win.
+  //
+  // Fetch one extra row (limit + 1) instead of a separate COUNT(*) query to
+  // determine hasMore — cheaper than a second round-trip, and the extra row
+  // is trimmed off before returning.
   const rows = await db
     .select({
       id: ticket.id, ticketNumber: ticket.ticketNumber, title: ticket.title,
@@ -137,26 +152,52 @@ async function _getRecentTicketsImpl(userId: string, role: string, limit = 5, us
     .leftJoin(moduleTable, eq(ticket.moduleId, moduleTable.id))
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(ticket.createdAt))
-    .limit(limit)
+    .limit(limit + 1)
+    .offset(offset)
 
-  return rows.map((r: any) => ({
-    ...r, status: r.status as TicketStatus, priority: r.priority as TicketPriority,
-    category: r.category as TicketCategory, clientName: r.clientName ?? undefined,
-    clientEmail: r.clientEmail ?? undefined, assignedToName: r.assignedToName ?? undefined,
-    projectName: r.projectName ?? undefined, projectCode: r.projectCode ?? undefined,
-    moduleName: r.moduleName ?? undefined, attachmentCount: r.attachmentCount ?? 0,
-  }))
+  const hasMore = rows.length > limit
+  const pageRows = hasMore ? rows.slice(0, limit) : rows
+
+  return {
+    tickets: pageRows.map((r: any) => ({
+      ...r, status: r.status as TicketStatus, priority: r.priority as TicketPriority,
+      category: r.category as TicketCategory, clientName: r.clientName ?? undefined,
+      clientEmail: r.clientEmail ?? undefined, assignedToName: r.assignedToName ?? undefined,
+      projectName: r.projectName ?? undefined, projectCode: r.projectCode ?? undefined,
+      moduleName: r.moduleName ?? undefined, attachmentCount: r.attachmentCount ?? 0,
+    })),
+    hasMore,
+  }
 }
 
 // Cache recent tickets: 30s TTL — stale-by-30s is fine for a dashboard widget.
-// Keyed by userId+role so each user gets their own cache entry.
+// Keyed by userId+role+page so each user/page combination gets its own cache
+// entry (page is part of the JSON key, exactly like getTicketsList's filter key).
 const getCachedRecentTickets = unstable_cache(
   async (cacheKey: string) => {
-    const { userId, role, limit, userType } = JSON.parse(cacheKey)
-    return _getRecentTicketsImpl(userId, role, limit, userType)
+    const { userId, role, limit, userType, page } = JSON.parse(cacheKey)
+    return _getRecentTicketsImpl(userId, role, limit, userType, page)
   },
   undefined,
   { revalidate: RECENT_TICKETS_CACHE_TTL, tags: ['recent-tickets'] },
+)
+
+/**
+ * Client-callable server action for the Dashboard "Recent Tickets" infinite
+ * scroll — fetches the next batch (RECENT_TICKETS_PAGE_SIZE tickets) for the
+ * CURRENT user, re-resolving auth/role/org-scope from the session on every
+ * call (never trusts a role/userId passed from the client). Reuses the exact
+ * same query + cache as the initial SSR fetch below — no parallel endpoint.
+ */
+export const getRecentTicketsPage = wrapServerAction(
+  'getRecentTicketsPage',
+  async function getRecentTicketsPage(page: number): Promise<{ tickets: any[]; hasMore: boolean }> {
+    const currentUser = await getCurrentUser()
+    const { id: userId, role, userType } = currentUser
+    const safePage = Number.isFinite(page) && page >= 1 ? Math.floor(page) : 1
+    const key = JSON.stringify({ userId, role, limit: RECENT_TICKETS_PAGE_SIZE, userType, page: safePage })
+    return getCachedRecentTickets(key)
+  },
 )
 
 async function getSidebarData(currentUser: { id: string; role: string }): Promise<SidebarDataResult> {
@@ -447,13 +488,17 @@ export const getDashboardCriticalData = wrapServerAction('getDashboardCriticalDa
   const currentUser = await getCurrentUser()
   const { id: userId, name, email, role, userType } = currentUser
 
-  // Recent tickets now cached (30s TTL) to avoid redundant queries on every dashboard load
-  const recentTicketsKey = JSON.stringify({ userId, role, limit: 5, userType })
+  // Recent tickets now cached (30s TTL) to avoid redundant queries on every
+  // dashboard load. Initial SSR load fetches page 1 of RECENT_TICKETS_PAGE_SIZE
+  // (20) tickets — infinite scroll requests subsequent pages via the
+  // client-callable getRecentTicketsPage action above, which reuses this same
+  // cached query (never fetches the full ticket set up front).
+  const recentTicketsKey = JSON.stringify({ userId, role, limit: RECENT_TICKETS_PAGE_SIZE, userType, page: 1 })
 
   // Use shared getConsolidatedDashboardData from tickets/queries.ts instead of
   // the local duplicate implementation. This eliminates one redundant SQL query
   // implementation and uses a single cache namespace.
-  const [consolidatedStats, recentTickets, projectMetrics, renewalStatus] = await Promise.all([
+  const [consolidatedStats, recentTicketsResult, projectMetrics, renewalStatus] = await Promise.all([
     getConsolidatedDashboardData(),
     getCachedRecentTickets(recentTicketsKey),
     role === 'admin' ? getCachedProjectMetrics() : Promise.resolve(null),
@@ -467,7 +512,8 @@ export const getDashboardCriticalData = wrapServerAction('getDashboardCriticalDa
   return {
     user: { id: userId, name, email, role: role as UserRole },
     consolidatedStats,
-    recentTickets,
+    recentTickets: recentTicketsResult.tickets,
+    recentTicketsHasMore: recentTicketsResult.hasMore,
     projectMetrics,
     renewalStatus,
   }

@@ -117,6 +117,7 @@ export const createProject = wrapServerAction('createProject', async function cr
     triggeredBy: currentUser.id,
     dedup: { scope: `project:${newProject.id}` },
     recipients,
+    projectId: newProject.id,
   })
 
   revalidatePath('/dashboard')

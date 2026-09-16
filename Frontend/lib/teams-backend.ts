@@ -38,6 +38,8 @@ export async function sendTeamsNotification(
     if (!response.ok) {
       const text = await response.text().catch(() => 'Unknown error')
       console.error(`[TeamsBackend] HTTP ${response.status} for ${eventType}: ${text}`)
+    } else {
+      console.log(`[Teams Trigger] backend bridge responded status=${response.status} eventType=${eventType}`)
     }
   } catch (err) {
     console.error(`[TeamsBackend] Failed to send ${eventType}:`, err instanceof Error ? err.message : err)
@@ -73,11 +75,17 @@ export async function sendTeamsNotificationToUser(
     // notifications are unaffected (they never pass through here). Internal staff
     // (admins/managers/developers) always receive Teams posts — the customer
     // preference controls the customer's own notifications only.
-    if (!shouldSendTeamsForUser(found.role, found.enableTeamsNotifications)) {
+    const recipientGateOk = shouldSendTeamsForUser(found.role, found.enableTeamsNotifications)
+    console.log(
+      `[Teams Trigger] eventType=${eventType} recipientRole=${found.role} ` +
+      `recipientGate=${recipientGateOk} projectId=${(data as { projectId?: unknown })?.projectId ?? '(none)'}`,
+    )
+    if (!recipientGateOk) {
       console.log(`[TeamsBackend] Skipping Teams notification for ${userId} (customer Teams notifications disabled)`)
       return
     }
 
+    console.log(`[Teams Trigger] dispatching=true eventType=${eventType} → backend bridge`)
     await sendTeamsNotification(eventType, {
       ...data,
       recipientName: found.name || undefined,

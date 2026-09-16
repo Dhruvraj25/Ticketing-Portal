@@ -38,6 +38,9 @@ export type ErrorCode =
   | 'NETWORK_ERROR'
   | 'INTERNAL_ERROR'
   | 'UNKNOWN_ERROR'
+  | 'WALLET_BELOW_CLIENT_THRESHOLD'
+  | 'WALLET_INSUFFICIENT_FOR_ESTIMATE'
+  | 'WALLET_CLIENT_ASSOCIATION_INVALID'
 
 // ─── Error Message Map ──────────────────────────────────────────────────────
 
@@ -65,6 +68,9 @@ const ERROR_MESSAGES: Record<ErrorCode, string> = {
   NETWORK_ERROR: 'Unable to connect to the server. Please check your connection and try again.',
   INTERNAL_ERROR: 'Something went wrong. Please try again later.',
   UNKNOWN_ERROR: 'Something went wrong. Please try again.',
+  WALLET_BELOW_CLIENT_THRESHOLD: 'Your Support Wallet balance is at or below the 10% limit. Please recharge your wallet before creating a ticket.',
+  WALLET_INSUFFICIENT_FOR_ESTIMATE: 'Insufficient Support Wallet balance. The requested estimate is higher than the client\'s remaining wallet balance. Please recharge the wallet or reduce the estimated hours.',
+  WALLET_CLIENT_ASSOCIATION_INVALID: 'You are not authorized to perform this action for this client or project.',
 }
 
 // ─── Pattern Matching for Error Messages ────────────────────────────────────
@@ -96,6 +102,15 @@ const ERROR_PATTERNS: Array<{ pattern: RegExp; code: ErrorCode }> = [
 
   // Access
   { pattern: /access denied|unauthorized|not.*authenticated/i, code: 'FORBIDDEN' },
+
+  // Support Wallet — only the non-dynamic threshold message is pattern-matched.
+  // WALLET_INSUFFICIENT_FOR_ESTIMATE is deliberately NOT matched here: its
+  // message always carries the real remaining/requested hours, and a pattern
+  // match resolves to the static ERROR_MESSAGES text, which would discard
+  // those numbers. It instead reaches the user via getFriendlyError's clean
+  // message passthrough (see lib/wallet-validation.ts for the length/content
+  // discipline that keeps it eligible for that path).
+  { pattern: /support wallet balance is at or below the 10% limit/i, code: 'WALLET_BELOW_CLIENT_THRESHOLD' },
 
   // Delete dependencies
   { pattern: /associated records|cannot be deleted because.*existing|has associated records/i, code: 'USER_DELETE_DEPENDENCY' },

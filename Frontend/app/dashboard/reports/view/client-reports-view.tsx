@@ -2,15 +2,17 @@
 
 // Dedicated Client Report Center — /dashboard/reports/view for role==='client'
 // only (dispatched server-side in page.tsx, so a client never even renders
-// the generic admin/manager ReportCenterClient). Shows exactly the 4
-// required reports as cards; clicking one deep-links to this same route with
-// `?report=ticket_summary[&status=...]` and reuses the EXACT SAME report
-// engine, server action and result-rendering components as the admin Report
-// Center — getTicketSummaryReport is already tenant-scoped to the logged-in
-// client's own org (see ticketClientScopeCondition in
+// the generic admin/manager ReportCenterClient). Shows the 4 required quick-
+// shortcut cards PLUS the same shared filter panel (ReportFilters) the admin
+// Report Center uses, so a client can also filter by date/project/status/
+// priority/report type across every report type checkAccess() allows them
+// to run — not just the 4 preset status shortcuts. Reuses the EXACT SAME
+// report engine, server action and result-rendering components as the admin
+// Report Center — getTicketSummaryReport is already tenant-scoped to the
+// logged-in client's own org (see ticketClientScopeCondition in
 // app/actions/reports/ticket-reports.ts) and already allow-listed for the
 // 'client' role in checkAccess() (app/actions/reports/types.ts). No new
-// report type, no new query, no second report system.
+// report type, no new query, no second report/filter system.
 
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
@@ -19,13 +21,24 @@ import { PageHeader } from '@/components/dashboard/page-header-server'
 import { ReportTable } from '@/components/dashboard/report-center/report-table'
 import { ReportSummaryCards } from '@/components/dashboard/report-center/report-summary-cards'
 import { StatCard, type KpiColorTheme } from '@/components/dashboard/stat-card'
-import { getReportData } from '@/app/actions/reports'
+import { getReportData, getReportFormData } from '@/app/actions/reports'
 import { REPORT_TYPE_LABELS } from '@/lib/report-types'
 import type { ReportFilters as ReportFiltersType, ReportResult } from '@/app/actions/reports'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { RefreshCw, AlertCircle, Loader2, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+// Same shared filter panel the admin/manager Report Center uses
+// (report-center-client.tsx) — reused here, not a new filtering system.
+// userRole="client" makes it hide the Client dropdown itself (see
+// components/dashboard/report-center/report-filters.tsx) and narrows the
+// Report Type dropdown to exactly the report types checkAccess() allows a
+// client to run.
+const ReportFilters = dynamic(() => import('@/components/dashboard/report-center/report-filters').then(m => ({ default: m.ReportFilters })), {
+  ssr: false,
+  loading: () => <div className="h-11 rounded-xl bg-muted/30 animate-pulse" />,
+})
 
 const ReportExport = dynamic(() => import('@/components/dashboard/report-center/report-export').then(m => ({ default: m.ReportExport })), {
   ssr: false,
@@ -77,6 +90,17 @@ export function ClientReportsView({ stats }: { stats: ClientDashboardStats }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [currentFilters, setCurrentFilters] = useState<ReportFiltersType | null>(null)
+  const [formData, setFormData] = useState<{ projects: any[]; developers: any[]; clients: any[]; role?: string }>({ projects: [], developers: [], clients: [] })
+
+  // Options for the filter panel (projects/developers this client can see,
+  // plus their own role so ReportFilters can hide the Client field and
+  // narrow the Report Type dropdown via checkAccess) — same call the admin
+  // Report Center already uses, already scoped server-side per role.
+  useEffect(() => {
+    let cancelled = false
+    getReportFormData().then((data) => { if (!cancelled) setFormData(data) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   const handleGenerateReport = useCallback(async (filters: ReportFiltersType) => {
     setLoading(true)
@@ -173,6 +197,21 @@ export function ClientReportsView({ stats }: { stats: ClientDashboardStats }) {
               )}
             />
           ))}
+        </div>
+
+        {/* Filters — same shared panel as the admin/manager Report Center,
+            additive to the 4 quick-shortcut cards above (not a replacement
+            for them). */}
+        <div data-tour="report-filters" className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6">
+          <ReportFilters
+            projects={formData.projects}
+            developers={formData.developers}
+            clients={formData.clients}
+            onApply={handleGenerateReport}
+            initialReportType={currentFilters?.reportType}
+            initialFilters={currentFilters || undefined}
+            userRole={formData.role as any}
+          />
         </div>
 
         {/* Loading State */}

@@ -29,7 +29,12 @@
     "test:module-selection-integration": "node --experimental-strip-types --test tests/module-selection-integration.test.ts",
     "test:project-code": "node --experimental-strip-types --test tests/project-code.test.ts",
     "test:project-key-integration": "node --experimental-strip-types --test tests/project-key-integration.test.ts",
-    "test:project-users-integration": "node --experimental-strip-types --test tests/project-users-integration.test.ts"
+    "test:project-users-integration": "node --experimental-strip-types --test tests/project-users-integration.test.ts",
+    "test:project-user-removal": "node --experimental-strip-types --test tests/project-user-removal.test.ts",
+    "test:project-teams-channel-widget": "node --experimental-strip-types --test tests/project-teams-channel-widget.test.ts",
+    "test:client-report-filters": "node --experimental-strip-types --test tests/client-report-filters.test.ts",
+    "test:wallet-validation": "node --experimental-strip-types --test tests/wallet-validation.test.ts",
+    "test:wallet-validation-integration": "node --experimental-strip-types --test tests/wallet-validation-integration.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

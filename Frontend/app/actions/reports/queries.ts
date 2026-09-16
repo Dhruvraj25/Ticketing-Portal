@@ -2,8 +2,8 @@
 'use server'
 
 import { db } from '@/lib/db'
-import { project, user } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { project, user, projectClient } from '@/lib/db/schema'
+import { eq, inArray, or } from 'drizzle-orm'
 import { unstable_cache } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth-utils'
 import { wrapServerAction } from '@/lib/performance-profiler'
@@ -114,10 +114,30 @@ const REPORT_HANDLERS: Record<string, (filters: ReportFilters, currentUser: Curr
 
 // ─── Internal implementation (no getCurrentUser — accepts role and userId) ─
 async function _getReportFormDataImpl(role: string, userId: string) {
+  // Direct ownership (project.clientId) OR linked via project_client — a
+  // Standard Account client user is typically never a project's primary
+  // owner, only linked to it, so the old direct-ownership-only check left
+  // their filter dropdown empty. This mirrors getTicketFormProjects's own
+  // 'client' branch (app/actions/tickets/update.ts) rather than
+  // getClientOrgUserIds, which is deliberately approver-only (org-wide
+  // visibility is an Approver Account privilege, not something a Standard
+  // Account should get here either) — this is "which projects can I,
+  // personally, see" for either account type, not "my whole org's projects".
+  let projectFilter
+  if (role === 'client') {
+    const linkedProjectIds = await db
+      .select({ projectId: projectClient.projectId })
+      .from(projectClient)
+      .where(eq(projectClient.userId, userId))
+    const ids = new Set<number>(linkedProjectIds.map((r) => r.projectId))
+    projectFilter = ids.size > 0
+      ? or(eq(project.clientId, userId), inArray(project.id, [...ids]))
+      : eq(project.clientId, userId)
+  }
   const projects = await db
     .select({ id: project.id, projectName: project.projectName, projectCode: project.projectCode })
     .from(project)
-    .where(role === 'client' ? eq(project.clientId, userId) : undefined)
+    .where(projectFilter)
     .orderBy(project.projectName)
 
   // OPTIMIZATION: Filter users by role in SQL instead of loading ALL users

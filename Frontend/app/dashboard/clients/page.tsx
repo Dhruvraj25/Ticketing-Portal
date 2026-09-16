@@ -1,10 +1,10 @@
 import { PageTimer } from '@/lib/performance-profiler'
 import { getCurrentUser } from '@/lib/auth-utils'
-import { getManageableClients } from '@/app/actions/client-notification-preferences'
+import { getManageableProjectsForNotifications } from '@/app/actions/client-notification-preferences'
 import { redirect } from 'next/navigation'
 import { Building2 } from 'lucide-react'
 import { PageHeader } from '@/components/dashboard/page-header-server'
-import { ClientsManagementClient } from '@/components/dashboard/clients-management-client'
+import { ProjectsNotificationManagementClient } from '@/components/dashboard/projects-notification-management-client'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,7 +20,10 @@ export default async function ClientsManagementPage() {
   }
 
   pageTimer.mark('Data Fetching')
-  const clients = await getManageableClients()
+  // Notification preferences are managed PROJECT-WISE for client accounts:
+  // every client user assigned to a project shares that project's settings.
+  // This page lists projects (not individual clients) as the entry point.
+  const projects = await getManageableProjectsForNotifications()
 
   pageTimer.mark('Render')
   pageTimer.finish()
@@ -32,15 +35,15 @@ export default async function ClientsManagementPage() {
           title="Client Management"
           subtitle={
             user.role === 'project_manager'
-              ? 'Clients assigned to the projects you manage. Select a client to manage their notification preferences.'
-              : 'Select a client to manage their notification preferences.'
+              ? 'Projects you manage. Select a project to manage the notification preferences shared by its client accounts.'
+              : 'Select a project to manage the notification preferences shared by its client accounts.'
           }
           icon={<Building2 className="h-5 w-5" />}
           iconVariant="cyan"
           badge={`${user.role === 'admin' ? 'Admin' : 'Support Manager'}`}
         />
       </div>
-      <ClientsManagementClient clients={clients} role={user.role} />
+      <ProjectsNotificationManagementClient projects={projects} role={user.role} />
     </div>
   )
 }

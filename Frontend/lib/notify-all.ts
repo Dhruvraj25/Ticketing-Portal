@@ -118,17 +118,18 @@ export async function dispatchNotification(
   // enforced server-side on the backend bridge routes. Recipients who
   // explicitly disabled this event on the In-App channel are skipped.
   //
-  // PROJECT-wise: when the event belongs to a project, the PROJECT's in-app
-  // preferences are authoritative for EVERY recipient (internal staff
-  // included); legacy client rows are merged in only as an inheritance
-  // fallback. Account-level events keep the legacy per-client lookup.
-  let disabledInApp = new Map<string, Set<string>>()
-  let projectDisabledInApp: Set<string> | null = null
-  if (projectId) {
-    projectDisabledInApp = await loadDisabledInAppEventsForProject(projectId, clientId)
-  } else {
-    disabledInApp = await loadDisabledInAppEvents(userIds)
-  }
+  // PROJECT-wise preferences are a CLIENT-ONLY concept: when the event
+  // belongs to a project, the PROJECT's in-app preferences are authoritative
+  // for CLIENT recipients only. Internal-staff recipients (admin /
+  // project_manager / developer) always keep using their own existing
+  // self-serve preferences (the legacy per-user map), completely unaffected
+  // by a project's client-facing toggle — so the legacy map is loaded
+  // unconditionally, and the project map is only consulted per-recipient
+  // below when that recipient is a client.
+  const disabledInApp = await loadDisabledInAppEvents(userIds)
+  const projectDisabledInApp: Set<string> | null = projectId
+    ? await loadDisabledInAppEventsForProject(projectId, clientId)
+    : null
   const canonicalEvent = canonicalNotificationEvent(eventType)
 
   const results: DispatchResult[] = []
@@ -198,8 +199,11 @@ export async function dispatchNotification(
       teams: 'not_requested',
     }
 
+    // Project preferences gate CLIENT recipients only — an internal-staff
+    // recipient always falls through to their own legacy per-user setting,
+    // even when this event has a project context.
     const inAppDisabled = canonicalEvent !== null && (
-      projectDisabledInApp
+      projectDisabledInApp && user.role === 'client'
         ? projectDisabledInApp.has(canonicalEvent)
         : (disabledInApp.get(recipient.userId)?.has(canonicalEvent) ?? false)
     )

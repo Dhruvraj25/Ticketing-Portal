@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createTicket, getTicketFormProjects, getTicketFormModules, getModulesForClient, getTicketFormClients, getCurrentUser } from '@/app/actions/tickets'
 import { saveAttachment } from '@/app/actions/attachments'
+import { getMyWalletThresholdStatus } from '@/app/actions/wallets'
+import { getFriendlyError } from '@/lib/error-utils'
 import { PageTimer } from '@/lib/performance-profiler'
 import { Button } from '@/components/ui/button'
 import { PageHeaderIcon } from '@/components/dashboard/page-header-icon'
@@ -112,6 +114,13 @@ export default function NewTicketPage() {
   const [selectedClientId, setSelectedClientId] = useState<string>('')
   const [userRole, setUserRole] = useState<string>('')
 
+  // Support Wallet 10% creation threshold — CLIENT callers only (section 1/8).
+  // UX-only: the authoritative check is re-run server-side in createTicket()
+  // regardless of what this state says (section 8/10 — never trust the
+  // frontend). Admin/project_manager never gate on this (section 2/8).
+  const [walletAtOrBelowThreshold, setWalletAtOrBelowThreshold] = useState(false)
+  const [walletRemainingHours, setWalletRemainingHours] = useState<number | null>(null)
+
   // Project / Module state
   const [projects, setProjects] = useState<ProjectOption[]>([])
   const [modules, setModules] = useState<ModuleOption[]>([])
@@ -145,12 +154,15 @@ export default function NewTicketPage() {
           const clientList = await getTicketFormClients()
           setClients(clientList)
         } else if (me.role === 'client') {
-          const [projs, mods] = await Promise.all([
+          const [projs, mods, walletStatus] = await Promise.all([
             getTicketFormProjects(),
             getModulesForClient(),
+            getMyWalletThresholdStatus(),
           ])
           setProjects(projs)
           setModules(mods)
+          setWalletAtOrBelowThreshold(walletStatus.atOrBelowThreshold)
+          setWalletRemainingHours(walletStatus.remainingHours)
         }
       } catch (e) {
         console.error('[CreateTicket] Failed to load initial form data:', e)
@@ -158,11 +170,15 @@ export default function NewTicketPage() {
     })()
   }, [])
 
-  // "On Behalf of Client" automatically turns Estimate Approval Required ON
-  // (spec requirement) — the toggle is rendered disabled for this type so the
-  // user can't uncheck it back off.
+  // Ticket Type sets an AUTOMATIC default for Estimate Approval Required —
+  // "On Behalf of Client" defaults it ON, "Historical" defaults it OFF — but
+  // the toggle always stays visible AND manually adjustable afterward (never
+  // hidden, never disabled). This only re-fires when ticketType itself
+  // changes (dependency array), never on every render, so it can't stomp on
+  // a manual change the user makes without switching ticket types again.
   useEffect(() => {
     if (ticketType === 'on_behalf') setEstimateApprovalRequired(true)
+    else if (ticketType === 'historical') setEstimateApprovalRequired(false)
   }, [ticketType])
 
   // Restore simple fields from a saved draft.
@@ -290,6 +306,15 @@ export default function NewTicketPage() {
     e.preventDefault()
     setError(null)
 
+    // Section 8: a client at/below the 10% wallet threshold must never be
+    // able to submit, and the form must never appear to have succeeded.
+    // This is UX only — createTicket() independently re-checks the same
+    // rule server-side regardless of this client-side state (section 10).
+    if (userRole === 'client' && walletAtOrBelowThreshold) {
+      setError('Ticket creation is unavailable because your Support Wallet balance is at or below the 10% limit. Please recharge your wallet to create a ticket.')
+      return
+    }
+
     // Validate required fields
     if (!selectedProjectId) {
       setError('Please select a project.')
@@ -347,7 +372,10 @@ export default function NewTicketPage() {
         clientId: selectedClientId || undefined,
         ...(isStaff ? {
           ticketType,
-          estimateApprovalRequired: ticketType === 'on_behalf' ? true : estimateApprovalRequired,
+          // The real, current toggle state — already correctly defaulted by
+          // the ticketType effect above AND respects a manual override, so
+          // it must be sent as-is (never re-forced here at submit time).
+          estimateApprovalRequired,
           ...(ticketType === 'historical' ? {
             supportHoursConsumed: Number(supportHoursConsumed),
             historicalCreatedAt: historicalCreatedAt!.toISOString(),
@@ -376,7 +404,10 @@ export default function NewTicketPage() {
       clearTicketDraft()
       router.push(`/dashboard/tickets/${ticket.id}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create ticket')
+      // Section 26: resolve structured backend errors (e.g. the wallet
+      // threshold/insufficiency errors from createTicket()) to their
+      // friendly text instead of a raw/generic message.
+      setError(getFriendlyError(err))
       setLoading(false)
     }
   }
@@ -724,17 +755,20 @@ export default function NewTicketPage() {
                       <Label htmlFor="estimateApprovalRequired" className="text-sm">Estimate Approval Required</Label>
                       <p className="text-xs text-muted-foreground">
                         {ticketType === 'on_behalf'
-                          ? 'Automatically enabled for tickets created on behalf of a client.'
+                          ? 'Automatically turned on for tickets created on behalf of a client — turn it off below if this one doesn\'t need approval.'
                           : ticketType === 'historical'
-                          ? 'Not applicable — a historical ticket is created already closed.'
+                          ? 'Automatically turned off for historical tickets (created already closed) — turn it on below if this one still needs approval.'
                           : 'Off by default. When on, the ticket follows the normal manager estimate → client approval workflow.'}
                       </p>
                     </div>
+                    {/* Always visible and interactive — the automatic default above is a
+                        starting point, never a lock. Selecting a different Ticket Type
+                        re-applies its own default (see the effect above); it never
+                        continuously overwrites a manual choice on every render. */}
                     <Switch
                       id="estimateApprovalRequired"
-                      checked={ticketType === 'on_behalf' ? true : estimateApprovalRequired}
+                      checked={estimateApprovalRequired}
                       onCheckedChange={setEstimateApprovalRequired}
-                      disabled={ticketType !== 'on_behalf'}
                     />
                   </div>
 
@@ -1034,6 +1068,15 @@ export default function NewTicketPage() {
                 )}
               </div>
 
+              {userRole === 'client' && walletAtOrBelowThreshold && (
+                <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+                  <p className="text-sm text-destructive">
+                    Your Support Wallet balance is at or below the 10% limit. Please recharge your wallet before creating a ticket.
+                  </p>
+                </div>
+              )}
+
               {error && (
                 <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 flex items-center gap-2">
                   <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
@@ -1054,7 +1097,7 @@ export default function NewTicketPage() {
                 </div>
                 <Button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || (userRole === 'client' && walletAtOrBelowThreshold)}
                   data-tour="ticket-submit"
                   className="rounded-xl px-8"
                 >

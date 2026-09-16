@@ -132,36 +132,53 @@ export const addUserToProject = wrapServerAction('addUserToProject', async funct
   const accountId = crypto.randomUUID()
   const now = new Date()
 
-  await db.transaction(async (tx) => {
-    await tx.insert(user).values({
-      id: userId,
-      name: data.name!.trim(),
-      email: normalizedEmail,
-      emailVerified: false,
-      role: 'client',
-      userType: data.userType,
-      banned: false,
-      createdAt: now,
-      updatedAt: now,
-    })
+  try {
+    await db.transaction(async (tx) => {
+      await tx.insert(user).values({
+        id: userId,
+        name: data.name!.trim(),
+        email: normalizedEmail,
+        emailVerified: false,
+        role: 'client',
+        userType: data.userType,
+        banned: false,
+        createdAt: now,
+        updatedAt: now,
+      })
 
-    await tx.insert(account).values({
-      id: accountId,
-      accountId: userId,
-      providerId: 'credential',
-      userId,
-      password: hashedPassword,
-      createdAt: now,
-      updatedAt: now,
-    })
+      await tx.insert(account).values({
+        id: accountId,
+        accountId: userId,
+        providerId: 'credential',
+        userId,
+        password: hashedPassword,
+        createdAt: now,
+        updatedAt: now,
+      })
 
-    await tx.insert(projectClient).values({
-      projectId,
-      userId,
-      assignedBy: currentUser.id,
-      assignedAt: now,
+      await tx.insert(projectClient).values({
+        projectId,
+        userId,
+        assignedBy: currentUser.id,
+        assignedAt: now,
+      })
     })
-  })
+  } catch (err: any) {
+    // Race-condition backstop: the pre-check SELECT above found no existing
+    // user for this email, but a concurrent request could have created one
+    // in the gap between that check and this insert. The user.email column
+    // is the ONLY unique constraint this transaction can violate (userId/
+    // accountId are fresh crypto.randomUUID()s — collision is not a real
+    // possibility — and projectId+userId can't already exist for an id that
+    // didn't exist a moment ago), so any unique-violation here means the
+    // email lost the race. Never surface the raw Postgres error.
+    const msg = err?.message || ''
+    if (msg.includes('unique') || msg.includes('duplicate') || msg.includes('23505')) {
+      throw new Error('An account with this email already exists.')
+    }
+    console.error('[addUserToProject] Failed to create the new user account:', err)
+    throw new Error('Could not create the new user account. Please try again.')
+  }
 
   // Auto-create support wallet for the new client user (non-critical, matches createUser()).
   try {
@@ -174,4 +191,52 @@ export const addUserToProject = wrapServerAction('addUserToProject', async funct
   revalidatePath(`/dashboard/projects/${projectId}`)
   revalidatePath('/dashboard/admin/users')
   return { id: userId, created: true }
+})
+
+/**
+ * Removes a user's PROJECT MEMBERSHIP ONLY (deletes the project_client link).
+ * Never deletes the user account, never bans/deactivates it, never touches
+ * any other project's membership. To deactivate the account entirely, use
+ * the separate (admin-only) toggleUserBanned action.
+ */
+export const removeUserFromProject = wrapServerAction('removeUserFromProject', async function removeUserFromProject(projectId: number, userId: string) {
+  const currentUser = await getCurrentUser()
+  if (currentUser.role !== 'project_manager' && currentUser.role !== 'admin') {
+    throw new Error('Only project managers and admins can remove users from a project')
+  }
+
+  const [p] = await db.select({ id: project.id, clientId: project.clientId }).from(project).where(eq(project.id, projectId)).limit(1)
+  if (!p) throw new Error('Project not found.')
+
+  const [targetUser] = await db.select({ id: user.id }).from(user).where(eq(user.id, userId)).limit(1)
+  if (!targetUser) throw new Error('User not found.')
+
+  // "Last required project membership": project.clientId is a NOT NULL FK —
+  // the project cannot exist without an owning client. Removing that user's
+  // project_client row while they're still the FK owner would let them vanish
+  // from their own project's user list while still technically owning it.
+  // Checked BEFORE the "already removed" lookup below because this is a
+  // permanent property of the project regardless of whether a project_client
+  // row happens to exist for them (assignClient always mirrors one, but this
+  // guard must hold even if that row were ever missing/stale).
+  if (userId === p.clientId) {
+    throw new Error("This user is the project's primary Key User and cannot be removed from the project. Reassign the Key User first.")
+  }
+
+  const [link] = await db
+    .select({ id: projectClient.id })
+    .from(projectClient)
+    .where(and(eq(projectClient.projectId, projectId), eq(projectClient.userId, userId)))
+    .limit(1)
+  if (!link) throw new Error('This user is not part of this project (they may have already been removed).')
+
+  try {
+    await db.delete(projectClient).where(and(eq(projectClient.projectId, projectId), eq(projectClient.userId, userId)))
+  } catch (err) {
+    console.error('[removeUserFromProject] Failed to remove project_client link:', err)
+    throw new Error('Could not remove this user from the project due to a database error. Please try again.')
+  }
+
+  revalidatePath(`/dashboard/projects/${projectId}`)
+  return { success: true }
 })

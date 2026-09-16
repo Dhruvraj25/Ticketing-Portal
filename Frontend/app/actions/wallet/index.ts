@@ -33,6 +33,7 @@ export {
   getClientRenewalStatus,
   logRenewalReminderActivity,
   checkClientCanCreateTicket,
+  getMyWalletThresholdStatus,
   recalculateWallet,
 } from './renewals'
 

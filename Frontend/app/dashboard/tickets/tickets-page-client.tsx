@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import { format } from 'date-fns'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -8,8 +8,7 @@ import {
   Plus,
   Ticket,
   Calendar,
-  ChevronLeft,
-  ChevronRight,
+  Loader2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { TICKET_STATUS_CONFIG, TICKET_PRIORITY_CONFIG } from '@/lib/types'
@@ -18,8 +17,12 @@ import type { TicketWithRelations, UserRole } from '@/lib/types'
 import { TicketTopBar } from '@/components/dashboard/ticket-top-bar'
 import { PageHeaderIcon } from '@/components/dashboard/page-header-icon'
 import { TicketRightPanel } from '@/components/dashboard/ticket-right-panel'
-import type { TicketListItem } from '@/app/actions/tickets'
-import { cn } from '@/lib/utils'
+import { getTicketsList, type TicketListItem } from '@/app/actions/tickets'
+import { useInfiniteTicketList, useLoadMoreSentinel } from '@/lib/use-infinite-ticket-list'
+
+// Infinite-scroll batch size — initial load and every subsequent "load more"
+// request the same 20 tickets at a time (never the full dataset).
+const TICKETS_PAGE_SIZE = 20
 
 interface PaginationInfo {
   page: number
@@ -123,13 +126,54 @@ export function TicketsPageClient({
     router.refresh()
   }, [router])
 
-  const goToPage = useCallback((page: number) => {
-    const params = new URLSearchParams(searchParams.toString())
-    params.set('page', String(page))
-    router.push(`/dashboard/tickets?${params.toString()}`)
-  }, [router, searchParams])
-
   const currentDate = useMemo(() => format(new Date(), 'EEEE, MMMM d, yyyy'), [])
+
+  // ── Infinite scroll ────────────────────────────────────────────────────
+  // Filters/search/status/project are still resolved SERVER-SIDE via the URL
+  // (unchanged above — router.push triggers a fresh server fetch of page 1,
+  // which arrives here as new `tickets`/`pagination` props). Infinite scroll
+  // only replaces HOW additional pages beyond page 1 are loaded: instead of
+  // a "Next page" button, scrolling near the bottom calls the SAME existing
+  // getTicketsList server action for page N+1 and appends the result.
+  const q = searchParams.get('q') || ''
+  const status = searchParams.get('status') || ''
+  const priority = searchParams.get('priority') || ''
+  const projectIdParam = searchParams.get('projectId') || ''
+  const moduleIdParam = searchParams.get('moduleId') || ''
+
+  // Changes whenever the SERVER-ENFORCED filter set changes (i.e. whenever
+  // page.tsx will have re-fetched a fresh page 1) — never when only `page`
+  // itself would change, since infinite scroll owns paging from here on.
+  const filterResetKey = `${q}|${status}|${priority}|${projectIdParam}|${moduleIdParam}`
+
+  const fetchTicketsPage = useCallback(async (page: number) => {
+    const result = await getTicketsList({
+      search: q || undefined,
+      status: status || undefined,
+      priority: priority || undefined,
+      projectId: projectIdParam ? parseInt(projectIdParam, 10) : undefined,
+      moduleId: moduleIdParam ? parseInt(moduleIdParam, 10) : undefined,
+      page,
+      limit: TICKETS_PAGE_SIZE,
+    })
+    return { tickets: result.tickets, hasMore: page < result.totalPages }
+  }, [q, status, priority, projectIdParam, moduleIdParam])
+
+  const {
+    tickets: loadedTickets,
+    hasMore,
+    loadingMore,
+    loadMore,
+  } = useInfiniteTicketList<TicketListItem>({
+    initialTickets: tickets,
+    initialHasMore: pagination ? pagination.page < pagination.totalPages : false,
+    fetchPage: fetchTicketsPage,
+    resetKey: filterResetKey,
+  })
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const loadMoreRef = useRef<HTMLDivElement>(null)
+  useLoadMoreSentinel(scrollContainerRef, loadMoreRef, loadMore, hasMore)
 
   return (
     <div className="space-y-5">
@@ -190,100 +234,92 @@ export function TicketsPageClient({
           onPriorityChange={handlePriorityChange}
           selectedProject={selectedProject}
           onProjectChange={handleProjectChange}
-          totalFiltered={tickets.length}
+          totalFiltered={loadedTickets.length}
         />
       </div>
 
-      {/* ── SECTION 3: Ticket Container — ticket list uses max-height for internal scroll ── */}
-      <div className="w-full">
-        <div className="flex w-full min-w-0">
+      {/* ── SECTION 3: Ticket Container — responsive grid: ticket list (left,
+          ~69% on desktop) + Quick Actions/Insights/Analytics sidebar (right,
+          ~31%), stacking to a single column below the lg breakpoint. Both
+          columns carry min-w-0 so long ticket content can never force the
+          grid (and the page) wider than the viewport. ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(280px,0.9fr)] gap-6">
 
-          {/* Main Ticket Area */}
-          <div className="flex-1 min-w-0">
+        {/* Ticket List — only this area has internal scrolling. Infinite
+            scroll appends pages as the user nears the bottom of THIS
+            container — the rest of the page never scrolls to load more. */}
+        <div className="min-w-0">
+          <div
+            ref={scrollContainerRef}
+            data-tour="ticket-list"
+            className="w-full max-h-[900px] overflow-y-auto overscroll-behavior-contain scroll-smooth px-4 lg:px-6 py-4"
+          >
+            {viewMode === 'list' ? (
+              <TicketList
+                tickets={loadedTickets as any}
+                showClient={user.role !== 'client'}
+                // Developer assignment is internal — never shown to clients (R15).
+                showAssignee={user.role !== 'developer' && user.role !== 'client'}
+                developers={developers}
+                userRole={user.role}
+                onAssignmentComplete={onAssignmentComplete}
+                emptyMessage={
+                  user.role === 'client'
+                    ? "You haven't submitted any tickets yet. Create your first ticket to get started!"
+                    : user.role === 'developer'
+                    ? "No tickets assigned to you yet."
+                    : "No tickets found matching your filters."
+                }
+              />
+            ) : (
+              <TicketGrid
+                tickets={loadedTickets as any}
+                showClient={user.role !== 'client'}
+                // Developer assignment is internal — never shown to clients (R15).
+                showAssignee={user.role !== 'developer' && user.role !== 'client'}
+                developers={developers}
+                userRole={user.role}
+                onAssignmentComplete={onAssignmentComplete}
+                emptyMessage={
+                  user.role === 'client'
+                    ? "You haven't submitted any tickets yet."
+                    : user.role === 'developer'
+                    ? "No tickets assigned to you yet."
+                    : "No tickets found matching your filters."
+                }
+              />
+            )}
 
-            {/* Ticket List — only this area has internal scrolling */}
-            <div
-              data-tour="ticket-list"
-              className="w-full max-h-[calc(100dvh-300px)] overflow-y-auto overscroll-behavior-contain scroll-smooth px-4 lg:px-6 py-4"></div>
-                {viewMode === 'list' ? (
-                <TicketList
-                  tickets={tickets as any}
-                  showClient={user.role !== 'client'}
-                  // Developer assignment is internal — never shown to clients (R15).
-                  showAssignee={user.role !== 'developer' && user.role !== 'client'}
-                  developers={developers}
-                  userRole={user.role}
-                  onAssignmentComplete={onAssignmentComplete}
-                  emptyMessage={
-                    user.role === 'client'
-                      ? "You haven't submitted any tickets yet. Create your first ticket to get started!"
-                      : user.role === 'developer'
-                      ? "No tickets assigned to you yet."
-                      : "No tickets found matching your filters."
-                  }
-                />
-              ) : (
-                <TicketGrid
-                  tickets={tickets as any}
-                  showClient={user.role !== 'client'}
-                  // Developer assignment is internal — never shown to clients (R15).
-                  showAssignee={user.role !== 'developer' && user.role !== 'client'}
-                  developers={developers}
-                  userRole={user.role}
-                  onAssignmentComplete={onAssignmentComplete}
-                  emptyMessage={
-                    user.role === 'client'
-                      ? "You haven't submitted any tickets yet."
-                      : user.role === 'developer'
-                      ? "No tickets assigned to you yet."
-                      : "No tickets found matching your filters."
-                  }
-                />
-              )}
+            {/* Bottom sentinel — becomes visible slightly before the actual
+                bottom (rootMargin on the observer), triggering the next
+                20-ticket batch. */}
+            <div ref={loadMoreRef} aria-hidden="true" />
 
-              {/* ── Server-side Pagination — always reserves space to prevent CLS ── */}
-              <div data-tour="ticket-pagination" style={{ minHeight: 40 }} className="flex items-center justify-between mt-4 px-1 pb-4">
-              {pagination && pagination.totalPages > 1 ? (
-                <>
-                  <p className="text-xs text-muted-foreground">
-                    Page {pagination.page} of {pagination.totalPages}
-                    {' '}({pagination.total} total)
-                  </p>
-                  <div className="flex items-center gap-1">
-                    <Button variant="outline" size="sm" onClick={() => goToPage(pagination.page - 1)} disabled={pagination.page <= 1} className="h-8 w-8 p-0 rounded-lg" aria-label="Previous page">
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
-                      const startPage = Math.max(1, pagination.page - 2)
-                      const pageNum = startPage + i
-                      if (pageNum > pagination.totalPages) return null
-                      return (
-                        <Button key={pageNum} variant={pageNum === pagination.page ? 'default' : 'outline'} size="sm" onClick={() => goToPage(pageNum)} className={cn('h-8 w-8 p-0 rounded-lg text-xs', pageNum === pagination.page ? '' : 'text-muted-foreground')}>
-                          {pageNum}
-                        </Button>
-                      )
-                    })}
-                    <Button variant="outline" size="sm" onClick={() => goToPage(pagination.page + 1)} disabled={pagination.page >= pagination.totalPages} className="h-8 w-8 p-0 rounded-lg" aria-label="Next page">
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <div className="text-xs text-muted-foreground">
-                  {pagination ? `${pagination.total} ticket${pagination.total !== 1 ? 's' : ''} total` : ''}
+            {/* ── Infinite-scroll status — always reserves space to prevent CLS ── */}
+            <div data-tour="ticket-pagination" style={{ minHeight: 40 }} className="flex items-center justify-center px-1 py-3">
+              {loadingMore ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Loading more tickets...
                 </div>
-              )}
-              </div>
-            </div>
-
-            {/* Right Panel (independent scroll) */}
-            <div data-tour="tickets-right-panel" className="hidden lg:block w-[320px] xl:w-[280px] shrink-0 border-l border-border/50 overflow-y-auto overscroll-behavior-contain bg-background/50">
-              <div className="p-4">
-                <TicketRightPanel userRole={user.role} />
-              </div>
+              ) : !hasMore && loadedTickets.length > 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No more tickets — {loadedTickets.length} of {pagination?.total ?? loadedTickets.length} loaded
+                </p>
+              ) : null}
             </div>
           </div>
         </div>
+
+        {/* Right Panel (independent scroll) — Quick Actions / Analytics /
+            Insights, unchanged content, now a true grid sibling of the ticket
+            list instead of nested beneath it. */}
+        <aside data-tour="tickets-right-panel" className="min-w-0 lg:border-l lg:border-border/50 overflow-y-auto overscroll-behavior-contain bg-background/50">
+          <div className="p-4">
+            <TicketRightPanel userRole={user.role} />
+          </div>
+        </aside>
+      </div>
     </div>
   )
 }

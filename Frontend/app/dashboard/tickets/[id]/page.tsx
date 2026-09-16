@@ -29,9 +29,10 @@ const TicketReviewSection = dynamic(() => import('@/components/dashboard/ticket-
 // ── Streaming Wrappers — each fetches its own data, renders inside Suspense ──
 
 async function CommentsWrapper({ ticketId, user }: { ticketId: number; user: any }) {
-  const { getComments } = await import('@/app/actions/tickets')
-  const [comments, { getAttachments }] = await Promise.all([
+  const { getComments, getCommentsCount } = await import('@/app/actions/tickets')
+  const [comments, totalCommentsCount, { getAttachments }] = await Promise.all([
     getComments(ticketId, 20, 0),
+    getCommentsCount(ticketId),
     import('@/app/actions/attachments'),
   ])
   const attachments = await getAttachments(ticketId)
@@ -39,6 +40,7 @@ async function CommentsWrapper({ ticketId, user }: { ticketId: number; user: any
     <CommentSection
       ticketId={ticketId}
       comments={comments}
+      totalCount={totalCommentsCount}
       userRole={user.role}
       attachments={attachments}
       currentUserId={user.id}
@@ -541,7 +543,7 @@ async function SidebarAttachmentsWrapper({ ticketId }: { ticketId: number }) {
 
 async function ActivitySidebarWrapper({ ticketId, isClient }: { ticketId: number; isClient: boolean }) {
   const { getTicketHistory, getTicketHistoryCount } = await import('@/app/actions/tickets')
-  const { TicketActivityTimeline } = await import('@/components/dashboard/ticket-activity')
+  const { TicketActivityInfinite } = await import('@/components/dashboard/ticket-activity-infinite')
   const [history, totalCount] = await Promise.all([
     getTicketHistory(ticketId, 20, 0),
     getTicketHistoryCount(ticketId),
@@ -555,14 +557,12 @@ async function ActivitySidebarWrapper({ ticketId, isClient }: { ticketId: number
         <History className="h-3.5 w-3.5 text-muted-foreground" />
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Activity</h3>
       </div>
-      <div className="max-h-[360px] overflow-y-auto overscroll-behavior-contain scroll-smooth pr-1 -mr-1">
-        <TicketActivityTimeline history={history} isClient={isClient} />
-      </div>
-      {totalCount > 20 && (
-        <p className="text-xs text-center text-muted-foreground mt-2 pt-2 border-t border-border/30">
-          +{totalCount - 20} more entries &middot; <span className="text-primary cursor-pointer hover:underline">Load More</span>
-        </p>
-      )}
+      <TicketActivityInfinite
+        ticketId={ticketId}
+        isClient={isClient}
+        initialHistory={history}
+        initialTotalCount={totalCount}
+      />
     </div>
   )
 }

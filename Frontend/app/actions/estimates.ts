@@ -4,13 +4,14 @@ import { cache } from 'react'
 import { getPortalUrl } from '@/lib/urls'
 import { getCurrentUser as getUser } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
-import { ticket, ticketHistory, comment, user, project, revisionHistory } from '@/lib/db/schema'
+import { ticket, ticketHistory, comment, user, project, revisionHistory, supportWallet } from '@/lib/db/schema'
 import { and, eq, desc, isNull, isNotNull, ne, count, inArray, gte, lte } from 'drizzle-orm'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import type { UserRole } from '@/lib/types'
 import { dispatchNotification } from '@/lib/notify-all'
 import { AUTO_APPROVAL_DAYS, AUTO_APPROVAL_REMINDER_DAYS, VALIDATION, validateField } from '@/lib/types'
 import { wrapServerAction } from '@/lib/performance-profiler'
+import { checkWalletSufficiency, buildManagerApprovalInsufficientError, buildWalletInsufficientError } from '@/lib/wallet-validation'
 
 // ============================================================================
 // ESTIMATE APPROVAL ACTIONS
@@ -42,6 +43,19 @@ export const submitEstimate = wrapServerAction('submitEstimate', async function 
     throw new Error('Estimated hours must be a positive number')
   }
 
+  // Section 3/4/5: a manager/admin must never be able to propose (and send
+  // to the client) an estimate the client's wallet cannot actually support —
+  // no role bypass for this rule (unlike the 10% creation threshold, which
+  // only ever applied to clients). Re-fetched fresh here, never trusted from
+  // an earlier read (section 10).
+  if (t.clientId) {
+    const [wallet] = await db.select().from(supportWallet).where(eq(supportWallet.clientId, t.clientId)).limit(1)
+    if (wallet) {
+      const sufficiencyCheck = checkWalletSufficiency(data.estimatedHours, wallet.remainingHours)
+      if (!sufficiencyCheck.ok) throw buildWalletInsufficientError(data.estimatedHours, wallet.remainingHours)
+    }
+  }
+
   const approvalDeadline = new Date()
   approvalDeadline.setDate(approvalDeadline.getDate() + AUTO_APPROVAL_DAYS)
   const estimateSubmittedAt = new Date()
@@ -71,6 +85,7 @@ export const submitEstimate = wrapServerAction('submitEstimate', async function 
   await dispatchNotification({
     eventType: 'estimate_requested',
     triggeredBy: currentUser.id,
+    projectId: t.projectId ?? undefined,
     // Requirement #9 — approval email on EVERY distinct submission cycle
     // (resubmitting after rejection is a NEW cycle). Scoped to THIS
     // estimateSubmittedAt so a later resubmission always emails again, while
@@ -127,6 +142,19 @@ export const approveEstimate = wrapServerAction('approveEstimate', async functio
   if (t.status !== 'estimate_pending') throw new Error('Estimate is not pending your approval')
   if (!t.estimatedHours) throw new Error('No estimate found')
 
+  // Section 4 (manager-approval-stage recheck) + section 10 (never trust a
+  // stale browser balance): re-fetch the wallet fresh right here, immediately
+  // before the approval commits. If the balance dropped since the estimate
+  // was submitted (another ticket closed and consumed hours in the interim,
+  // for example), the approval must not be allowed to proceed.
+  if (t.clientId) {
+    const [wallet] = await db.select().from(supportWallet).where(eq(supportWallet.clientId, t.clientId)).limit(1)
+    if (wallet) {
+      const sufficiencyCheck = checkWalletSufficiency(t.estimatedHours, wallet.remainingHours)
+      if (!sufficiencyCheck.ok) throw buildManagerApprovalInsufficientError(t.estimatedHours, wallet.remainingHours)
+    }
+  }
+
   await db
     .update(ticket)
     .set({
@@ -142,9 +170,9 @@ export const approveEstimate = wrapServerAction('approveEstimate', async functio
     userId: currentUser.id,
     action: 'estimate_approved',
     oldValue: 'estimate_pending',
-    // Just the hours — formatActivityEntry() builds the full
-    // "[Name] (Client) estimate approved (Xh)" line from this dynamically.
-    newValue: `${t.estimatedHours}h`,
+    // Secondary detail line under "Estimate approved By [actor]"
+    // (see formatActivityEntry() / DETAIL_LINE_ACTIONS in ticket-activity-format.ts).
+    newValue: `${t.estimatedHours}h estimate approved`,
   })
 
   // Notify manager
@@ -264,9 +292,11 @@ export const rejectEstimate = wrapServerAction('rejectEstimate', async function 
   await db.insert(ticketHistory).values({
     ticketId,
     userId: currentUser.id,
-    action: 'revision_requested',
+    action: 'estimate_rejected',
     oldValue: 'estimate_pending',
-    newValue: `estimate_rejected: ${reason}`,
+    // Human-readable detail line — must never leak the raw DB action code
+    // ('estimate_rejected') into client-facing text.
+    newValue: `estimate rejected: ${reason}`,
   })
 
   // Notify manager
@@ -468,6 +498,7 @@ export const updateEstimate = wrapServerAction('updateEstimate', async function 
     eventType: 'estimate_updated',
     triggeredBy: currentUser.id,
     dedup: { scope: `ticket:${ticketId}` },
+    projectId: t.projectId ?? undefined,
     recipients: [
       {
         userId: t.clientId,
@@ -511,6 +542,19 @@ export const requestAdditionalHours = wrapServerAction('requestAdditionalHours',
     throw new Error('Additional hours must be a positive number')
   }
 
+  // Section 5: additional-hours is another place hours are "estimated/
+  // allocated" — check against the wallet the same way a fresh estimate
+  // would be. Compares the NEW TOTAL (existing + additional) against the
+  // client's current remaining balance; no role bypass.
+  if (t.clientId) {
+    const [wallet] = await db.select().from(supportWallet).where(eq(supportWallet.clientId, t.clientId)).limit(1)
+    if (wallet) {
+      const newTotal = (t.estimatedHours || 0) + additionalHours
+      const sufficiencyCheck = checkWalletSufficiency(newTotal, wallet.remainingHours)
+      if (!sufficiencyCheck.ok) throw buildWalletInsufficientError(newTotal, wallet.remainingHours)
+    }
+  }
+
   const additionalHoursDeadline = new Date()
   additionalHoursDeadline.setDate(additionalHoursDeadline.getDate() + AUTO_APPROVAL_DAYS)
 
@@ -540,6 +584,7 @@ export const requestAdditionalHours = wrapServerAction('requestAdditionalHours',
     // Requirement #9 — cycle-aware, matching additional_hours_approved: a
     // later request (new deadline) is a distinct cycle and must email again.
     dedup: { scope: `ticket:${ticketId}:hours:${additionalHoursDeadline.getTime()}` },
+    projectId: t.projectId ?? undefined,
     recipients: [
       {
         userId: t.clientId,
@@ -590,6 +635,16 @@ export const approveAdditionalHours = wrapServerAction('approveAdditionalHours',
   if (t.additionalHoursApproved) throw new Error('Additional hours already approved')
 
   const newTotalHours = (t.estimatedHours || 0) + t.additionalHoursRequested
+
+  // Section 4/5/10: re-check at the approval stage, against the CURRENT
+  // wallet balance, not a value trusted from when the request was made.
+  if (t.clientId) {
+    const [wallet] = await db.select().from(supportWallet).where(eq(supportWallet.clientId, t.clientId)).limit(1)
+    if (wallet) {
+      const sufficiencyCheck = checkWalletSufficiency(newTotalHours, wallet.remainingHours)
+      if (!sufficiencyCheck.ok) throw buildManagerApprovalInsufficientError(newTotalHours, wallet.remainingHours)
+    }
+  }
 
   await db
     .update(ticket)
@@ -866,6 +921,7 @@ export const processEstimateAutoApprovals = wrapServerAction('processEstimateAut
       eventType: 'estimate_auto_approved',
       triggeredBy: 'system',
       dedup: { scope: `ticket:${t.id}` },
+      projectId: t.projectId ?? undefined,
       recipients: [
         {
           userId: t.clientId,
@@ -947,6 +1003,7 @@ export const processEstimateAutoApprovals = wrapServerAction('processEstimateAut
       eventType: 'additional_hours_auto_approved',
       triggeredBy: 'system',
       dedup: { scope: `ticket:${t.id}` },
+      projectId: t.projectId ?? undefined,
       recipients: [
         {
           userId: t.clientId,
@@ -1080,6 +1137,7 @@ export const sendEstimateReminders = wrapServerAction('sendEstimateReminders', a
       eventType: 'estimate_reminder',
       triggeredBy: 'system',
       dedup: { scope: `ticket:${t.id}`, windowMinutes: 24 * 60 },
+      projectId: t.projectId ?? undefined,
       recipients: [
         {
           userId: t.clientId,

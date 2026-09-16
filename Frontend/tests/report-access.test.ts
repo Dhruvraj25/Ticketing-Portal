@@ -156,7 +156,10 @@ test('ClientReportsView routes through the existing ticket_summary report, never
   assert.ok(!CLIENT_REPORTS_VIEW_SRC.includes("'/dashboard/tickets"), 'must never link straight to the ticket list')
   assert.match(CLIENT_REPORTS_VIEW_SRC, /report=ticket_summary/)
   assert.ok(!/report=(?!ticket_summary)[a-z_]+/.test(CLIENT_REPORTS_VIEW_SRC), 'must not introduce any report type other than ticket_summary')
-  assert.match(CLIENT_REPORTS_VIEW_SRC, /import \{ getReportData \} from '@\/app\/actions\/reports'/, 'must reuse the existing getReportData action')
+  // Phase 5 added getReportFormData to the same import statement (for the
+  // restored filter panel's dropdown options) — still the same shared
+  // '@/app/actions/reports' module, not a new one.
+  assert.match(CLIENT_REPORTS_VIEW_SRC, /import \{[^}]*\bgetReportData\b[^}]*\} from '@\/app\/actions\/reports'/, 'must reuse the existing getReportData action')
 })
 
 test('KNOWN ISSUE regression: each of the 4 cards maps to its own status — Total ≠ In Progress ≠ Pending ≠ Closed ≠ Total', () => {
@@ -198,13 +201,29 @@ test('KNOWN ISSUE regression: each card\'s href is built from its OWN status —
   assert.match(CLIENT_REPORTS_VIEW_SRC, /href=\{cardHref\(card\.status\)\}/)
 })
 
-test('ClientReportsView never renders the generic admin/manager report-type dropdown', () => {
-  // The ReportFilters TYPE is fine to import (it's the shared filters shape,
-  // e.g. useState<ReportFiltersType> — note the substring "<ReportFilters"
-  // also appears there, so match a real JSX tag boundary specifically);
-  // the DROPDOWN COMPONENT must never be rendered here.
-  assert.ok(!/<ReportFilters[\s/>]/.test(CLIENT_REPORTS_VIEW_SRC), 'a client must never see the generic multi-category report dropdown')
-  assert.ok(!CLIENT_REPORTS_VIEW_SRC.includes("from '@/components/dashboard/report-center/report-filters'"), 'must not even import the dropdown component')
+// NOTE: an earlier phase of this project deliberately kept ClientReportsView
+// free of the shared ReportFilters panel (4 quick-shortcut cards only). A
+// later, explicit user request ("PHASE 5 — RESTORE FILTER SECTION IN CLIENT
+// REPORTS") asked for a proper filter section here, reusing the existing
+// shared component rather than inventing a new one. This block replaces the
+// old "never renders ReportFilters" assertion with tests for the new,
+// intentional behavior — the 4 cards are additive, not replaced, and the
+// panel is scoped safely for the client role (see report-filters.tsx).
+test('ClientReportsView renders the shared ReportFilters panel (Phase 5 — filter section restored)', () => {
+  assert.match(CLIENT_REPORTS_VIEW_SRC, /<ReportFilters\s/, 'the shared filter panel must be rendered as a JSX tag')
+  // Loaded via the same dynamic import() pattern report-center-client.tsx
+  // already uses for this component (not a static import, and not a new path).
+  assert.match(CLIENT_REPORTS_VIEW_SRC, /import\('@\/components\/dashboard\/report-center\/report-filters'\)/, 'must reuse the existing shared component, not a new one')
+  assert.match(CLIENT_REPORTS_VIEW_SRC, /userRole=\{formData\.role/, 'must pass the caller\'s role so the panel can scope itself (hide Client field, narrow Report Type options)')
+})
+
+test('ClientReportsView still keeps its 4 quick-shortcut cards — the filter panel is additive, not a replacement', () => {
+  const matches = [...CLIENT_REPORTS_VIEW_SRC.matchAll(/title: '([^']+)'/g)].map(m => m[1])
+  assert.deepEqual(matches, ['Total Tickets', 'In Progress', 'Pending for Approval (Client)', 'Closed'])
+})
+
+test('ClientReportsView loads filter options via the existing getReportFormData action (no new form-data query)', () => {
+  assert.match(CLIENT_REPORTS_VIEW_SRC, /getReportFormData/)
 })
 
 // ─── report-center-client.tsx — admin/manager/developer experience unchanged ─

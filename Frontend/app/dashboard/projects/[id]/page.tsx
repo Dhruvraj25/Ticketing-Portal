@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/app/actions/tickets'
 import { getUserList } from '@/app/actions/users'
 import { getProjectById, getProjectDevelopers, getProjectDetailAnalytics, getModuleAnalytics, getProjectClientUsers } from '@/app/actions/projects'
 import { getModulesByProject } from '@/app/actions/modules'
+import { getTeamsProjectChannels, type ProjectTeamsChannelStatus } from '@/app/actions/teams'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { StatCard } from '@/components/dashboard/stat-card'
@@ -20,6 +21,8 @@ import { ProjectStats } from '@/components/dashboard/project-stats'
 import { ProjectAssignmentPanel } from '@/components/dashboard/project-assignment-panel'
 import { DeveloperAssignment } from '@/components/dashboard/developer-assignment'
 import { ProjectUsersSection } from '@/components/dashboard/project-users-section'
+import { ProjectTeamsChannelSection } from '@/components/dashboard/project-teams-channel-section'
+import { ProjectNotificationPreferencesSection } from '@/components/dashboard/project-notification-preferences-section'
 import { ProjectAnalyticsSection } from '@/components/dashboard/project-analytics-section'
 
 export default async function ProjectDetailPage({
@@ -71,6 +74,18 @@ export default async function ProjectDetailPage({
         ])
         userList = users
         projectClientUsers = projUsers
+      } catch {}
+    }
+
+    // Teams channel configuration is admin-only (matches the backend routes'
+    // own requireAdminOnly gate) — never fetched for a project_manager.
+    // Filters the same status-only list the admin Teams page already uses;
+    // no new backend surface, and no code path here ever sees the secret URL.
+    let teamsChannelStatus: ProjectTeamsChannelStatus | null = null
+    if (user.role === 'admin') {
+      try {
+        const { projects } = await getTeamsProjectChannels()
+        teamsChannelStatus = projects.find((p) => p.projectId === projectId) ?? null
       } catch {}
     }
 
@@ -248,10 +263,26 @@ export default async function ProjectDetailPage({
             {isManagerOrAdmin && (
               <ProjectUsersSection
                 projectId={projectId}
+                projectName={project.projectName}
                 initialUsers={projectClientUsers}
                 canManage={isManagerOrAdmin}
                 canActivate={user.role === 'admin'}
               />
+            )}
+
+            {user.role === 'admin' && (
+              <ProjectTeamsChannelSection
+                projectId={projectId}
+                initialStatus={teamsChannelStatus}
+              />
+            )}
+
+            {/* Backend authorization (admin=any project, manager=only projects
+                they manage) is the real gate — enforced server-side on every
+                load/save. isManagerOrAdmin only avoids rendering the widget for
+                roles that can never pass that check (client/developer). */}
+            {isManagerOrAdmin && (
+              <ProjectNotificationPreferencesSection projectId={projectId} />
             )}
 
             {isManagerOrAdmin && <DeveloperAssignment projectId={projectId} />}

@@ -173,11 +173,93 @@ async function loadClientPreferences(clientId: string, actor: { id: string; role
   }
 }
 
-// ─── Public server actions ────────────────────────────────────────────────
+// ─── Project-wise listing (Admin → Clients page) ──────────────────────────
+// Notification preferences are managed PROJECT-WISE for client accounts (see
+// app/actions/project-notification-preferences.ts and
+// components/dashboard/project-notification-preferences-section.tsx — the
+// SAME backend API this page's "Notification Preferences" button now leads
+// to). This listing only tells the Admin/Manager which projects exist and
+// which client accounts share each project's settings; it reads no
+// preference rows itself.
+
+export interface ManageableProjectForNotifications {
+  id: number
+  projectName: string
+  projectCode: string
+  clientAccounts: { id: string; name: string; email: string }[]
+}
+
+/**
+ * List projects the current user may manage CLIENT notification preferences
+ * for. Admin → every project. Project Manager → only projects they manage
+ * (project.managerId) — the same scope the backend's PUT endpoint enforces,
+ * so a project only ever appears here if this user can actually save changes
+ * to it.
+ */
+export const getManageableProjectsForNotifications = wrapServerAction(
+  'getManageableProjectsForNotifications',
+  async function getManageableProjectsForNotifications(): Promise<ManageableProjectForNotifications[]> {
+    const currentUser = await getCurrentUser()
+    if (currentUser.role !== 'admin' && currentUser.role !== 'project_manager') {
+      throw new Error('Access denied')
+    }
+
+    const projectRows = currentUser.role === 'admin'
+      ? await db
+          .select({ id: projectTable.id, projectName: projectTable.projectName, projectCode: projectTable.projectCode })
+          .from(projectTable)
+          .orderBy(projectTable.projectName)
+      : await db
+          .select({ id: projectTable.id, projectName: projectTable.projectName, projectCode: projectTable.projectCode })
+          .from(projectTable)
+          .where(eq(projectTable.managerId, currentUser.id))
+          .orderBy(projectTable.projectName)
+
+    if (projectRows.length === 0) return []
+
+    // project_client is the canonical set of ALL client users who can see a
+    // project (including its primary/owning client — see users.ts), so this
+    // is the same "client accounts of this project" list the project detail
+    // page's Client Accounts panel already uses.
+    const projectIds = projectRows.map(p => p.id)
+    const clientRows = await db
+      .select({
+        projectId: projectClientTable.projectId,
+        id: userTable.id,
+        name: userTable.name,
+        email: userTable.email,
+      })
+      .from(projectClientTable)
+      .innerJoin(userTable, eq(projectClientTable.userId, userTable.id))
+      .where(inArray(projectClientTable.projectId, projectIds))
+      .orderBy(userTable.name)
+
+    const clientsByProject = new Map<number, { id: string; name: string; email: string }[]>()
+    for (const row of clientRows) {
+      const list = clientsByProject.get(row.projectId) ?? []
+      list.push({ id: row.id, name: row.name, email: row.email })
+      clientsByProject.set(row.projectId, list)
+    }
+
+    return projectRows.map(p => ({
+      id: p.id,
+      projectName: p.projectName,
+      projectCode: p.projectCode,
+      clientAccounts: clientsByProject.get(p.id) ?? [],
+    }))
+  },
+)
 
 /**
  * List clients the current user may manage notification preferences for.
  * Admin → all clients. Project Manager → clients of projects they manage.
+ *
+ * @deprecated Retained only as the read/write layer behind the legacy
+ * per-client notification preferences page (no longer linked from the
+ * primary Admin → Clients UI, which is now project-wise — see
+ * getManageableProjectsForNotifications above). Not removed: the underlying
+ * `notification_preferences` table and its data must be preserved, and a
+ * project with no explicit preference row still inherits from it.
  */
 export const getManageableClients = wrapServerAction('getManageableClients', async function getManageableClients(): Promise<ManageableClient[]> {
   const currentUser = await getCurrentUser()

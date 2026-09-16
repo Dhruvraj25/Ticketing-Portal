@@ -50,6 +50,14 @@ const STATUS_OPTIONS = [
   { value: TicketStatus.REQUEST_FOR_REVISION, label: 'Requested for Revision' },
 ]
 
+// Radix Select doesn't allow an empty-string item value, so "All X" options
+// use this sentinel instead. Every place that reads a filter's state value
+// must treat this the same as "not selected" (see handleApply/activeFilterCount)
+// — a prior version of this component forgot that in handleApply, so picking
+// "All projects" after having a project selected sent `projectId: NaN` to the
+// backend instead of clearing the filter.
+const ALL_VALUE = '__all__'
+
 const PRIORITY_OPTIONS = [
   { value: 'low', label: 'LOW' },
   { value: 'medium', label: 'MEDIUM' },
@@ -74,12 +82,12 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
     const filters: ReportFiltersType = { reportType: typeOverride ?? reportType }
     if (dateFrom) filters.dateFrom = dateFrom
     if (dateTo) filters.dateTo = dateTo
-    if (projectId) filters.projectId = Number(projectId)
-    if (moduleId) filters.moduleId = Number(moduleId)
-    if (developerId) filters.developerId = developerId
-    if (clientId) filters.clientId = clientId
-    if (status) filters.status = status as any
-    if (priority) filters.priority = priority as any
+    if (projectId && projectId !== ALL_VALUE) filters.projectId = Number(projectId)
+    if (moduleId && moduleId !== ALL_VALUE) filters.moduleId = Number(moduleId)
+    if (developerId && developerId !== ALL_VALUE) filters.developerId = developerId
+    if (clientId && clientId !== ALL_VALUE) filters.clientId = clientId
+    if (status && status !== ALL_VALUE) filters.status = status as any
+    if (priority && priority !== ALL_VALUE) filters.priority = priority as any
     onApply(filters)
   }
 
@@ -95,7 +103,18 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
     onApply({ reportType })
   }
 
-  const activeFilterCount = [dateFrom, dateTo, projectId, moduleId, developerId, clientId, status, priority].filter(Boolean).length
+  const activeFilterCount = [dateFrom, dateTo, projectId, moduleId, developerId, clientId, status, priority].filter(v => v && v !== ALL_VALUE).length
+
+  // The Client field is meaningless (and a real data-exposure risk) for a
+  // client-role caller: they can only ever see their own org's data regardless
+  // of what they pick (every client-accessible report handler AND-scopes the
+  // query to the caller's own org before applying any filter-supplied clientId
+  // — see app/actions/reports/ticket-reports.ts/project-reports.ts/
+  // wallet-reports.ts), so showing them a picker of every OTHER client
+  // company's name and email would leak business-confidential data for zero
+  // functional benefit. Hide the field entirely rather than just leaving it
+  // inert.
+  const showClientFilter = userRole !== 'client'
 
   // Only offer report types this role is actually authorized to run — the
   // server (checkAccess in app/actions/reports/queries.ts) is the real gate,
@@ -108,9 +127,11 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
 
   return (
     <div className="space-y-4">
-      {/* Report Type + Quick Actions */}
-      <div className="flex items-start gap-4">
-        <div className="flex-1 space-y-1.5">
+      {/* Report Type + Quick Actions — wraps onto its own row below `sm` so the
+          two action buttons never get squeezed against (or overlap) the
+          Report Type select on a narrow viewport; unchanged on desktop. */}
+      <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
+        <div className="w-full sm:flex-1 space-y-1.5 min-w-0">
           <Label htmlFor="report-type">Report Type</Label>
           <Select value={reportType} onValueChange={(v) => { setReportType(v as ReportType); handleApply(v as ReportType) }}>
             <SelectTrigger id="report-type" className="h-11 rounded-xl bg-white dark:bg-slate-900 border-border">
@@ -131,23 +152,23 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
           </Select>
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowFilters(!showFilters)}
-          className={`mt-6 rounded-xl h-11 ${activeFilterCount > 0 ? 'border-primary text-primary' : ''}`}
-        >
-          <Filter className="mr-2 h-4 w-4" />
-          Filters
-          {activeFilterCount > 0 && (
-            <span className="ml-2 h-5 w-5 rounded-full bg-primary text-primary-foreground text-[11px] font-bold flex items-center justify-center">
-              {activeFilterCount}
-            </span>
-          )}
-        </Button>
+        <div className="flex items-center gap-3 sm:mt-6 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowFilters(!showFilters)}
+            className={`rounded-xl h-11 flex-1 sm:flex-none ${activeFilterCount > 0 ? 'border-primary text-primary' : ''}`}
+          >
+            <Filter className="mr-2 h-4 w-4" />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="ml-2 h-5 w-5 rounded-full bg-primary text-primary-foreground text-[11px] font-bold flex items-center justify-center shrink-0">
+                {activeFilterCount}
+              </span>
+            )}
+          </Button>
 
-        <div className="mt-6">
-          <Button onClick={() => handleApply()} size="sm" className="rounded-xl h-11 bg-black text-white hover:bg-black/80">
+          <Button onClick={() => handleApply()} size="sm" className="rounded-xl h-11 flex-1 sm:flex-none bg-black text-white hover:bg-black/80">
             <Search className="mr-2 h-4 w-4" />
             Generate
           </Button>
@@ -164,48 +185,51 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
             className="overflow-hidden"
           >
             <div className="bg-white dark:bg-slate-900 border border-border rounded-2xl p-5 space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <h3 className="text-sm font-semibold text-foreground">Advanced Filters</h3>
-                <Button variant="ghost" size="sm" onClick={handleReset} className="text-xs text-muted-foreground h-7">
+                <Button variant="ghost" size="sm" onClick={handleReset} className="text-xs text-muted-foreground h-7 shrink-0">
                   <X className="mr-1 h-3 w-3" />
                   Reset
                 </Button>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="space-y-1.5">
+              {/* Mobile: one column, full width, no overlap. Tablet: two
+                  columns wrap cleanly. Desktop: four columns in a row. */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="space-y-1.5 min-w-0">
                   <Label className="text-xs">Date From</Label>
                   <div className="relative">
                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                    <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="pl-9 h-10 rounded-xl bg-white dark:bg-slate-900 border-border" />
+                    <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="pl-9 h-10 rounded-xl bg-white dark:bg-slate-900 border-border w-full" />
                   </div>
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 min-w-0">
                   <Label className="text-xs">Date To</Label>
                   <div className="relative">
                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                    <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="pl-9 h-10 rounded-xl bg-white dark:bg-slate-900 border-border" />
+                    <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="pl-9 h-10 rounded-xl bg-white dark:bg-slate-900 border-border w-full" />
                   </div>
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 min-w-0">
                   <Label className="text-xs">Project</Label>
                   <Select value={projectId} onValueChange={setProjectId}>
-                    <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border">
+                    <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border w-full">
                       <SelectValue placeholder="All projects" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__all__">All projects</SelectItem>
-                      {projects.map(p => (                          <SelectItem key={p.id} value={String(p.id)} className="truncate">
-                            <span className="truncate">{p.projectCode} — {p.projectName}</span>
-                          </SelectItem>
+                      {projects.map(p => (
+                        <SelectItem key={p.id} value={String(p.id)} className="truncate">
+                          <span className="truncate">{p.projectCode} — {p.projectName}</span>
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 min-w-0">
                   <Label className="text-xs">Support Engineer / Developer</Label>
                   <Select value={developerId} onValueChange={setDeveloperId}>
-                    <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border">
+                    <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border w-full">
                       <SelectValue placeholder="All support engineers / developers" />
                     </SelectTrigger>
                     <SelectContent>
@@ -216,10 +240,10 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 min-w-0">
                   <Label className="text-xs">Module / Service Area</Label>
                   <Select value={moduleId} onValueChange={setModuleId}>
-                    <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border">
+                    <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border w-full">
                       <SelectValue placeholder="All modules / service areas" />
                     </SelectTrigger>
                     <SelectContent>
@@ -232,10 +256,11 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5">
+                {showClientFilter && (
+                <div className="space-y-1.5 min-w-0">
                   <Label className="text-xs">Client</Label>
                   <Select value={clientId} onValueChange={setClientId}>
-                    <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border">
+                    <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border w-full">
                       <SelectValue placeholder="All clients" />
                     </SelectTrigger>
                     <SelectContent>
@@ -246,10 +271,11 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5">
+                )}
+                <div className="space-y-1.5 min-w-0">
                   <Label className="text-xs">Status</Label>
                   <Select value={status} onValueChange={setStatus}>
-                    <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border">
+                    <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border w-full">
                       <SelectValue placeholder="All statuses" />
                     </SelectTrigger>
                     <SelectContent>
@@ -260,10 +286,10 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 min-w-0">
                   <Label className="text-xs">Priority</Label>
                   <Select value={priority} onValueChange={setPriority}>
-                    <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border">
+                    <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border w-full">
                       <SelectValue placeholder="All priorities" />
                     </SelectTrigger>
                     <SelectContent>

@@ -3,13 +3,14 @@
 import { useState, useRef, useCallback, memo } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { addComment } from '@/app/actions/tickets'
+import { addComment, getComments } from '@/app/actions/tickets'
 import { saveAttachment } from '@/app/actions/attachments'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
+import { useInfiniteTicketList, useLoadMoreSentinel } from '@/lib/use-infinite-ticket-list'
 import { formatDistanceToNow } from 'date-fns'
 import {
   MessageSquare,
@@ -28,9 +29,13 @@ import type { CommentWithUser, UserRole } from '@/lib/types'
 import { USER_ROLE_CONFIG, VALIDATION } from '@/lib/types'
 import type { AttachmentWithUser } from '@/app/actions/attachments'
 
+const COMMENTS_PAGE_SIZE = 20
+
 interface CommentSectionProps {
   ticketId: number
   comments: CommentWithUser[]
+  /** Total comment count (across ALL pages) — drives when infinite scroll stops. */
+  totalCount?: number
   userRole: UserRole
   attachments?: AttachmentWithUser[]
   currentUserId?: string
@@ -61,6 +66,7 @@ function getFileTypeLabel(mimeType: string, filename: string): string {
 export const CommentSection = memo(function CommentSection({
   ticketId,
   comments,
+  totalCount,
   userRole,
   attachments = [],
   currentUserId,
@@ -76,8 +82,37 @@ export const CommentSection = memo(function CommentSection({
   const [lightboxFilename, setLightboxFilename] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const commentsListRef = useRef<HTMLDivElement>(null)
+  const loadMoreRef = useRef<HTMLDivElement>(null)
 
   const canAddInternalComments = userRole !== 'client'
+
+  // ── Infinite scroll (comments list only — posting/attachments untouched) ──
+  // Comments are newest-first (see getComments' desc(createdAt) ordering), so
+  // a fresh page 1 (e.g. right after posting a new comment + router.refresh())
+  // naturally includes the new comment at the top. `comments[0]?.id` changes
+  // exactly when the server has actually re-fetched page 1 with new data —
+  // that's the reset signal, so scrolled-in older pages are correctly
+  // discarded only when there's genuinely new page-1 data to replace them with.
+  const effectiveTotal = totalCount ?? comments.length
+  const resetKey = comments.length > 0 ? comments[0].id : 'empty'
+
+  const {
+    tickets: loadedComments,
+    hasMore: hasMoreComments,
+    loadingMore: loadingMoreComments,
+    loadMore: loadMoreComments,
+  } = useInfiniteTicketList<CommentWithUser>({
+    initialTickets: comments,
+    initialHasMore: comments.length < effectiveTotal,
+    fetchPage: async (page) => {
+      const offset = (page - 1) * COMMENTS_PAGE_SIZE
+      const batch = await getComments(ticketId, COMMENTS_PAGE_SIZE, offset)
+      return { tickets: batch, hasMore: offset + batch.length < effectiveTotal }
+    },
+    resetKey,
+  })
+
+  useLoadMoreSentinel(commentsListRef, loadMoreRef, loadMoreComments, hasMoreComments)
 
   const handleFileUpload = useCallback(
     async (file: File) => {
@@ -176,7 +211,7 @@ export const CommentSection = memo(function CommentSection({
             <MessageSquare className="h-4 w-4 text-primary" />
           </div>
           <h3 className="font-semibold text-foreground text-sm">Comments</h3>
-          <span className="text-xs text-muted-foreground">({comments.length})</span>
+          <span className="text-xs text-muted-foreground">({effectiveTotal})</span>
           {attachments.length > 0 && (
             <>
               <span className="text-muted-foreground/30 mx-0.5">|</span>
@@ -256,10 +291,10 @@ export const CommentSection = memo(function CommentSection({
         style={{ maxHeight }}
       >
         <div className="p-5 space-y-3">
-          {comments.length === 0 ? (
+          {loadedComments.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">No comments yet. Be the first to comment!</p>
           ) : (
-            comments.map((comment, i) => (
+            loadedComments.map((comment, i) => (
               <div
                 key={comment.id}
                 className={cn(
@@ -334,6 +369,13 @@ export const CommentSection = memo(function CommentSection({
                 </div>
               </div>
             ))
+          )}
+          <div ref={loadMoreRef} aria-hidden="true" />
+          {loadingMoreComments && (
+            <div className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Loading more comments...
+            </div>
           )}
         </div>
       </div>

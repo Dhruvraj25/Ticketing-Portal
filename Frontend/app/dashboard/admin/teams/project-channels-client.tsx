@@ -57,6 +57,8 @@ export function ProjectChannelsClient({ initialProjects }: Props) {
   const [dialogProject, setDialogProject] = useState<ProjectTeamsChannelStatus | null>(null)
   const [linkInput, setLinkInput] = useState('')
   const [enabledInput, setEnabledInput] = useState(true)
+  const [teamIdInput, setTeamIdInput] = useState('')
+  const [channelIdInput, setChannelIdInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [dialogError, setDialogError] = useState<string | null>(null)
   const [busyProjectId, setBusyProjectId] = useState<number | null>(null)
@@ -79,6 +81,8 @@ export function ProjectChannelsClient({ initialProjects }: Props) {
     setDialogProject(project)
     setLinkInput('')
     setEnabledInput(true)
+    setTeamIdInput('')
+    setChannelIdInput('')
     setDialogError(null)
   }
 
@@ -86,8 +90,13 @@ export function ProjectChannelsClient({ initialProjects }: Props) {
     setDialogProject(project)
     // The stored link is never sent to the client, so the field starts empty:
     // leaving it blank keeps the current link, entering a value replaces it.
+    // Team ID/Channel ID are not secrets, but are also left blank here —
+    // leaving both blank keeps whatever is already configured; re-entering
+    // both replaces them (see the "must both be provided together" rule).
     setLinkInput('')
     setEnabledInput(project.enabled)
+    setTeamIdInput('')
+    setChannelIdInput('')
     setDialogError(null)
   }
 
@@ -100,12 +109,23 @@ export function ProjectChannelsClient({ initialProjects }: Props) {
       return
     }
 
+    if (teamIdInput.trim() && !channelIdInput.trim()) {
+      setDialogError('Enter the Channel ID too — both are required together to enable @mentions.')
+      return
+    }
+    if (channelIdInput.trim() && !teamIdInput.trim()) {
+      setDialogError('Enter the Team ID too — both are required together to enable @mentions.')
+      return
+    }
+
     setSaving(true)
     setDialogError(null)
     try {
       const result = await saveTeamsProjectChannel(dialogProject.projectId, {
         ...(linkInput.trim() ? { webhookUrl: linkInput.trim() } : {}),
         enabled: enabledInput,
+        ...(teamIdInput.trim() ? { teamId: teamIdInput.trim() } : {}),
+        ...(channelIdInput.trim() ? { channelId: channelIdInput.trim() } : {}),
       })
 
       if (!result.success) {
@@ -167,10 +187,16 @@ export function ProjectChannelsClient({ initialProjects }: Props) {
     setBusyProjectId(project.projectId)
     try {
       const result = await sendTeamsProjectTestMessage(project.projectId)
+      // Message delivery and @mention delivery are reported separately — a
+      // successful post does not by itself mean members were mentioned.
+      const parts = [result.message || (result.success ? 'Test message delivered.' : 'Test message failed.')]
+      if (result.mentionTest?.attempted) {
+        parts.push(result.mentionTest.message)
+      }
       setFeedback({
         projectId: project.projectId,
-        type: result.success ? 'success' : 'error',
-        message: result.message || (result.success ? 'Test message delivered.' : 'Test message failed.'),
+        type: result.success && (!result.mentionTest?.attempted || result.mentionTest.success) ? 'success' : 'error',
+        message: parts.join(' '),
       })
       router.refresh()
     } finally {
@@ -320,6 +346,30 @@ export function ProjectChannelsClient({ initialProjects }: Props) {
               />
               <p className="text-[11px] text-muted-foreground">
                 Must be an HTTPS Microsoft Teams webhook URL. The link is stored securely and never displayed again.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Team ID &amp; Channel ID <span className="text-muted-foreground font-normal">(optional — enables @mentions)</span></Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  id="teams-team-id"
+                  autoComplete="off"
+                  placeholder="Team ID"
+                  value={teamIdInput}
+                  onChange={(e) => setTeamIdInput(e.target.value)}
+                />
+                <Input
+                  id="teams-channel-id"
+                  autoComplete="off"
+                  placeholder="Channel ID"
+                  value={channelIdInput}
+                  onChange={(e) => setChannelIdInput(e.target.value)}
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Only needed for real @mention notifications to channel members (via Microsoft Graph). Leave both
+                blank to keep posting messages without mentions, exactly as before.
               </p>
             </div>
 

@@ -21,6 +21,8 @@ import {
   planWalletDeduction,
 } from '@/lib/historical-ticket'
 import { validateModuleSelection } from '@/lib/module-selection'
+import { isAtOrBelowCreateThreshold, buildWalletThresholdError, buildWalletInsufficientError } from '@/lib/wallet-validation'
+import { createAppError } from '@/lib/error-utils'
 
 function generateTicketNumber() {
   const prefix = 'TKT'
@@ -68,29 +70,6 @@ export const createTicket = wrapServerAction('createTicket', async function crea
     actualClientId = data.clientId
   }
 
-  // Historical tickets are exempt from the standard "can this client afford a
-  // NEW ticket" balance gate below — they represent already-completed past
-  // work being backdated into the system, not new work being opened, and are
-  // instead governed by their own dedicated wallet-sufficiency check against
-  // the exact Support Hour Consumed amount (see the Phase 3 block further down).
-  if (actualClientId !== currentUser.id && data.projectId && !data.isOverrideTicket && data.ticketType !== 'historical') {
-    try {
-      const { checkClientCanCreateTicket } = await import('@/app/actions/wallets')
-      const balanceCheck = await checkClientCanCreateTicket(actualClientId, data.projectId)
-      if (!balanceCheck.canCreate) {
-        throw new Error(balanceCheck.reason || 'Support hour balance is below the minimum threshold.')
-      }
-    } catch (err) {
-      if (err instanceof Error && (err.message.includes('Support hour balance') || err.message.includes('below the minimum'))) throw err
-    }
-  } else if (currentUser.role === 'client' && data.projectId && !data.isOverrideTicket) {
-    const { checkClientCanCreateTicket } = await import('@/app/actions/wallets')
-    const balanceCheck = await checkClientCanCreateTicket(currentUser.id, data.projectId)
-    if (!balanceCheck.canCreate) {
-      throw new Error(balanceCheck.reason || 'Support hour balance is below the minimum threshold.')
-    }
-  }
-
   if (data.isOverrideTicket) {
     if (currentUser.role === 'client') throw new Error('Clients cannot create override tickets')
     if (!data.overrideReason) throw new Error('Override reason is required')
@@ -98,15 +77,40 @@ export const createTicket = wrapServerAction('createTicket', async function crea
     if (!validReasons.includes(data.overrideReason)) throw new Error('Invalid override reason')
   }
 
-  if (currentUser.role === 'client' && data.projectId) {
-    try {
-      const { checkClientCanCreateTicket } = await import('@/app/actions/wallets')
-      const balanceCheck = await checkClientCanCreateTicket(currentUser.id, data.projectId)
-      if (balanceCheck.warning && balanceCheck.remainingHours <= 10) {
-        throw new Error(balanceCheck.reason || 'Support hour balance is below the minimum threshold.')
+  // ── Section 11: a project_manager may only create tickets for a client via
+  // a project they actually manage — never trust the frontend's role/project
+  // pairing. Admin always passes. Reuses the established single-manager-per-
+  // project ownership pattern already used throughout this codebase (e.g.
+  // app/actions/projects/queries.ts, app/actions/wallet/queries.ts).
+  if (currentUser.role === 'project_manager' && data.projectId) {
+    const [projectRow] = await db.select({ managerId: project.managerId }).from(project).where(eq(project.id, data.projectId)).limit(1)
+    if (projectRow && projectRow.managerId !== currentUser.id) {
+      throw createAppError('You are not authorized to create tickets for this project (access denied).', 'WALLET_CLIENT_ASSOCIATION_INVALID')
+    }
+  }
+
+  // ── Support Wallet validation (sections 1-3) ────────────────────────────
+  // Historical tickets are exempt from this generic gate — they represent
+  // already-completed past work being backdated, not new work being opened,
+  // and are instead governed by their own dedicated wallet-sufficiency check
+  // against the exact Support Hour Consumed amount (see the historical block
+  // further down, which already correctly hard-rejects with no role bypass).
+  if (data.ticketType !== 'historical') {
+    const [wallet] = await db.select().from(supportWallet).where(eq(supportWallet.clientId, actualClientId)).limit(1)
+    if (wallet) {
+      // Section 1/2: the 10% remaining-balance threshold blocks a CLIENT
+      // creating their own ticket only — admin/project_manager are an
+      // explicit exception for THIS rule (and only this rule).
+      if (currentUser.role === 'client' && isAtOrBelowCreateThreshold(wallet)) {
+        throw buildWalletThresholdError()
       }
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('Support hour balance')) throw err
+      // Section 3: if this ticket carries an upfront estimate (e.g. an
+      // override ticket), the estimate can never exceed the wallet's actual
+      // remaining balance — for EVERY role, no exceptions.
+      if (data.estimatedHours && data.estimatedHours > 0) {
+        const sufficiencyCheck = checkWalletSufficiency(data.estimatedHours, wallet.remainingHours)
+        if (!sufficiencyCheck.ok) throw buildWalletInsufficientError(data.estimatedHours, wallet.remainingHours)
+      }
     }
   }
 
@@ -360,5 +364,9 @@ async function sendTicketCreatedNotification(
     triggeredBy: currentUser.id,
     dedup: { scope: `ticket:${newTicket.id}` },
     recipients,
+    // Trusted, server-resolved project (the ticket row this function just
+    // inserted) — enables project-wise preference enforcement for CLIENT
+    // recipients only; internal recipients are unaffected (see notify-all.ts).
+    projectId: newTicket.projectId ?? undefined,
   })
 }

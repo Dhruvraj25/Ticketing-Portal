@@ -109,12 +109,21 @@ export function ProjectAnalyticsSection({ projectId, initialAnalytics, initialMo
         </h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {Object.entries(analytics.ticketStatusMap).map(([status, count]) => (
-            <div key={status} className="p-3 rounded-lg bg-muted/20 border border-border/30">
+            // min-w-0 is required here: a CSS grid item defaults to
+            // min-width:auto, which lets its content's intrinsic width (the
+            // Badge below, which never shrinks/wraps by default) push past
+            // the cell boundary instead of wrapping inside it.
+            <div key={status} className="p-3 rounded-lg bg-muted/20 border border-border/30 min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <Badge
                   variant="outline"
                   className={cn(
-                    'text-xs px-1.5 py-0',
+                    // Badge is a single-line, non-shrinking pill by design
+                    // (shared component, used across the whole app) — these
+                    // overrides are local to this card only, so a long status
+                    // label ("Pending Approval", "Waiting for Client", ...)
+                    // wraps inside the card instead of overflowing past it.
+                    'text-xs px-1.5 py-0 max-w-full whitespace-normal break-words text-left h-auto',
                     TICKET_STATUS_CONFIG[status as keyof typeof TICKET_STATUS_CONFIG]?.color,
                   )}
                 >

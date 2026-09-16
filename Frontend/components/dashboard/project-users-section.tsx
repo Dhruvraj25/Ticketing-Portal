@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { getProjectClientUsers, addUserToProject, type ProjectClientUser } from '@/app/actions/projects'
+import { getProjectClientUsers, addUserToProject, removeUserFromProject, type ProjectClientUser } from '@/app/actions/projects'
 import { toggleUserBanned } from '@/app/actions/admin'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -23,20 +23,21 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { Loader2, UserPlus, Users, ShieldCheck, User } from 'lucide-react'
+import { Loader2, UserPlus, Users, ShieldCheck, User, UserMinus } from 'lucide-react'
 import { USER_ROLE_CONFIG } from '@/lib/types'
 import { format } from 'date-fns'
 
 interface ProjectUsersSectionProps {
   projectId: number
+  projectName: string
   initialUsers: ProjectClientUser[]
-  /** Can add users to the project (project_manager or admin). */
+  /** Can add/remove project users (project_manager or admin). */
   canManage: boolean
   /** Can activate/deactivate accounts — mirrors toggleUserBanned's own admin-only gate. */
   canActivate: boolean
 }
 
-export function ProjectUsersSection({ projectId, initialUsers, canManage, canActivate }: ProjectUsersSectionProps) {
+export function ProjectUsersSection({ projectId, projectName, initialUsers, canManage, canActivate }: ProjectUsersSectionProps) {
   const [users, setUsers] = useState<ProjectClientUser[]>(initialUsers)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -48,6 +49,10 @@ export function ProjectUsersSection({ projectId, initialUsers, canManage, canAct
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+
+  const [removeTarget, setRemoveTarget] = useState<ProjectClientUser | null>(null)
+  const [removing, setRemoving] = useState(false)
+  const [removeError, setRemoveError] = useState<string | null>(null)
 
   async function refresh() {
     try {
@@ -68,6 +73,21 @@ export function ProjectUsersSection({ projectId, initialUsers, canManage, canAct
       setError(err instanceof Error ? err.message : 'Failed to update the account status')
     } finally {
       setBusyId(null)
+    }
+  }
+
+  async function handleRemove() {
+    if (!removeTarget) return
+    setRemoving(true)
+    setRemoveError(null)
+    try {
+      await removeUserFromProject(projectId, removeTarget.id)
+      setUsers((prev) => prev.filter((x) => x.id !== removeTarget.id))
+      setRemoveTarget(null)
+    } catch (err) {
+      setRemoveError(err instanceof Error ? err.message : 'Failed to remove this user from the project')
+    } finally {
+      setRemoving(false)
     }
   }
 
@@ -131,17 +151,29 @@ export function ProjectUsersSection({ projectId, initialUsers, canManage, canAct
                     <p className="text-xs text-muted-foreground truncate">{u.email}</p>
                   </div>
                 </div>
-                {canActivate && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs shrink-0"
-                    disabled={busyId === u.id}
-                    onClick={() => handleToggle(u)}
-                  >
-                    {busyId === u.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : u.banned ? 'Activate' : 'Deactivate'}
-                  </Button>
-                )}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {canActivate && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={busyId === u.id}
+                      onClick={() => handleToggle(u)}
+                    >
+                      {busyId === u.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : u.banned ? 'Activate' : 'Deactivate'}
+                    </Button>
+                  )}
+                  {canManage && !u.isPrimary && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs text-destructive hover:text-destructive"
+                      onClick={() => { setRemoveTarget(u); setRemoveError(null) }}
+                    >
+                      <UserMinus className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                 <Badge variant="outline" className="text-[10px]">
@@ -221,6 +253,33 @@ export function ProjectUsersSection({ projectId, initialUsers, canManage, canAct
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Remove-from-project confirmation — explicit about project-membership-only scope */}
+      <Dialog open={removeTarget !== null} onOpenChange={(open) => { if (!open) setRemoveTarget(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove {removeTarget?.name} from this project?</DialogTitle>
+            <DialogDescription>
+              This only removes {removeTarget?.name}&apos;s access to <strong>{projectName}</strong> — it does{' '}
+              <strong>not</strong> delete their user account, and does not affect any other project they belong to.
+              They can be added back to this project at any time.
+            </DialogDescription>
+          </DialogHeader>
+
+          {removeError && (
+            <div className="p-2 rounded text-xs bg-destructive/10 border border-destructive/20 text-destructive">
+              {removeError}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveTarget(null)} disabled={removing}>Cancel</Button>
+            <Button variant="destructive" onClick={handleRemove} disabled={removing}>
+              {removing ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Remove from Project'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

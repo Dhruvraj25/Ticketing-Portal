@@ -6,6 +6,7 @@ import { supportWallet, notification as notificationSchema, ticketHistory } from
 import { and, eq, gte } from 'drizzle-orm'
 import { unstable_cache } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth-utils'
+import { isAtOrBelowCreateThreshold } from '@/lib/wallet-validation'
 
 // ─── Internal implementation (no getCurrentUser — accepts currentUser object) ─
 
@@ -201,6 +202,33 @@ export const checkClientCanCreateTicket = async function checkClientCanCreateTic
   }
 
   return { canCreate: true, reason: null, walletId: wallet.id, remainingHours: wallet.remainingHours }
+}
+
+// ─── Section 1/8/22: client-side "can I create a ticket" threshold status ──
+// Used by the ticket-creation form to disable/warn a CLIENT caller BEFORE
+// submission — the actual enforcement lives server-side in createTicket()
+// (app/actions/tickets/create.ts), which independently re-checks the same
+// wallet row; this is UX only, per section 8/10 ("frontend state must not
+// be trusted"). Deliberately separate from checkClientCanCreateTicket above
+// (which has its own, unrelated flat-10-hour/contract-expiry concerns that
+// this phase does not touch) — this is specifically the 10%-of-limit rule.
+export const getMyWalletThresholdStatus = async function getMyWalletThresholdStatus() {
+  const currentUser = await getCurrentUser()
+  if (currentUser.role !== 'client') {
+    return { applicable: false, atOrBelowThreshold: false, remainingHours: null, totalPurchasedHours: null }
+  }
+
+  const [wallet] = await db.select().from(supportWallet).where(eq(supportWallet.clientId, currentUser.id)).limit(1)
+  if (!wallet) {
+    return { applicable: false, atOrBelowThreshold: false, remainingHours: null, totalPurchasedHours: null }
+  }
+
+  return {
+    applicable: true,
+    atOrBelowThreshold: isAtOrBelowCreateThreshold(wallet),
+    remainingHours: wallet.remainingHours,
+    totalPurchasedHours: wallet.totalPurchasedHours,
+  }
 }
 
 // ─── Calculate remaining hours helper ──────────────────────────────────

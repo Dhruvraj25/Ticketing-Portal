@@ -113,10 +113,10 @@ async function fetchFromBackendSafe<T = unknown>(path: string, options?: Request
   }
 
   if (res.status === 401) {
-    return { ok: false, stage: 'authentication', code: 'UNAUTHENTICATED', statusCode: 401, message: 'Your session could not be verified by the backend. Please sign in again.' }
+    return { ok: false, stage: 'authentication', code: 'UNAUTHENTICATED', statusCode: 401, message: 'Your session could not be verified. Please sign in again.' }
   }
   if (res.status === 403) {
-    return { ok: false, stage: 'authorization', code: 'FORBIDDEN', statusCode: 403, message: 'Your account does not have permission to perform this action.' }
+    return { ok: false, stage: 'authorization', code: 'FORBIDDEN', statusCode: 403, message: 'You do not have permission to manage Teams webhooks.' }
   }
   if (!res.ok) {
     const text = await res.text().catch(() => '')
@@ -208,6 +208,8 @@ export interface TeamsChannelMutationResult {
   projectId?: number
   configured?: boolean
   enabled?: boolean
+  /** True only when this project has a Team ID + Channel ID configured for @mentions. */
+  mentionsConfigured?: boolean
   updatedAt?: string
   removed?: boolean
   routing?: string
@@ -216,6 +218,14 @@ export interface TeamsChannelMutationResult {
   error?: string
   code?: string
   stage?: BackendCallResult['stage']
+  /** Present only on the /test response — see sendTeamsProjectTestMessage. */
+  mentionTest?: {
+    attempted: boolean
+    success: boolean
+    membersMentioned: number
+    message: string
+    error?: string
+  }
 }
 
 /** Project list with Teams channel status — admin only (backend enforces it). */
@@ -230,7 +240,7 @@ export const getTeamsProjectChannels = wrapServerAction('getTeamsProjectChannels
  */
 export const saveTeamsProjectChannel = wrapServerAction('saveTeamsProjectChannel', async function saveTeamsProjectChannel(
   projectId: number,
-  input: { webhookUrl?: string; enabled?: boolean },
+  input: { webhookUrl?: string; enabled?: boolean; teamId?: string; channelId?: string },
 ): Promise<TeamsChannelMutationResult> {
   const result = await fetchFromBackendSafe<Record<string, unknown>>('/projects/' + projectId + '/channel', {
     method: 'PUT',
@@ -265,6 +275,21 @@ export const removeTeamsProjectChannel = wrapServerAction('removeTeamsProjectCha
     }
   }
   return { success: true, projectId, removed: true, ...(result.data as Record<string, unknown>) } as TeamsChannelMutationResult
+})
+
+export interface ProjectMentionsStatus {
+  projectId: number
+  graphAppConfigured: boolean
+  mentionTargetConfigured: boolean
+  mentionsAvailable: boolean
+}
+
+/** Whether this project has @mention delivery configured — never returns secrets. */
+export const getTeamsProjectMentionsStatus = wrapServerAction('getTeamsProjectMentionsStatus', async function getTeamsProjectMentionsStatus(
+  projectId: number,
+): Promise<ProjectMentionsStatus | null> {
+  const result = await fetchFromBackendSafe<ProjectMentionsStatus>('/projects/' + projectId + '/mentions')
+  return result.ok ? (result.data as ProjectMentionsStatus) : null
 })
 
 /** Send a test message to one project's configured Teams channel. */

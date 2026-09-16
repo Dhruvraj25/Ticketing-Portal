@@ -29,6 +29,7 @@ export {
   // Project Users (Phase 6)
   getProjectClientUsers,
   addUserToProject,
+  removeUserFromProject,
   // Analytics
   getProjectDetailAnalytics,
   getModuleAnalytics,

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { submitEstimate, updateEstimate, approveEstimate, declineAdditionalHours } from '@/app/actions/estimates'
 import { assignTicket } from '@/app/actions/tickets'
+import { getFriendlyError } from '@/lib/error-utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -137,7 +138,11 @@ export function EstimateSection({
       if (action === 'requestAdditionalHours') setShowAdditionalHoursForm(false)
       if (action === 'approveAdditionalHours') {/* no form to close */}
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Action failed')
+      // Section 4/26: resolves the wallet-insufficiency structured errors
+      // (submitEstimate/approveEstimate/requestAdditionalHours/
+      // approveAdditionalHours all now re-check the client's wallet) to
+      // their friendly text instead of a raw/generic message.
+      setError(getFriendlyError(err))
     } finally {
       setLoading(null)
     }
