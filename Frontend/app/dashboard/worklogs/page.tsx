@@ -14,6 +14,13 @@ import { cn } from '@/lib/utils'
 import { fmtDuration, stripHtml } from '@/lib/format'
 import { StatCard } from '@/components/dashboard/stat-card'
 
+// Fetches DB data in parallel with getCurrentUser() (see WorklogsPage below),
+// which starts the query before Next's build-time dynamic-API detection (from
+// cookies()/headers() inside getCurrentUser) can mark the route dynamic.
+// Without this, `next build`'s static-render probe executes the DB query for
+// real and fails wherever the build environment can't reach the database.
+export const dynamic = 'force-dynamic'
+
 const WORKLOGS_CACHE_KEY = 'all_worklogs'
 
 interface WorklogEntry {

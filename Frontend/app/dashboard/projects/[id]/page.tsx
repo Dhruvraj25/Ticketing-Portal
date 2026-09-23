@@ -22,7 +22,6 @@ import { ProjectAssignmentPanel } from '@/components/dashboard/project-assignmen
 import { DeveloperAssignment } from '@/components/dashboard/developer-assignment'
 import { ProjectUsersSection } from '@/components/dashboard/project-users-section'
 import { ProjectTeamsChannelSection } from '@/components/dashboard/project-teams-channel-section'
-import { ProjectNotificationPreferencesSection } from '@/components/dashboard/project-notification-preferences-section'
 import { ProjectAnalyticsSection } from '@/components/dashboard/project-analytics-section'
 
 export default async function ProjectDetailPage({
@@ -89,14 +88,6 @@ export default async function ProjectDetailPage({
       } catch {}
     }
 
-    // The "Key User" (project.clientId) reassignment dropdown must only ever
-    // offer Approver Accounts already linked to THIS project via
-    // project_client — never an unrelated approver from another
-    // project/company, and never a Standard account. Manager select still
-    // draws from the global manager list; that behavior is unchanged.
-    const clients = projectClientUsers
-      .filter((u) => u.userType === 'approver' && u.id !== project.clientId)
-      .map((u) => ({ id: u.id, name: u.name, email: u.email }))
     const managers = userList.filter((u) => u.role === 'project_manager' && u.id !== project.managerId)
 
     pageTimer.mark('Render')
@@ -165,18 +156,14 @@ export default async function ProjectDetailPage({
         </div>
 
         {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-w-0">
           {/* Main content */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-6 min-w-0">
             {project.description && (
-              <div className="space-y-5">
-               <div className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6">
-    
+              <div className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6 min-w-0">
                 <h2 data-tour="project-detail-description" className="text-lg font-semibold text-foreground mb-4">Description</h2>
-                <p className="text-muted-foreground whitespace-pre-wrap">{stripHtml(project.description)}</p>
-                </div>
+                <p className="text-muted-foreground whitespace-pre-wrap break-words">{stripHtml(project.description)}</p>
               </div>
-              
             )}
 
             {isManagerOrAdmin && (
@@ -201,64 +188,20 @@ export default async function ProjectDetailPage({
               </div>
             )}
 
-            <div className="space-y-5">
-              <div className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6">
-              <div data-tour="project-detail-modules" className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 rounded-lg bg-primary/10">
+            <div className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6 min-w-0">
+              <div data-tour="project-detail-modules" className="flex items-center justify-between gap-2 mb-4">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="p-1.5 rounded-lg bg-primary/10 shrink-0">
                     <Layers className="h-4 w-4 text-primary" />
                   </div>
-                  <h2 className="text-lg font-semibold text-foreground">Modules / Service Areas</h2>
+                  <h2 className="text-lg font-semibold text-foreground truncate">Modules / Service Areas</h2>
                 </div>
-                <span className="text-sm text-muted-foreground">{modules.length} module{modules.length !== 1 ? 's' : ''}</span>
+                <span className="text-sm text-muted-foreground shrink-0">{modules.length} module{modules.length !== 1 ? 's' : ''}</span>
               </div>
-              <div data-tour="module-manager">
+              <div data-tour="module-manager" className="min-w-0">
                 <ModuleManager projectId={projectId} initialModules={modules} canManage={isManagerOrAdmin} />
               </div>
             </div>
-          </div>
-          </div>
-
-          {/* Sidebar */}
-          <div className="space-y-4">
-            <div className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6">
-   
-            <div data-tour="project-detail-info" className="rounded-2xl glass-panel p-5">
-              <h3 className="font-semibold text-foreground mb-4">Project Details</h3>
-              <div className="space-y-4 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Client</span>
-                  <span className="text-foreground font-normal truncate ml-2 max-w-[160px]">{project.clientName || '—'}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground flex items-center gap-1.5"><Users className="h-3.5 w-3.5 text-purple-400" /> Support Manager</span>
-                  <span className="text-foreground font-normal truncate ml-2 max-w-[160px]">{project.managerName || '—'}</span>
-                </div>
-                {project.startDate && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" /> Start</span>
-                    <span className="text-foreground">{format(new Date(project.startDate), 'MMM d, yyyy')}</span>
-                  </div>
-                )}
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Created</span>
-                  <span className="text-foreground">{format(new Date(project.createdAt), 'MMM d, yyyy')}</span>
-                </div>
-              </div>
-            </div>
-            </div>
-
-            {isManagerOrAdmin && (userList.length > 0 || clients.length > 0) && (
-              <ProjectAssignmentPanel
-                projectId={projectId}
-                currentClientId={project.clientId}
-                currentManagerId={project.managerId}
-                clients={clients}
-                managers={managers}
-                canAssignClient={isManagerOrAdmin}
-                canAssignManager={user.role === 'admin'}
-              />
-            )}
 
             {isManagerOrAdmin && (
               <ProjectUsersSection
@@ -270,25 +213,54 @@ export default async function ProjectDetailPage({
               />
             )}
 
+            {/* Microsoft Teams channel status/config — admin-only, matching
+                the backend routes' own requireAdminOnly gate. */}
             {user.role === 'admin' && (
               <ProjectTeamsChannelSection
                 projectId={projectId}
                 initialStatus={teamsChannelStatus}
               />
             )}
+          </div>
 
-            {/* Backend authorization (admin=any project, manager=only projects
-                they manage) is the real gate — enforced server-side on every
-                load/save. isManagerOrAdmin only avoids rendering the widget for
-                roles that can never pass that check (client/developer). */}
-            {isManagerOrAdmin && (
-              <ProjectNotificationPreferencesSection projectId={projectId} />
+          {/* Sidebar */}
+          <div className="space-y-4 min-w-0">
+            <div data-tour="project-detail-info" className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-5 min-w-0">
+              <h3 className="font-semibold text-foreground mb-4">Project Details</h3>
+              <div className="space-y-4 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground flex items-center gap-1.5 shrink-0"><Users className="h-3.5 w-3.5" /> Client</span>
+                  <span className="text-foreground font-normal truncate ml-2 min-w-0">{project.clientName || '—'}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground flex items-center gap-1.5 shrink-0"><Users className="h-3.5 w-3.5 text-purple-400" /> Support Manager</span>
+                  <span className="text-foreground font-normal truncate ml-2 min-w-0">{project.managerName || '—'}</span>
+                </div>
+                {project.startDate && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground flex items-center gap-1.5 shrink-0"><Calendar className="h-3.5 w-3.5" /> Start</span>
+                    <span className="text-foreground shrink-0">{format(new Date(project.startDate), 'MMM d, yyyy')}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground shrink-0">Created</span>
+                  <span className="text-foreground shrink-0">{format(new Date(project.createdAt), 'MMM d, yyyy')}</span>
+                </div>
+              </div>
+            </div>
+
+            {isManagerOrAdmin && userList.length > 0 && (
+              <ProjectAssignmentPanel
+                projectId={projectId}
+                currentManagerId={project.managerId}
+                managers={managers}
+                canAssignManager={user.role === 'admin'}
+              />
             )}
 
             {isManagerOrAdmin && <DeveloperAssignment projectId={projectId} />}
 
-            <div data-tour="project-detail-actions" className="rounded-2xl glass-panel p-5">
-              <div className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6">
+            <div data-tour="project-detail-actions" className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-5 min-w-0">
               <h3 className="font-semibold text-foreground mb-4">Quick Actions</h3>
               <div className="space-y-2">
                 <Link href={`/dashboard/tickets/new?projectId=${projectId}`} className="block">
@@ -298,7 +270,6 @@ export default async function ProjectDetailPage({
                   </Button>
                 </Link>
               </div>
-            </div>
             </div>
           </div>
         </div>

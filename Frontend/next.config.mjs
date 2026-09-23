@@ -28,6 +28,18 @@ const nextConfig = {
   // ── Compression ────────────────────────────────────────────────────────
   // Enable gzip/brotli compression for all text-based assets
   compress: true,
+
+  // ── Cloudflare/OpenNext: keep `pg` out of Next's server bundle ──────────
+  // `pg` conditionally requires `pg-cloudflare`, whose package.json exports
+  // a real implementation only under the "workerd" condition (default
+  // resolution gets an empty stub). Next's build/trace step resolves with
+  // default conditions, so it only copies the empty stub into the traced
+  // output. OpenNext's own esbuild pass *does* use the "workerd" condition
+  // and then fails with "Could not resolve pg-cloudflare" because the real
+  // dist/index.js was never copied. Marking `pg`/`pg-cloudflare` external
+  // makes Next copy the full, untouched packages instead, so OpenNext's
+  // workerd-aware resolution finds the real file.
+  serverExternalPackages: ['pg', 'pg-cloudflare'],
 }
 
 export default nextConfig

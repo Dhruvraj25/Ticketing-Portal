@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { PasswordField } from '@/components/ui/password-field'
 import {
   Select,
   SelectContent,
@@ -95,11 +96,17 @@ export function ProjectUsersSection({ projectId, projectName, initialUsers, canM
     setFormError(null)
     setSubmitting(true)
     try {
+      // Always submits a full new-account payload (name + password) — this
+      // action creates a CLIENT-role account and links it to this project in
+      // one transaction (app/actions/projects/users.ts: addUserToProject).
+      // If the email already belongs to an existing Client account, that same
+      // action links it here instead of creating a duplicate row — the
+      // application's existing dedupe rule, unchanged.
       await addUserToProject(projectId, {
         email,
-        name: name.trim() || undefined,
+        name: name.trim(),
         userType,
-        password: password || undefined,
+        password,
       })
       setDialogOpen(false)
       setEmail('')
@@ -204,10 +211,11 @@ export function ProjectUsersSection({ projectId, projectName, initialUsers, canM
           </Button>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add User to Project</DialogTitle>
+              <DialogTitle>Add New Client</DialogTitle>
               <DialogDescription>
-                Enter the user&apos;s email. If an account with this email already exists, it will be linked to this
-                project as-is. Otherwise, fill in the remaining fields to create a new account.
+                Create a new Client account for <strong>{projectName}</strong>. They&apos;ll be able to sign in
+                immediately and are automatically linked to this project. An email that already belongs to an
+                existing Client account is linked here instead of creating a duplicate.
               </DialogDescription>
             </DialogHeader>
 
@@ -219,13 +227,25 @@ export function ProjectUsersSection({ projectId, projectName, initialUsers, canM
 
             <div className="space-y-3">
               <div className="space-y-1.5">
-                <Label htmlFor="pu-email">Email</Label>
-                <Input id="pu-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="user@company.com" />
+                <Label htmlFor="pu-name">Full Name</Label>
+                <Input id="pu-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Smith" />
               </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="pu-email">Email</Label>
+                <Input id="pu-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="client@company.com" />
+              </div>
+              <PasswordField
+                value={password}
+                onChange={setPassword}
+                label="Password"
+                placeholder="Min. 8 characters"
+                autoGenerate={false}
+                showValidation={false}
+              />
               <div className="space-y-1.5">
                 <Label htmlFor="pu-type">Account Type</Label>
                 <Select value={userType} onValueChange={(v) => setUserType(v as 'approver' | 'standard')}>
-                  <SelectTrigger id="pu-type" className="bg-input/50">
+                  <SelectTrigger id="pu-type" className="bg-input/50 w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -234,19 +254,11 @@ export function ProjectUsersSection({ projectId, projectName, initialUsers, canM
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="pu-name">Name <span className="text-muted-foreground font-normal">(only needed for a new account)</span></Label>
-                <Input id="pu-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="pu-password">Password <span className="text-muted-foreground font-normal">(only needed for a new account, 8+ characters)</span></Label>
-                <Input id="pu-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
-              </div>
             </div>
 
             <DialogFooter>
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleAddUser} disabled={submitting || !email}>
+              <Button onClick={handleAddUser} disabled={submitting || !email || !name.trim() || !password}>
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add User'}
               </Button>
             </DialogFooter>

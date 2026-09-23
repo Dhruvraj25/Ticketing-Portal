@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { assignClient, assignManager } from '@/app/actions/projects'
+import { assignManager } from '@/app/actions/projects'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
@@ -21,48 +21,22 @@ interface UserOption {
 
 interface ProjectAssignmentPanelProps {
   projectId: number
-  currentClientId: string
   currentManagerId: string
-  clients: UserOption[]
   managers: UserOption[]
-  canAssignClient: boolean
   canAssignManager: boolean
 }
 
 export function ProjectAssignmentPanel({
   projectId,
-  currentClientId,
   currentManagerId,
-  clients,
   managers,
-  canAssignClient,
   canAssignManager,
 }: ProjectAssignmentPanelProps) {
-  const [clientId, setClientId] = useState(currentClientId)
   const [managerId, setManagerId] = useState(currentManagerId)
-  // Track last-saved values to avoid full router.refresh() — only invalidate relevant cache
-  const [savedClientId, setSavedClientId] = useState(currentClientId)
+  // Track last-saved value to avoid full router.refresh() — only invalidate relevant cache
   const [savedManagerId, setSavedManagerId] = useState(currentManagerId)
-  const [clientSaving, setClientSaving] = useState(false)
   const [managerSaving, setManagerSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  async function handleAssignClient() {
-    if (!clientId || clientId === savedClientId) return
-    setClientSaving(true)
-    setError(null)
-    try {
-      await assignClient(projectId, clientId)
-      // Optimistic local state update instead of full page refresh
-      setSavedClientId(clientId)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to assign client')
-      // Revert select to saved value on failure
-      setClientId(savedClientId)
-    } finally {
-      setClientSaving(false)
-    }
-  }
 
   async function handleAssignManager() {
     if (!managerId || managerId === savedManagerId) return
@@ -95,53 +69,16 @@ export function ProjectAssignmentPanel({
       )}
 
       <div className="space-y-4">
-        {/* Key User Assignment (the project's primary Approver Account) */}
-        <div>
-          <label className="text-xs text-muted-foreground block mb-1.5">Key User</label>
-          <div className="flex items-center gap-2">
-            <Select
-              value={clientId}
-              onValueChange={setClientId}
-              disabled={!canAssignClient}
-            >
-              <SelectTrigger className="flex-1 bg-input/50 h-9 text-sm">
-                <SelectValue placeholder="Select key user" />
-              </SelectTrigger>
-              <SelectContent>
-                {clients.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {canAssignClient && clientId !== savedClientId && (
-              <Button
-                size="sm"
-                onClick={handleAssignClient}
-                disabled={clientSaving}
-                className="shrink-0"
-              >
-                {clientSaving ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  'Update'
-                )}
-              </Button>
-            )}
-          </div>
-        </div>
-
         {/* Manager Assignment */}
-        <div>
+        <div className="min-w-0">
           <label className="text-xs text-muted-foreground block mb-1.5">Support Manager</label>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <Select
               value={managerId}
               onValueChange={setManagerId}
               disabled={!canAssignManager}
             >
-              <SelectTrigger className="flex-1 bg-input/50 h-9 text-sm">
+              <SelectTrigger className="flex-1 min-w-0 w-full bg-input/50 h-9 text-sm">
                 <SelectValue placeholder="Select support manager" />
               </SelectTrigger>
               <SelectContent>

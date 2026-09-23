@@ -17,6 +17,12 @@ import {
   BarChart3,
 } from 'lucide-react'
 
+// This page queries the database directly (getDatabaseMetrics below). Force
+// dynamic rendering so `next build`'s static-render probe never executes
+// that query at build time — see app/dashboard/worklogs/page.tsx for the
+// same fix with a fuller explanation.
+export const dynamic = 'force-dynamic'
+
 // ─── Performance Thresholds ────────────────────────────────────────────────
 const THRESHOLDS = {
   green: { max: 100, label: 'Fast', color: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 dark:border-emerald-500/30' },

@@ -181,9 +181,9 @@ test('addUserToProject looks up an existing user by an exact typed email — nev
   assert.doesNotMatch(addUserBody, /getUserList|getTicketFormClients/, 'must not offer a global/cross-project user picker')
 })
 
-test('the "Key User" reassignment dropdown is still sourced from getProjectClientUsers (this project only), filtered to approver accounts', () => {
-  assert.match(DETAIL_PAGE_SRC, /projectClientUsers\s*\n\s*\.filter\(\(u\) => u\.userType === 'approver' && u\.id !== project\.clientId\)/)
-  assert.doesNotMatch(DETAIL_PAGE_SRC, /const clients = userList\.filter/, 'must not regress to the old unscoped global user list')
+test('the "Key User" reassignment dropdown has been intentionally removed from the Project Detail page — Reassignment now only handles Support Manager', () => {
+  assert.doesNotMatch(DETAIL_PAGE_SRC, /const clients = /, 'the Key-User-scoped client list was only ever used by the removed dropdown')
+  assert.doesNotMatch(DETAIL_PAGE_SRC, /Key User/)
 })
 
 test('assignClient still independently rejects any non-approver/non-client target server-side (defense in depth, unrelated to this phase but must remain intact)', () => {

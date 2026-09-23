@@ -1,5 +1,5 @@
 {
-  "name": "my-project",
+  "name": "ticketing-portal-frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -8,6 +8,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "cf:build": "opennextjs-cloudflare build",
+    "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "test:notifications": "node --test tests/notification-utils.test.mjs",
     "test:navigation": "node --experimental-strip-types --test tests/navigation-utils.test.ts",
     "test:catalog": "node --experimental-strip-types --test tests/notification-catalog.test.ts",
@@ -87,9 +90,10 @@
     "input-otp": "^1.4.2",
     "libphonenumber-js": "^1.13.10",
     "lucide-react": "^1.16.0",
-    "next": "16.2.6",
+    "next": "16.3.5",
     "next-themes": "^0.4.6",
     "pg": "^8.21.0",
+    "pg-cloudflare": "^1.2.7",
     "react": "^19",
     "react-day-picker": "^10.0.1",
     "react-dom": "^19",
@@ -104,6 +108,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.6",
     "@tailwindcss/postcss": "^4.2.0",
     "@types/node": "^24",
     "@types/pg": "^8.20.0",
@@ -113,7 +118,8 @@
     "postcss": "^8.5",
     "shadcn": "^4.8.0",
     "tailwindcss": "^4.2.0",
-    "typescript": "5.7.3"
+    "typescript": "5.7.3",
+    "wrangler": "^4.133.0"
   },
   "pnpm": {
     "overrides": {

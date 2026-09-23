@@ -155,9 +155,9 @@ export function DeveloperAssignment({ projectId }: DeveloperAssignmentProps) {
 
       {/* Assign new developer */}
       {availableDevs.length > 0 && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <Select value={selectedDevId} onValueChange={setSelectedDevId}>
-            <SelectTrigger className="flex-1 bg-input/50 h-9 text-sm">
+            <SelectTrigger className="flex-1 min-w-0 w-full bg-input/50 h-9 text-sm">
               <SelectValue placeholder="Add support engineer / developer..." />
             </SelectTrigger>
             <SelectContent>

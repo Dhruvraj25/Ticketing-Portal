@@ -188,40 +188,32 @@ test('nothing in this phase\'s new code limits a project to a single Standard ac
   assert.doesNotMatch(dupCheckBlock, /userType/)
 })
 
-// ─── Case 8: reassignment list filtering ───────────────────────────────────
+// ─── Case 8 (updated): "Key User" reassignment removed from Project Detail ──
+// The Reassignment card's Key User field was intentionally removed from the
+// Project Detail page's UI. assignClient and its per-project approver scoping
+// remain fully intact in the backend action (see Case 9 below and
+// project-user-removal.test.ts) — only this page's UI stopped calling it.
 
-test('project-assignment-panel.tsx: the visible label is "Key User", not "Client"', () => {
-  assert.match(PANEL_SRC, />Key User</)
-  assert.doesNotMatch(PANEL_SRC, />Client</, 'the old "Client" label must be fully replaced')
+test('project-assignment-panel.tsx: "Key User" has been removed — the Reassignment card only handles Support Manager now', () => {
+  assert.doesNotMatch(PANEL_SRC, /Key User/)
+  assert.doesNotMatch(PANEL_SRC, /clientId/)
+  assert.match(PANEL_SRC, />Support Manager</)
 })
 
-test('project-assignment-panel.tsx: internal identifiers (assignClient, clients prop, canAssignClient) are unchanged — only the visible label moved', () => {
-  assert.match(PANEL_SRC, /assignClient\(projectId, clientId\)/)
-  assert.match(PANEL_SRC, /clients: UserOption\[\]/)
-  assert.match(PANEL_SRC, /canAssignClient: boolean/)
-})
-
-test('the project detail page derives the "Key User" dropdown from getProjectClientUsers, filtered to userType === "approver"', () => {
-  const clientsIdx = DETAIL_PAGE_SRC.indexOf('const clients = projectClientUsers')
-  assert.ok(clientsIdx >= 0)
-  const derivation = DETAIL_PAGE_SRC.slice(clientsIdx, clientsIdx + 300)
-  assert.match(derivation, /u\.userType === 'approver'/)
-  assert.match(derivation, /u\.id !== project\.clientId/)
+test('project-assignment-panel.tsx no longer declares the clients/canAssignClient/currentClientId props — Key User assignment is no longer this component\'s responsibility', () => {
+  assert.doesNotMatch(PANEL_SRC, /clients: UserOption\[\]/)
+  assert.doesNotMatch(PANEL_SRC, /canAssignClient: boolean/)
+  assert.doesNotMatch(PANEL_SRC, /currentClientId/)
 })
 
 test('the Support Manager dropdown derivation is untouched (still sourced from the global getUserList, still role === "project_manager")', () => {
   assert.match(DETAIL_PAGE_SRC, /const managers = userList\.filter\(\(u\) => u\.role === 'project_manager' && u\.id !== project\.managerId\)/)
 })
 
-// ─── Case 9: cross-project account cannot appear ───────────────────────────
+// ─── Case 9: assignClient itself is untouched (backend-only now) ───────────
 
-test('the "Key User" dropdown source is NO LONGER the unscoped global getUserList() — it is scoped per-project via getProjectClientUsers', () => {
-  const clientsIdx = DETAIL_PAGE_SRC.indexOf('const clients = ')
-  const managersIdx = DETAIL_PAGE_SRC.indexOf('const managers = ')
-  assert.ok(clientsIdx >= 0 && managersIdx > clientsIdx)
-  const clientsStatement = DETAIL_PAGE_SRC.slice(clientsIdx, managersIdx)
-  assert.doesNotMatch(clientsStatement, /userList\.filter/, 'clients must not be derived from the global userList anymore')
-  assert.match(clientsStatement, /projectClientUsers/)
+test('the Project Detail page no longer computes a Key-User-scoped "clients" list — that filtering was only ever used by the now-removed dropdown', () => {
+  assert.doesNotMatch(DETAIL_PAGE_SRC, /const clients = /)
 })
 
 test('getProjectClientUsers itself is hard-scoped to a single projectId — an approver linked to a DIFFERENT project can never appear', () => {

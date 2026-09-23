@@ -217,26 +217,51 @@ function startKeepAlive() {
 // The keep-alive starts immediately even if warmup fails. This ensures that
 // once Neon becomes available (e.g., after a slow cold start), the keep-alive
 // will catch it and maintain the connection.
-
-warmupPrimaryConnection().then((success) => {
-  if (success) {
-    // Warm additional connections in parallel
-    warmAdditionalConnections(WARMUP_CONNECTIONS - 1).then(() => {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(`  [DB] ${WARMUP_CONNECTIONS} connections pre-warmed for concurrent load`)
-      }
-    })
-  }
-  // Resolve the warmup promise whether or not we succeeded.
-  // If warmup failed, the first request will cold-start the pool itself.
+//
+// IMPORTANT: this module is imported at build time too. `next build` (and
+// `opennextjs-cloudflare build`) statically imports every route module —
+// including app/api/auth/[...all]/route.ts → lib/auth.ts → lib/db — to
+// inspect its exports (`dynamic`, `runtime`, HTTP method handlers), even for
+// routes that are marked `force-dynamic` and never actually rendered during
+// the build. Opening a real TCP connection to Postgres as a side effect of
+// that import made every build attempt a live database call — which fails
+// with ECONNREFUSED/timeout in any build sandbox that has no route to Neon
+// (Cloudflare's build environment, CI, offline dev, etc). `NEXT_PHASE` is
+// set to `phase-production-build` only during `next build`, so gate the
+// warmup/keep-alive bootstrap on NOT being in that phase — the pool itself
+// is still created eagerly (cheap, no I/O), it just isn't connected until a
+// real server process (dev, Railway, or the deployed Worker) imports it.
+function resolveWarmupPromise() {
   if (_warmupResolve) {
     _warmupResolve()
     _warmupResolve = null
   }
-})
+}
 
-// Start keep-alive unconditionally — will connect once Neon is available
-startKeepAlive()
+const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build'
+
+if (!isBuildPhase) {
+  warmupPrimaryConnection().then((success) => {
+    if (success) {
+      // Warm additional connections in parallel
+      warmAdditionalConnections(WARMUP_CONNECTIONS - 1).then(() => {
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`  [DB] ${WARMUP_CONNECTIONS} connections pre-warmed for concurrent load`)
+        }
+      })
+    }
+    // Resolve the warmup promise whether or not we succeeded.
+    // If warmup failed, the first request will cold-start the pool itself.
+    resolveWarmupPromise()
+  })
+
+  // Start keep-alive unconditionally — will connect once Neon is available
+  startKeepAlive()
+} else {
+  // Never actually awaited during a build (no route executes its handler),
+  // but resolve so any stray `await waitForDb()` doesn't hang the build.
+  resolveWarmupPromise()
+}
 
 /**
  * Block until the database connection pool is warm.

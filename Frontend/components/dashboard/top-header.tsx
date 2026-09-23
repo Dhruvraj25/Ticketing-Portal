@@ -36,6 +36,15 @@ export function TopHeader({ userName, userEmail, userAvatarUrl, userRole }: TopH
 
   const isDark = theme === 'dark'
 
+  // Analytics is admin/project_manager only (see app/dashboard/analytics/page.tsx's
+  // own role gate) — a Client following this shortcut would just get redirected
+  // away, so it's dropped from the Client top navbar only. Every other role's
+  // shortcuts (and the sidebar, which never listed Analytics for Client anyway)
+  // are unaffected.
+  const navShortcuts = userRole === 'client'
+    ? NAV_SHORTCUTS.filter((tab) => tab.href !== '/dashboard/analytics')
+    : NAV_SHORTCUTS
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const q = searchQuery.trim()
@@ -95,7 +104,7 @@ export function TopHeader({ userName, userEmail, userAvatarUrl, userRole }: TopH
       {/* Right: shortcuts + help + user */}
       <div className="flex items-center gap-6">
         <nav className="hidden md:flex items-center gap-1">
-          {NAV_SHORTCUTS.map((tab) => {
+          {navShortcuts.map((tab) => {
             const isActiveTab = pathname === tab.href
             return (
               <Link
