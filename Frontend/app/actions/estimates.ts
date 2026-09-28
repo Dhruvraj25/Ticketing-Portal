@@ -4,7 +4,7 @@ import { cache } from 'react'
 import { getPortalUrl } from '@/lib/urls'
 import { getCurrentUser as getUser } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
-import { ticket, ticketHistory, comment, user, project, revisionHistory, supportWallet } from '@/lib/db/schema'
+import { ticket, ticketHistory, comment, user, project, projectClient, revisionHistory, supportWallet } from '@/lib/db/schema'
 import { and, eq, desc, isNull, isNotNull, ne, count, inArray, gte, lte } from 'drizzle-orm'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import type { UserRole } from '@/lib/types'
@@ -16,6 +16,38 @@ import { checkWalletSufficiency, buildManagerApprovalInsufficientError, buildWal
 // ============================================================================
 // ESTIMATE APPROVAL ACTIONS
 // ============================================================================
+
+/**
+ * Client Approver model (see getClientOrgUserIds in app/actions/tickets/queries.ts):
+ * an organization's Approver acts on estimates / additional hours for tickets
+ * raised by the Standard client users of the SAME project — not only on
+ * tickets they raised themselves. Callers must already have verified
+ * role === 'client' and userType === 'approver'.
+ *
+ * Deliberately PROJECT-scoped: the approver AND the ticket's client must both
+ * be clients of the ticket's own project (primary client or linked via
+ * project_client), so an approver can never act on another project's or
+ * another organization's tickets.
+ */
+async function approverCanActOnTicket(
+  approverId: string,
+  t: { clientId: string | null; projectId: number | null },
+): Promise<boolean> {
+  if (t.clientId === approverId) return true
+  if (!t.clientId || !t.projectId) return false
+
+  const [[proj], links] = await Promise.all([
+    db.select({ clientId: project.clientId }).from(project).where(eq(project.id, t.projectId)).limit(1),
+    db
+      .select({ userId: projectClient.userId })
+      .from(projectClient)
+      .where(and(eq(projectClient.projectId, t.projectId), inArray(projectClient.userId, [approverId, t.clientId]))),
+  ])
+  if (!proj) return false
+
+  const projectClientIds = new Set<string>([proj.clientId, ...links.map((l) => l.userId)])
+  return projectClientIds.has(approverId) && projectClientIds.has(t.clientId)
+}
 
 export const submitEstimate = wrapServerAction('submitEstimate', async function submitEstimate(ticketId: number, data: {
   estimatedHours: number
@@ -133,12 +165,12 @@ export const approveEstimate = wrapServerAction('approveEstimate', async functio
     throw new Error('Only clients can approve estimates')
   }
   if (currentUser.userType !== 'approver') {
-    throw new Error('Only Approver-type users can approve estimates. Contact your administrator to change your user type.')
+    throw new Error('Only Approver-type users can approve estimates.')
   }
 
   const [t] = await db.select().from(ticket).where(eq(ticket.id, ticketId)).limit(1)
   if (!t) throw new Error('Ticket not found')
-  if (t.clientId !== currentUser.id) throw new Error('Access denied')
+  if (!(await approverCanActOnTicket(currentUser.id, t))) throw new Error('Access denied')
   if (t.status !== 'estimate_pending') throw new Error('Estimate is not pending your approval')
   if (!t.estimatedHours) throw new Error('No estimate found')
 
@@ -278,7 +310,7 @@ export const rejectEstimate = wrapServerAction('rejectEstimate', async function 
 
   const [t] = await db.select().from(ticket).where(eq(ticket.id, ticketId)).limit(1)
   if (!t) throw new Error('Ticket not found')
-  if (t.clientId !== currentUser.id) throw new Error('Access denied')
+  if (!(await approverCanActOnTicket(currentUser.id, t))) throw new Error('Access denied')
   if (t.status !== 'estimate_pending') throw new Error('Estimate is not pending your approval')
 
   await db
@@ -402,7 +434,7 @@ export const requestEstimateClarification = wrapServerAction('requestEstimateCla
 
   const [t] = await db.select().from(ticket).where(eq(ticket.id, ticketId)).limit(1)
   if (!t) throw new Error('Ticket not found')
-  if (t.clientId !== currentUser.id) throw new Error('Access denied')
+  if (!(await approverCanActOnTicket(currentUser.id, t))) throw new Error('Access denied')
   if (t.status !== 'estimate_pending') throw new Error('Estimate is not pending your approval')
 
   // Add a comment with the clarification request
@@ -630,7 +662,7 @@ export const approveAdditionalHours = wrapServerAction('approveAdditionalHours',
 
   const [t] = await db.select().from(ticket).where(eq(ticket.id, ticketId)).limit(1)
   if (!t) throw new Error('Ticket not found')
-  if (t.clientId !== currentUser.id) throw new Error('Access denied')
+  if (!(await approverCanActOnTicket(currentUser.id, t))) throw new Error('Access denied')
   if (!t.additionalHoursRequested) throw new Error('No additional hours request found')
   if (t.additionalHoursApproved) throw new Error('Additional hours already approved')
 
@@ -764,7 +796,7 @@ export const declineAdditionalHours = wrapServerAction('declineAdditionalHours',
 
   const [t] = await db.select().from(ticket).where(eq(ticket.id, ticketId)).limit(1)
   if (!t) throw new Error('Ticket not found')
-  if (t.clientId !== currentUser.id) throw new Error('Access denied')
+  if (!(await approverCanActOnTicket(currentUser.id, t))) throw new Error('Access denied')
   if (!t.additionalHoursRequested) throw new Error('No additional hours request found')
 
   await db

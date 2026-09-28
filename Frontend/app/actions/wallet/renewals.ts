@@ -2,11 +2,13 @@
 'use server'
 
 import { db } from '@/lib/db'
-import { supportWallet, notification as notificationSchema, ticketHistory } from '@/lib/db/schema'
-import { and, eq, gte } from 'drizzle-orm'
+import { supportWallet, notification as notificationSchema, ticketHistory, project, projectClient, user } from '@/lib/db/schema'
+import { and, eq, gte, inArray, ne, or } from 'drizzle-orm'
 import { unstable_cache } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth-utils'
 import { isAtOrBelowCreateThreshold } from '@/lib/wallet-validation'
+import { sendNotification } from '@/lib/email-backend'
+import { getPortalUrl } from '@/lib/urls'
 
 // ─── Internal implementation (no getCurrentUser — accepts currentUser object) ─
 
@@ -135,6 +137,71 @@ export const logRenewalReminderActivity = async function logRenewalReminderActiv
   }
 }
 
+// ─── Renew Now → email the client's Project Manager ────────────────────
+// Client Dashboard "Renew Now" no longer navigates to the Support Wallet; it
+// asks the client's Project Manager(s) for renewal / additional hours via the
+// existing backend email bridge ('support_renewal_request' event).
+export const requestSupportRenewal = async function requestSupportRenewal(): Promise<{ success: boolean; error?: string }> {
+  const currentUser = await getCurrentUser()
+  if (currentUser.role !== 'client') {
+    return { success: false, error: 'Only client users can request a support renewal.' }
+  }
+
+  // Projects this client owns or is assigned to as an additional client user.
+  const assigned = await db
+    .select({ projectId: projectClient.projectId })
+    .from(projectClient)
+    .where(eq(projectClient.userId, currentUser.id))
+  const assignedIds = assigned.map((a) => a.projectId)
+
+  const projects = await db
+    .select({ projectName: project.projectName, managerId: project.managerId })
+    .from(project)
+    .where(and(
+      ne(project.status, 'archived'),
+      assignedIds.length > 0
+        ? or(eq(project.clientId, currentUser.id), inArray(project.id, assignedIds))
+        : eq(project.clientId, currentUser.id),
+    ))
+
+  const managerIds = [...new Set(projects.map((p) => p.managerId).filter(Boolean))]
+  if (managerIds.length === 0) {
+    return { success: false, error: 'No Project Manager is assigned to your project yet. Please contact support.' }
+  }
+
+  const [managers, [client]] = await Promise.all([
+    db.select({ email: user.email }).from(user).where(inArray(user.id, managerIds)),
+    db.select({ name: user.name, email: user.email, companyName: user.companyName }).from(user).where(eq(user.id, currentUser.id)).limit(1),
+  ])
+  const managerEmails = managers.map((m) => m.email).filter(Boolean)
+  if (managerEmails.length === 0) {
+    return { success: false, error: 'No Project Manager is assigned to your project yet. Please contact support.' }
+  }
+
+  const status = await _getClientRenewalStatusImpl(currentUser)
+  const portalUrl = getPortalUrl()
+
+  const sent = await sendNotification('support_renewal_request', managerEmails, {
+    clientName: client?.name || currentUser.name || '',
+    clientEmail: client?.email || '',
+    customerCompanyName: client?.companyName || undefined,
+    projectNames: [...new Set(projects.map((p) => p.projectName))],
+    remainingHours: status.remainingHours,
+    totalPurchasedHours: status.totalPurchasedHours,
+    expiryDate: status.contractEndDate || undefined,
+    isLowHours: status.lowHours,
+    isExpiring: status.expiringSoon,
+    isExpired: status.contractExpired,
+    walletLink: status.walletId ? `${portalUrl}/dashboard/wallets/${status.walletId}` : `${portalUrl}/dashboard/wallets`,
+  })
+
+  if (!sent) {
+    return { success: false, error: 'Failed to send your renewal request. Please try again.' }
+  }
+
+  logRenewalReminderActivity('Renewal Requested from Project Manager').catch(() => {})
+  return { success: true }
+}
 // ─── Check if client can create tickets ────────────────────────────────
 export const checkClientCanCreateTicket = async function checkClientCanCreateTicket(
   clientId: string, projectId?: number | null

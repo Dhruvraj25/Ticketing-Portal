@@ -38,6 +38,7 @@ import {
   Wallet,
   UserPlus,
   MessageSquare,
+  Mail,
   CircleHelp,
   Building2,
 } from 'lucide-react'
@@ -78,6 +79,7 @@ const NAV_TOUR_ATTR: Record<string, string> = {
   '/dashboard/notifications': 'nav-notifications',
   '/dashboard/admin/users': 'nav-users',
   '/dashboard/admin/teams': 'nav-teams',
+  '/dashboard/admin/email': 'nav-email',
   '/dashboard/clients': 'nav-clients',
   '/dashboard/admin': 'nav-settings',
   '/dashboard/profile': 'nav-profile',
@@ -100,6 +102,7 @@ const adminNavItems: NavItem[] = [
   { href: '/dashboard/admin/users', label: 'Users', icon: <UserCog /> },
   { href: '/dashboard/clients', label: 'Clients', icon: <Building2 /> },
   { href: '/dashboard/admin/teams', label: 'Microsoft Teams', icon: <MessageSquare /> },
+  { href: '/dashboard/admin/email', label: 'Email Management', icon: <Mail /> },
   { href: '/dashboard/admin', label: 'Settings', icon: <Settings />, matchDescendants: false },
   { href: '/dashboard/help', label: 'Help & Support', icon: <CircleHelp /> },
 ]

@@ -36,7 +36,8 @@ test('report-filters.tsx: every filter field has min-w-0 so it can shrink inside
 })
 
 test('report-filters.tsx: no filtering/business logic was touched — handleApply, handleReset, and ALL_VALUE semantics are unchanged', () => {
-  assert.match(REPORT_FILTERS_SRC, /function handleApply\(typeOverride\?: ReportType\) \{/)
+  // Optional 2nd param = client Report Type preset (Total/Open/In Process/Resolved).
+  assert.match(REPORT_FILTERS_SRC, /function handleApply\(typeOverride\?: ReportType, presetOverride\?: ClientReportPreset\) \{/)
   assert.match(REPORT_FILTERS_SRC, /const ALL_VALUE = '__all__'/)
   assert.match(REPORT_FILTERS_SRC, /if \(projectId && projectId !== ALL_VALUE\) filters\.projectId = Number\(projectId\)/)
   assert.match(REPORT_FILTERS_SRC, /const showClientFilter = userRole !== 'client'/)

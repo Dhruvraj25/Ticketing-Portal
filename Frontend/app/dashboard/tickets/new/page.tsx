@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { toast } from 'sonner'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createTicket, getTicketFormProjects, getTicketFormModules, getModulesForClient, getTicketFormClients, getCurrentUser } from '@/app/actions/tickets'
@@ -286,7 +287,7 @@ export default function NewTicketPage() {
   }, [])
 
   function saveDraft() {
-    saveTicketDraft({
+    const saved = saveTicketDraft({
       title,
       description,
       priority,
@@ -298,6 +299,11 @@ export default function NewTicketPage() {
       projectId: selectedProjectId,
       moduleId: selectedModuleId,
     })
+    if (!saved) {
+      toast.error('Could not save the draft. Please check your browser storage settings and try again.')
+      return
+    }
+    toast.success('Draft saved')
     setDraftSaved(true)
     setTimeout(() => setDraftSaved(false), 2000)
   }
@@ -318,10 +324,6 @@ export default function NewTicketPage() {
     // Validate required fields
     if (!selectedProjectId) {
       setError('Please select a project.')
-      return
-    }
-    if (!environment) {
-      setError('Please select an environment.')
       return
     }
     if (isStaff && !selectedClientId) {
@@ -418,7 +420,7 @@ export default function NewTicketPage() {
   )
 
   const canGoNext = step === 'details'
-    ? title.trim() && description.trim() && selectedProjectId && environment && ticketTypeFieldsFilled
+    ? title.trim() && description.trim() && selectedProjectId && ticketTypeFieldsFilled
     : true
   const stepIndex = STEPS.indexOf(step)
 
@@ -431,10 +433,6 @@ export default function NewTicketPage() {
     // Going forward to review — validate required fields
     if (!selectedProjectId) {
       setError('Please select a project.')
-      return
-    }
-    if (!environment) {
-      setError('Please select an environment.')
       return
     }
     if (isStaff && !selectedClientId) {
@@ -796,7 +794,7 @@ export default function NewTicketPage() {
                         <div className="space-y-2">
                           <Label htmlFor="historicalDate" className="flex items-center gap-1.5">
                             <CalendarClock className="h-3.5 w-3.5 text-muted-foreground" />
-                            Historical Ticket Date <span className="text-destructive">*</span>
+                            Ticket Date <span className="text-destructive">*</span>
                           </Label>
                           <Input
                             id="historicalDate"
@@ -897,7 +895,7 @@ export default function NewTicketPage() {
 
               <div data-tour="ticket-environment" className="space-y-2">
                 <Label htmlFor="environment">
-                  Environment <span className="text-destructive">*</span>
+                  Environment <span className="text-muted-foreground font-normal">(optional)</span>
                 </Label>
                 <Select value={environment} onValueChange={setEnvironment}>
                   <SelectTrigger className="h-11 rounded-xl bg-input/50 border-border/50">
@@ -1017,7 +1015,7 @@ export default function NewTicketPage() {
                     <p className="text-xs text-muted-foreground mb-1 font-medium uppercase tracking-wider">Environment</p>
                     <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
                       <Monitor className="h-3.5 w-3.5 text-muted-foreground" />
-                      {environment.charAt(0).toUpperCase() + environment.slice(1)}
+                      {environment ? environment.charAt(0).toUpperCase() + environment.slice(1) : 'Not specified'}
                     </p>
                   </div>
                 </div>
@@ -1092,7 +1090,7 @@ export default function NewTicketPage() {
                   </Button>
                   <Button type="button" variant="ghost" onClick={saveDraft} className="rounded-xl" disabled={loading}>
                     <Save className="mr-2 h-4 w-4" />
-                    Save Draft
+                    {draftSaved ? 'Saved!' : 'Save Draft'}
                   </Button>
                 </div>
                 <Button

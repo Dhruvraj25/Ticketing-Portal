@@ -21,6 +21,7 @@ export {
   // Renewals
   getClientRenewalStatus,
   logRenewalReminderActivity,
+  requestSupportRenewal,
   checkClientCanCreateTicket,
   getMyWalletThresholdStatus,
   recalculateWallet,

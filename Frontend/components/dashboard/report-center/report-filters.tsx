@@ -17,7 +17,7 @@ import { TicketStatus, type UserRole } from '@/lib/types'
 import type { ReportFilters as ReportFiltersType } from '@/app/actions/reports'
 import { checkAccess } from '@/app/actions/reports/types'
 import type { ReportType } from '@/lib/report-types'
-import { REPORT_TYPE_OPTIONS } from '@/lib/report-types'
+import { REPORT_TYPE_OPTIONS, CLIENT_REPORT_PRESETS, clientPresetFromFilters, type ClientReportPreset } from '@/lib/report-types'
 
 interface ReportFiltersProps {
   projects: { id: number; projectName: string; projectCode: string }[]
@@ -73,22 +73,42 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
   const [dateTo, setDateTo] = useState(initialFilters?.dateTo || '')
   const [projectId, setProjectId] = useState(initialFilters?.projectId ? String(initialFilters.projectId) : '')
   const [moduleId, setModuleId] = useState(initialFilters?.moduleId ? String(initialFilters.moduleId) : '')
-  const [developerId, setDeveloperId] = useState(initialFilters?.developerId || '')
+  // Clients have no Developer filter, so a developerId from a link is never adopted.
+  const [developerId, setDeveloperId] = useState(userRole === 'client' ? '' : initialFilters?.developerId || '')
   const [clientId, setClientId] = useState(initialFilters?.clientId || '')
-  const [status, setStatus] = useState(initialFilters?.status || '')
+  // For clients, a preset's own status rule (Open/In Process/Resolved) is applied at
+  // generate time and must not also seed the advanced Status filter.
+  const [status, setStatus] = useState(
+    userRole === 'client' && clientPresetFromFilters(initialFilters) !== 'total' ? '' : initialFilters?.status || '',
+  )
   const [priority, setPriority] = useState(initialFilters?.priority || '')
+  // Client role: the Report Type dropdown offers only the 4 client presets.
+  const isClient = userRole === 'client'
+  const [clientPreset, setClientPreset] = useState<ClientReportPreset>(clientPresetFromFilters(initialFilters))
 
-  function handleApply(typeOverride?: ReportType) {
+  // Apply a client preset on top of the other filters (preset status rules win).
+  function withClientPreset(filters: ReportFiltersType, presetValue: ClientReportPreset): ReportFiltersType {
+    const preset = CLIENT_REPORT_PRESETS.find(p => p.value === presetValue)
+    const result: ReportFiltersType = { ...filters, reportType: 'ticket_summary' }
+    if (preset?.status) result.status = preset.status
+    if (preset?.excludeStatus) result.excludeStatus = preset.excludeStatus
+    return result
+  }
+
+  function handleApply(typeOverride?: ReportType, presetOverride?: ClientReportPreset) {
     const filters: ReportFiltersType = { reportType: typeOverride ?? reportType }
     if (dateFrom) filters.dateFrom = dateFrom
     if (dateTo) filters.dateTo = dateTo
     if (projectId && projectId !== ALL_VALUE) filters.projectId = Number(projectId)
     if (moduleId && moduleId !== ALL_VALUE) filters.moduleId = Number(moduleId)
-    if (developerId && developerId !== ALL_VALUE) filters.developerId = developerId
+    if (developerId && developerId !== ALL_VALUE) {
+      // Clients have no Developer filter — never send developerId for them.
+      if (!isClient) filters.developerId = developerId
+    }
     if (clientId && clientId !== ALL_VALUE) filters.clientId = clientId
     if (status && status !== ALL_VALUE) filters.status = status as any
     if (priority && priority !== ALL_VALUE) filters.priority = priority as any
-    onApply(filters)
+    onApply(isClient ? withClientPreset(filters, presetOverride ?? clientPreset) : filters)
   }
 
   function handleReset() {
@@ -100,10 +120,10 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
     setClientId('')
     setStatus('')
     setPriority('')
-    onApply({ reportType })
+    onApply(isClient ? withClientPreset({ reportType }, clientPreset) : { reportType })
   }
 
-  const activeFilterCount = [dateFrom, dateTo, projectId, moduleId, developerId, clientId, status, priority].filter(v => v && v !== ALL_VALUE).length
+  const activeFilterCount = [dateFrom, dateTo, projectId, moduleId, isClient ? '' : developerId, clientId, status, priority].filter(v => v && v !== ALL_VALUE).length
 
   // The Client field is meaningless (and a real data-exposure risk) for a
   // client-role caller: they can only ever see their own org's data regardless
@@ -115,6 +135,8 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
   // functional benefit. Hide the field entirely rather than just leaving it
   // inert.
   const showClientFilter = userRole !== 'client'
+  // Developer / support-engineer assignment is internal — clients don't filter by it.
+  const showDeveloperFilter = userRole !== 'client'
 
   // Only offer report types this role is actually authorized to run — the
   // server (checkAccess in app/actions/reports/queries.ts) is the real gate,
@@ -133,6 +155,18 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
       <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
         <div className="w-full sm:flex-1 space-y-1.5 min-w-0">
           <Label htmlFor="report-type">Report Type</Label>
+          {isClient ? (
+          <Select value={clientPreset} onValueChange={(v) => { setClientPreset(v as ClientReportPreset); handleApply(undefined, v as ClientReportPreset) }}>
+            <SelectTrigger id="report-type" className="h-11 rounded-xl bg-white dark:bg-slate-900 border-border">
+              <SelectValue placeholder="Select report type" />
+            </SelectTrigger>
+            <SelectContent className="max-h-80">
+              {CLIENT_REPORT_PRESETS.map(opt => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          ) : (
           <Select value={reportType} onValueChange={(v) => { setReportType(v as ReportType); handleApply(v as ReportType) }}>
             <SelectTrigger id="report-type" className="h-11 rounded-xl bg-white dark:bg-slate-900 border-border">
               <SelectValue placeholder="Select report type" />
@@ -150,6 +184,7 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
               ))}
             </SelectContent>
           </Select>
+          )}
         </div>
 
         <div className="flex items-center gap-3 sm:mt-6 shrink-0">
@@ -226,6 +261,7 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
                     </SelectContent>
                   </Select>
                 </div>
+                {showDeveloperFilter && (
                 <div className="space-y-1.5 min-w-0">
                   <Label className="text-xs">Support Engineer / Developer</Label>
                   <Select value={developerId} onValueChange={setDeveloperId}>
@@ -240,6 +276,7 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
                     </SelectContent>
                   </Select>
                 </div>
+                )}
                 <div className="space-y-1.5 min-w-0">
                   <Label className="text-xs">Module / Service Area</Label>
                   <Select value={moduleId} onValueChange={setModuleId}>

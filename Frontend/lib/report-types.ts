@@ -1,3 +1,5 @@
+import type { TicketStatus } from './types'
+
 export type ReportType =
   | 'ticket_summary'
   | 'ticket_status'
@@ -75,4 +77,34 @@ export const REPORT_TYPE_OPTIONS: { value: ReportType; label: string; category: 
 export const REPORT_TYPE_LABELS: Record<string, string> = {}
 for (const opt of REPORT_TYPE_OPTIONS) {
   REPORT_TYPE_LABELS[opt.value] = opt.label
+}
+
+// ─── Client Report Type options ─────────────────────────────────────────────
+// A client's Report Type dropdown offers exactly these 4 reports. Each is a
+// preset of the existing Ticket Summary report (no new report handler) and
+// only affects the client Reports UI — checkAccess() and every other role's
+// report list are unchanged.
+//   Open        = every status except Closed
+//   In Process  = Work in Progress
+//   Resolved    = Closed / Completed
+export type ClientReportPreset = 'total' | 'open' | 'in_process' | 'resolved'
+
+export const CLIENT_REPORT_PRESETS: {
+  value: ClientReportPreset
+  label: string
+  status?: TicketStatus
+  excludeStatus?: TicketStatus
+}[] = [
+  { value: 'total', label: 'Total Tickets' },
+  { value: 'open', label: 'Open Tickets', excludeStatus: 'closed' },
+  { value: 'in_process', label: 'In Process Tickets', status: 'in_progress' },
+  { value: 'resolved', label: 'Resolved Tickets', status: 'closed' },
+]
+
+/** Which client preset a set of Ticket Summary filters corresponds to. */
+export function clientPresetFromFilters(filters?: { status?: string; excludeStatus?: string } | null): ClientReportPreset {
+  if (filters?.excludeStatus === 'closed') return 'open'
+  if (filters?.status === 'in_progress') return 'in_process'
+  if (filters?.status === 'closed') return 'resolved'
+  return 'total'
 }

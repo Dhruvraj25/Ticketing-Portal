@@ -151,6 +151,33 @@ export const UserStep = memo(function UserStep({ state, errors, onFieldChange }:
                 error={errors.userFormPhoneNumber}
               />
             </Field>
+            {/* Customer company — shared by every user added in this onboarding and
+                stored on each customer user record. Required for a new customer. */}
+            <Field
+              name="companyName"
+              label="Company Name"
+              required={state.mode !== 'existing'}
+              error={errors.companyName}
+            >
+              <Input
+                placeholder="ABC Technologies"
+                value={state.companyName}
+                onChange={(e) => onFieldChange('companyName', e.target.value)}
+                className={errors.companyName ? 'border-destructive' : ''}
+              />
+            </Field>
+            <Field
+              name="companyCode"
+              label="Company Code"
+              error={errors.companyCode}
+            >
+              <Input
+                placeholder="ABC-001"
+                value={state.companyCode}
+                onChange={(e) => onFieldChange('companyCode', e.target.value)}
+                className={errors.companyCode ? 'border-destructive' : ''}
+              />
+            </Field>
             <Field
               name="userFormDesignation"
               label="Designation"

@@ -2,7 +2,7 @@
 
 import { db } from '@/lib/db'
 import { ticket } from '@/lib/db/schema'
-import { and, eq, desc, gte, lte, sql, isNotNull, count, inArray } from 'drizzle-orm'
+import { and, eq, ne, desc, gte, lte, sql, isNotNull, count, inArray } from 'drizzle-orm'
 import { TicketStatus, TICKET_STATUS_CONFIG } from '@/lib/types'
 import type { ReportFilters, ReportResult } from './types'
 import { getDateRange } from './types'
@@ -32,6 +32,7 @@ export async function getTicketSummaryReport(filters: ReportFilters, currentUser
   if (filters.developerId) conditions.push(eq(ticket.assignedToId, filters.developerId))
   if (filters.clientId) conditions.push(eq(ticket.clientId, filters.clientId))
   if (filters.status) conditions.push(eq(ticket.status, filters.status))
+  if (filters.excludeStatus) conditions.push(ne(ticket.status, filters.excludeStatus))
   if (filters.priority) conditions.push(eq(ticket.priority, filters.priority))
 
   // OPTIMIZATION: Use SQL FILTER aggregates for status counts (safe on status column),

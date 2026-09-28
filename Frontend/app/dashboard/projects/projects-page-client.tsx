@@ -425,6 +425,8 @@ export function ProjectsPageClient({ user, projects, isManagerOrAdmin }: Project
                     </SelectContent>
                   </Select>
 
+                  {/* Clients filter is for Admin/Manager views only — a client only sees their own projects. */}
+                  {user.role !== 'client' && (
                   <Select value={selectedClient} onValueChange={(v) => { setSelectedClient(v); setCurrentPage(1) }}>
                     <SelectTrigger className="w-[160px] h-9 rounded-xl bg-muted/20 border-border/50 text-sm">
                       <SelectValue placeholder="Client" />
@@ -435,6 +437,7 @@ export function ProjectsPageClient({ user, projects, isManagerOrAdmin }: Project
                       ))}
                     </SelectContent>
                   </Select>
+                  )}
 
                   <Select value={selectedManager} onValueChange={(v) => { setSelectedManager(v); setCurrentPage(1) }}>
                     <SelectTrigger className="w-[160px] h-9 rounded-xl bg-muted/20 border-border/50 text-sm">

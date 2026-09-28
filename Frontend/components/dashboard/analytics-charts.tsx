@@ -142,29 +142,40 @@ const StatusDistributionChartBase = ({ data }: { data: StatusDist[] }) => {
           <p className="text-sm text-muted-foreground">No data</p>
         </div>
       ) : (
-        <ResponsiveContainer width="100%" height={200}>
-          <PieChart>
-            <Pie
-              data={pieData}
-              cx="50%"
-              cy="50%"
-              innerRadius={55}
-              outerRadius={80}
-              dataKey="value"
-              paddingAngle={2}
-            >
-              {pieData.map((_, i) => (
-                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-              ))}
-            </Pie>
-            <Tooltip content={<CustomTooltip />} />
-            <Legend
-              iconType="circle"
-              iconSize={8}
-              wrapperStyle={{ fontSize: '11px', color: 'var(--muted-foreground)' }}
-            />
-          </PieChart>
-        </ResponsiveContainer>
+        <>
+          <ResponsiveContainer width="100%" height={200}>
+            <PieChart>
+              <Pie
+                data={pieData}
+                cx="50%"
+                cy="50%"
+                innerRadius={55}
+                outerRadius={80}
+                dataKey="value"
+                paddingAngle={2}
+              >
+                {pieData.map((_, i) => (
+                  <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+            </PieChart>
+          </ResponsiveContainer>
+          {/* Legend rendered as HTML below the fixed-height chart so it wraps
+              and grows the card as needed instead of being squeezed into (and
+              clipped by) the chart's 200px canvas when there are many statuses. */}
+          <ul className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
+            {pieData.map((entry, i) => (
+              <li key={entry.name} className="flex items-center gap-1.5">
+                <span
+                  className="h-2 w-2 rounded-full shrink-0"
+                  style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
+                />
+                <span>{entry.name}</span>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   )

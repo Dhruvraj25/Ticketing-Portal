@@ -140,8 +140,8 @@ export default async function ProjectDetailPage({
             delay={1}
           />
           <StatCard
-            title="Client"
-            value={project.clientName || '—'}
+            title="Company"
+            value={project.clientCompanyName || project.clientName || '—'}
             iconName="Users"
             delay={2}
             valueClassName="text-lg font-semibold leading-snug break-words"
@@ -229,9 +229,15 @@ export default async function ProjectDetailPage({
               <h3 className="font-semibold text-foreground mb-4">Project Details</h3>
               <div className="space-y-4 text-sm">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground flex items-center gap-1.5 shrink-0"><Users className="h-3.5 w-3.5" /> Client</span>
-                  <span className="text-foreground font-normal truncate ml-2 min-w-0">{project.clientName || '—'}</span>
+                  <span className="text-muted-foreground flex items-center gap-1.5 shrink-0"><Users className="h-3.5 w-3.5" /> Company</span>
+                  <span className="text-foreground font-normal truncate ml-2 min-w-0">{project.clientCompanyName || project.clientName || '—'}</span>
                 </div>
+                {project.clientCompanyCode && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground flex items-center gap-1.5 shrink-0"><Users className="h-3.5 w-3.5" /> Company Code</span>
+                    <span className="text-foreground font-normal truncate ml-2 min-w-0">{project.clientCompanyCode}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-muted-foreground flex items-center gap-1.5 shrink-0"><Users className="h-3.5 w-3.5 text-purple-400" /> Support Manager</span>
                   <span className="text-foreground font-normal truncate ml-2 min-w-0">{project.managerName || '—'}</span>

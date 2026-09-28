@@ -138,12 +138,14 @@ export default async function AdminTeamsPage() {
 
   return (
     <div className="space-y-6" data-tour="teams-integration">
-      <div data-tour="teams-header">
-      <PageHeader
+      {/* Same header card as Client Management (dashboard/clients/page.tsx). */}
+      <div data-tour="teams-header" className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6">
+        <PageHeader
           title="Microsoft Teams"
           subtitle="Configure per-project Teams channels and monitor notification delivery"
           icon={<MessageSquare className="h-5 w-5" />}
           iconVariant="purple"
+          badge="Admin"
         />
       </div>
 
@@ -312,9 +314,12 @@ export default async function AdminTeamsPage() {
           </CardHeader>
           <CardContent className="p-0">
             {(monitor.recentEvents && monitor.recentEvents.length > 0) ? (
-              <div className="overflow-x-auto">
+              // Message list scrolls inside its own container (same pattern as the
+              // Ticket List) so many messages never stretch the whole page; the
+              // sticky header keeps the column labels visible while scrolling.
+              <div className="overflow-x-auto max-h-[420px] overflow-y-auto overscroll-contain">
                 <table className="w-full text-xs">
-                  <thead>
+                  <thead className="sticky top-0 z-10 bg-card">
                     <tr className="border-b border-border">
                       <th className="text-left font-medium text-muted-foreground px-4 py-2">Type</th>
                       <th className="text-left font-medium text-muted-foreground px-4 py-2">Event</th>

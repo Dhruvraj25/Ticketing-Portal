@@ -22,7 +22,7 @@ import { ReportTable } from '@/components/dashboard/report-center/report-table'
 import { ReportSummaryCards } from '@/components/dashboard/report-center/report-summary-cards'
 import { StatCard, type KpiColorTheme } from '@/components/dashboard/stat-card'
 import { getReportData, getReportFormData } from '@/app/actions/reports'
-import { REPORT_TYPE_LABELS } from '@/lib/report-types'
+import { CLIENT_REPORT_PRESETS, clientPresetFromFilters } from '@/lib/report-types'
 import type { ReportFilters as ReportFiltersType, ReportResult } from '@/app/actions/reports'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -145,7 +145,7 @@ export function ClientReportsView({ stats }: { stats: ClientDashboardStats }) {
   }, [currentFilters, handleGenerateReport])
 
   const reportLabel = useMemo(
-    () => (currentFilters ? REPORT_TYPE_LABELS[currentFilters.reportType] || currentFilters.reportType : ''),
+    () => (currentFilters ? CLIENT_REPORT_PRESETS.find(p => p.value === clientPresetFromFilters(currentFilters))?.label ?? '' : ''),
     [currentFilters],
   )
 
@@ -210,7 +210,7 @@ export function ClientReportsView({ stats }: { stats: ClientDashboardStats }) {
             onApply={handleGenerateReport}
             initialReportType={currentFilters?.reportType}
             initialFilters={currentFilters || undefined}
-            userRole={formData.role as any}
+            userRole="client"
           />
         </div>
 

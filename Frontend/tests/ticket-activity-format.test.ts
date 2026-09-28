@@ -41,12 +41,12 @@ test('Requirement 3: completion logs "Support request marked as completed by [us
 
 test('Requirement 4: review submission logs "Customer Feedback Submitted by [user]"', () => {
   const out = formatActivityEntry({ action: 'review_submitted', userName: 'Suketu Bhatt', userRole: 'client' })
-  assert.equal(out.text, 'Customer Feedback Submitted by Suketu Bhatt')
+  assert.equal(out.text, 'Customer feedback submitted by Suketu Bhatt')
 })
 
 test('Requirement 4: review update logs "Customer Feedback Updated by [user]"', () => {
   const out = formatActivityEntry({ action: 'review_updated', userName: 'Suketu Bhatt', userRole: 'client' })
-  assert.equal(out.text, 'Customer Feedback Updated by Suketu Bhatt')
+  assert.equal(out.text, 'Customer feedback updated by Suketu Bhatt')
 })
 
 // ─── Requirement 5: Estimate approved — "Estimate approved By [actor]" ────
@@ -74,12 +74,12 @@ test('Requirement 5: estimate_approved detail line carries the hours (DETAIL_LIN
 
 test('Requirement 6: forwarded_to_client, internal view — "Customer Feedback requested by [Support Manager Name]"', () => {
   const out = formatActivityEntry({ action: 'forwarded_to_client', userName: 'Priya Shah', userRole: 'project_manager' })
-  assert.equal(out.text, 'Customer Feedback requested by Priya Shah')
+  assert.equal(out.text, 'Customer feedback requested by Priya Shah')
 })
 
 test('Requirement 6: forwarded_to_client, client view — name redacted, role label shown', () => {
   const out = formatActivityEntry({ action: 'forwarded_to_client', userName: '', userRole: 'project_manager' })
-  assert.equal(out.text, 'Customer Feedback requested by Support Manager / Project Manager')
+  assert.equal(out.text, 'Customer feedback requested by Support Manager / Project Manager')
 })
 
 // ─── Requirement 7: Customer revision request ──────────────────────────────
@@ -199,7 +199,7 @@ test('Case 5: different users performing the same action each get their own name
 
 test('Catalog 1: Customer feedback submitted — "Customer Feedback Submitted by {actor}"', () => {
   const out = formatActivityEntry({ action: 'review_submitted', userName: 'Suketu Bhatt', userRole: 'client' })
-  assert.equal(out.text, 'Customer Feedback Submitted by Suketu Bhatt')
+  assert.equal(out.text, 'Customer feedback submitted by Suketu Bhatt')
 })
 
 test('Catalog 2: Support request completed — "Support request marked as completed by {actor}"', () => {
@@ -209,7 +209,7 @@ test('Catalog 2: Support request completed — "Support request marked as comple
 
 test('Catalog 3: Customer feedback requested — "Customer Feedback requested by {actor}"', () => {
   const out = formatActivityEntry({ action: 'forwarded_to_client', userName: 'Priya Shah', userRole: 'project_manager' })
-  assert.equal(out.text, 'Customer Feedback requested by Priya Shah')
+  assert.equal(out.text, 'Customer feedback requested by Priya Shah')
 })
 
 test('Catalog 4: Revision approved — "Revision approved by {actor}"', () => {

@@ -250,7 +250,9 @@ export function ProjectChannelsClient({ initialProjects }: Props) {
         {projects.length === 0 ? (
           <p className="text-xs text-muted-foreground text-center py-6">No projects available.</p>
         ) : (
-          <div className="space-y-2">
+          // Scrolls inside its own container (same pattern as the Ticket List)
+          // so a long project list never stretches the whole page.
+          <div className="space-y-2 max-h-[420px] overflow-y-auto overscroll-contain pr-1">
             {projects.map((project) => (
               <div key={project.projectId} className="rounded-lg border border-border p-3">
                 <div className="flex flex-wrap items-center gap-3">

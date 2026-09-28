@@ -45,6 +45,8 @@ interface EstimateSectionProps {
   ticketId: number
   currentStatus: TicketStatus
   userRole: string
+  /** Client user type — only 'approver' clients may approve/decline (server-enforced in app/actions/estimates.ts). */
+  userType?: string | null
   clientName?: string
   estimatedHours?: number | null
   estimatedCompletionDate?: string | null
@@ -62,6 +64,7 @@ export function EstimateSection({
   ticketId,
   currentStatus,
   userRole,
+  userType,
   clientName,
   estimatedHours,
   estimatedCompletionDate,
@@ -103,6 +106,9 @@ export function EstimateSection({
 
   const isManagerOrAdmin = userRole === 'project_manager' || userRole === 'admin'
   const isClient = userRole === 'client'
+  // Mirrors the server rule: only the organization's Approver can approve,
+  // request a revision, or approve/decline additional hours.
+  const isClientApprover = isClient && userType === 'approver'
   const isNew = currentStatus === TicketStatus.NEW
   const isEstimatePending = currentStatus === TicketStatus.ESTIMATE_PENDING
   const isEstimateApproved = currentStatus === TicketStatus.ESTIMATE_APPROVED
@@ -447,8 +453,17 @@ export function EstimateSection({
         </div>
       )}
 
+      {/* ─── CLIENT (Standard): estimate awaits the organization's Approver ── */}
+      {isEstimatePending && isClient && !isClientApprover && (
+        <div className="rounded-xl bg-white dark:bg-slate-900 border border-sky-200 p-5">
+          <p className="text-sm text-muted-foreground">
+            This estimate is awaiting approval from your organization's Approver.
+          </p>
+        </div>
+      )}
+
       {/* ─── CLIENT: Approve or Request Revision on Estimate ───────────── */}
-      {isEstimatePending && isClient && (
+      {isEstimatePending && isClientApprover && (
         <div className="rounded-xl bg-white dark:bg-slate-900 border border-sky-200 p-5 space-y-4">
           <h3 className="font-semibold text-foreground flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-500 dark:text-emerald-400" />
@@ -738,7 +753,7 @@ export function EstimateSection({
       })()}
 
       {/* ─── CLIENT: Additional Hours Approval ────────────────────── */}
-      {additionalHoursRequested && !additionalHoursApproved && isClient && (
+      {additionalHoursRequested && !additionalHoursApproved && isClientApprover && (
         <div className="rounded-xl bg-amber-50 dark:bg-amber-500/15/50 border border-amber-200 dark:border-amber-500/30 p-5 space-y-4">
           <div className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5 text-amber-500 dark:text-amber-400" />

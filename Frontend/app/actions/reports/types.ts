@@ -15,6 +15,8 @@ export interface ReportFilters {
   developerId?: string
   clientId?: string
   status?: TicketStatus
+  /** Exclude one status (Ticket Summary only) — e.g. the client "Open Tickets" report excludes closed. */
+  excludeStatus?: TicketStatus
   priority?: TicketPriority
   reviewStatus?: 'all' | 'reviewed' | 'pending'
   starRating?: 'all' | '1' | '2' | '3' | '4' | '5'

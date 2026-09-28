@@ -474,6 +474,10 @@ export interface OnboardingFormData {
   modules: OnboardingModuleData[]
   clientUsers: OnboardingClientUserData[]
   supportWallet: OnboardingSupportWalletData
+  /** Customer's company name — stored on every client user created by this onboarding */
+  companyName?: string
+  /** Customer's company code (optional) — stored alongside companyName */
+  companyCode?: string
   /** Customer-level preference: whether this customer receives Microsoft Teams notifications (default false) */
   enableTeamsNotifications?: boolean
 }

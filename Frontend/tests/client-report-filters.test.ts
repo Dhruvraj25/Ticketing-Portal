@@ -123,3 +123,25 @@ test('report-center-client.tsx (admin/manager) is untouched by this phase — st
   assert.match(REPORT_CENTER_CLIENT_SRC, /<ReportFilters/)
   assert.match(REPORT_CENTER_CLIENT_SRC, /clients=\{formData\.clients\}/)
 })
+
+// ─── Developer filter is hidden for Client reports (other roles unchanged) ──
+
+test('report-filters.tsx: Developer filter is rendered only when the role is not client', () => {
+  assert.match(REPORT_FILTERS_SRC, /const showDeveloperFilter = userRole !== 'client'/)
+  const guard = REPORT_FILTERS_SRC.indexOf('{showDeveloperFilter && (')
+  const label = REPORT_FILTERS_SRC.indexOf('Support Engineer / Developer</Label>')
+  assert.ok(guard !== -1 && label > guard, 'the Developer field (label + select) must sit inside the showDeveloperFilter guard')
+  assert.ok(label - guard < 200, 'the guard must wrap the Developer field container itself (no empty wrapper left behind)')
+})
+
+test('report-filters.tsx: a client request never carries developerId (state, request and active-filter count)', () => {
+  assert.match(REPORT_FILTERS_SRC, /useState\(userRole === 'client' \? '' : initialFilters\?\.developerId \|\| ''\)/)
+  assert.match(REPORT_FILTERS_SRC, /if \(!isClient\) filters\.developerId = developerId/)
+  assert.match(REPORT_FILTERS_SRC, /isClient \? '' : developerId/)
+})
+
+test('report-filters.tsx: non-client roles keep the Developer filter and still send developerId', () => {
+  // Same select, same state setter, same request field as before — only gated for clients.
+  assert.match(REPORT_FILTERS_SRC, /<Select value=\{developerId\} onValueChange=\{setDeveloperId\}>/)
+  assert.match(REPORT_FILTERS_SRC, /filters\.developerId = developerId/)
+})

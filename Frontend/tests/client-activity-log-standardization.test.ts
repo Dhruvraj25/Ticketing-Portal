@@ -134,7 +134,7 @@ test('Case 9: getTicketHistory / getTicketHistoryCount apply inArray(ticketHisto
 test('Case 11: "Customer Feedback requested by Admin" (forwarded_to_client) is client-visible and role-label-safe for an Admin actor', () => {
   assert.ok(CLIENT_VISIBLE_HISTORY_ACTIONS.has('forwarded_to_client'))
   const out = formatActivityEntry({ action: 'forwarded_to_client', userName: '', userRole: 'admin' })
-  assert.equal(out.text, 'Customer Feedback requested by Admin')
+  assert.equal(out.text, 'Customer feedback requested by Admin')
 })
 
 // ─── Case 12: activity ordering/timestamps are untouched ──────────────────
@@ -188,9 +188,9 @@ test('Case 14: rejectEstimate never writes the raw DB action code into the clien
 
 test('full scenario: the exact "old → new" mapping from the audit brief formats correctly for every listed event', () => {
   const cases: Array<[Parameters<typeof formatActivityEntry>[0], string]> = [
-    [{ action: 'review_submitted', userName: 'Suketu Bhatt', userRole: 'client' }, 'Customer Feedback Submitted by Suketu Bhatt'],
+    [{ action: 'review_submitted', userName: 'Suketu Bhatt', userRole: 'client' }, 'Customer feedback submitted by Suketu Bhatt'],
     [{ action: 'client_approved', userName: 'Suketu Bhatt', userRole: 'client' }, 'Support request marked as completed by Suketu Bhatt'],
-    [{ action: 'forwarded_to_client', userName: '', userRole: 'admin' }, 'Customer Feedback requested by Admin'],
+    [{ action: 'forwarded_to_client', userName: '', userRole: 'admin' }, 'Customer feedback requested by Admin'],
     [{ action: 'estimate_approved', userName: 'Suketu Bhatt', userRole: 'client' }, 'Estimate approved By Suketu Bhatt'],
     [{ action: 'estimate_modified', userName: '', userRole: 'project_manager' }, 'Estimate updated by Support Manager / Project Manager'],
     [{ action: 'estimate_rejected', userName: 'Suketu Bhatt', userRole: 'client' }, 'Estimate hours request rejected by Suketu Bhatt'],

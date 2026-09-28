@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { REPORT_TYPE_OPTIONS } from '../lib/report-types.ts'
+import { REPORT_TYPE_OPTIONS, CLIENT_REPORT_PRESETS, clientPresetFromFilters } from '../lib/report-types.ts'
 
 // ============================================================================
 // Client Reports — authorization, routing & tenant-isolation regression suite
@@ -214,7 +214,7 @@ test('ClientReportsView renders the shared ReportFilters panel (Phase 5 — filt
   // Loaded via the same dynamic import() pattern report-center-client.tsx
   // already uses for this component (not a static import, and not a new path).
   assert.match(CLIENT_REPORTS_VIEW_SRC, /import\('@\/components\/dashboard\/report-center\/report-filters'\)/, 'must reuse the existing shared component, not a new one')
-  assert.match(CLIENT_REPORTS_VIEW_SRC, /userRole=\{formData\.role/, 'must pass the caller\'s role so the panel can scope itself (hide Client field, narrow Report Type options)')
+  // This view only ever renders for clients (role dispatch in page.tsx), so the role is passed  // statically — known at mount, before getReportFormData resolves.  assert.match(CLIENT_REPORTS_VIEW_SRC, /userRole="client"/, 'must pass the client role so the panel can scope itself (hide Client field, show only the 4 client reports)')
 })
 
 test('ClientReportsView still keeps its 4 quick-shortcut cards — the filter panel is additive, not a replacement', () => {
@@ -257,4 +257,31 @@ test('ReportCenterClient passes the current user role into ReportFilters', () =>
 
 test('getReportFormData returns the caller\'s role so the dropdown can be scoped', () => {
   assert.match(QUERIES_SRC, /return \{ \.\.\.data, role \}/)
+})
+
+// ─── Client Report Type dropdown: exactly 4 reports ──────────────────────────
+
+test('Client Report Type options are exactly Total / Open / In Process / Resolved Tickets', () => {
+  assert.deepEqual(CLIENT_REPORT_PRESETS.map(p => p.label), ['Total Tickets', 'Open Tickets', 'In Process Tickets', 'Resolved Tickets'])
+})
+
+test('Client presets map to the agreed status rules (Open = not closed, In Process = in_progress, Resolved = closed)', () => {
+  const byValue = Object.fromEntries(CLIENT_REPORT_PRESETS.map(p => [p.value, p]))
+  assert.equal(byValue.total.status, undefined)
+  assert.equal(byValue.total.excludeStatus, undefined)
+  assert.equal(byValue.open.excludeStatus, 'closed')
+  assert.equal(byValue.in_process.status, 'in_progress')
+  assert.equal(byValue.resolved.status, 'closed')
+})
+
+test('clientPresetFromFilters round-trips each preset and defaults to Total', () => {
+  for (const p of CLIENT_REPORT_PRESETS) {
+    assert.equal(clientPresetFromFilters({ status: p.status, excludeStatus: p.excludeStatus }), p.value)
+  }
+  assert.equal(clientPresetFromFilters(null), 'total')
+  assert.equal(clientPresetFromFilters({ status: 'client_review' }), 'total')
+})
+
+test('Admin/Manager/Developer report list is untouched (full REPORT_TYPE_OPTIONS still exported)', () => {
+  assert.ok(REPORT_TYPE_OPTIONS.length > 4)
 })

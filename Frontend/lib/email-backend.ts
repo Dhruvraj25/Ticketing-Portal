@@ -39,13 +39,15 @@ if (process.env.NODE_ENV === 'production' && !process.env.BACKEND_URL && !proces
  * @param options - Optional settings (immediate, etc.)
  *
  * This function NEVER throws — all errors are caught and logged server-side.
+ * Resolves to true when the backend accepted the email, false otherwise
+ * (existing fire-and-forget callers can simply ignore the result).
  */
 export async function sendNotification(
   eventType: string,
   to: string | string[],
   data: Record<string, unknown>,
   options?: { immediate?: boolean },
-): Promise<void> {
+): Promise<boolean> {
   try {
     const { headers } = await import('next/headers')
     const cookieHeader = await headers()
@@ -72,9 +74,12 @@ export async function sendNotification(
     if (!response.ok) {
       const text = await response.text().catch(() => 'Unknown error')
       console.error(`[EmailBackend] HTTP ${response.status} for ${eventType}: ${text}`)
+      return false
     }
+    return true
   } catch (err) {
     console.error(`[EmailBackend] Failed to send ${eventType}:`, err instanceof Error ? err.message : err)
+    return false
   }
 }
 

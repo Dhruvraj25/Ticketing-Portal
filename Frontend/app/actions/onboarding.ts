@@ -32,6 +32,12 @@ function validateEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 
+/** Trim a company field; blank / whitespace-only becomes null (never stored as '   '). */
+function normalizeCompanyField(value: string | undefined | null): string | null {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : null
+}
+
 function canCreateOnboarding(role: UserRole): boolean {
   return role === 'admin' || role === 'project_manager'
 }
@@ -86,6 +92,9 @@ export const createCustomerOnboarding = wrapServerAction(
 
     if (!data.project.projectName?.trim()) throw new Error('Project name is required.')
     if (!data.project.managerId) throw new Error('Project manager is required.')
+    const companyName = normalizeCompanyField(data.companyName)
+    if (!companyName) throw new Error('Company name is required.')
+    const companyCode = normalizeCompanyField(data.companyCode)
 
     const [dupProject] = await db
       .select({ id: project.id })
@@ -195,6 +204,8 @@ export const createCustomerOnboarding = wrapServerAction(
           phone: firstUser.phoneNumber?.trim() || null,
           countryCode: firstUser.countryCode?.trim() || null,
           enableTeamsNotifications: !!data.enableTeamsNotifications,
+          companyName,
+          companyCode,
         }).returning()
         
         const primaryHashedPassword = await bcrypt.hash(firstUser.password, 10)
@@ -225,6 +236,8 @@ export const createCustomerOnboarding = wrapServerAction(
             phone: cu.phoneNumber?.trim() || null,
             countryCode: cu.countryCode?.trim() || null,
             enableTeamsNotifications: !!data.enableTeamsNotifications,
+            companyName,
+            companyCode,
           }).returning()
 
           const hashedPassword = await bcrypt.hash(cu.password, 10)
@@ -644,6 +657,8 @@ export const getOnboardingExistingProjects = wrapServerAction('getOnboardingExis
       clientId: project.clientId,
       clientName: user.name,
       clientEmail: user.email,
+      clientCompanyName: user.companyName,
+      clientCompanyCode: user.companyCode,
     })
     .from(project)
     .leftJoin(user, eq(project.clientId, user.id))
@@ -703,6 +718,9 @@ export interface AddUsersToProjectData {
   newModules?: { moduleName: string; description?: string }[]
   /** Customer-level preference: whether these client users receive Microsoft Teams notifications (default false) */
   enableTeamsNotifications?: boolean
+  /** Customer company info (edited in the User section). Blank keeps the customer's current value. */
+  companyName?: string
+  companyCode?: string
 }
 
 export const addClientUsersToExistingProject = wrapServerAction(
@@ -719,14 +737,22 @@ export const addClientUsersToExistingProject = wrapServerAction(
 
     // Validate the project exists
     const [projectInfo] = await db
-      .select({ id: project.id, projectName: project.projectName, projectCode: project.projectCode })
+      .select({ id: project.id, projectName: project.projectName, projectCode: project.projectCode, clientId: project.clientId, clientCompanyName: user.companyName, clientCompanyCode: user.companyCode })
       .from(project)
+      .leftJoin(user, eq(project.clientId, user.id))
       .where(and(eq(project.id, data.projectId), ne(project.status, 'archived')))
       .limit(1)
 
     if (!projectInfo) {
       throw new Error('Project not found or is archived.')
     }
+
+    // Company info belongs to the customer: new users get the project customer's
+    // company, with any value edited in the User section taking precedence.
+    // A blank field keeps the existing value (never wipes stored company data).
+    const companyName = normalizeCompanyField(data.companyName) ?? projectInfo.clientCompanyName ?? null
+    const companyCode = normalizeCompanyField(data.companyCode) ?? projectInfo.clientCompanyCode ?? null
+    const companyChanged = companyName !== (projectInfo.clientCompanyName ?? null) || companyCode !== (projectInfo.clientCompanyCode ?? null)
 
     // Validate users
     for (let i = 0; i < data.clientUsers.length; i++) {
@@ -782,6 +808,8 @@ export const addClientUsersToExistingProject = wrapServerAction(
             phone: cu.phoneNumber?.trim() || null,
             countryCode: cu.countryCode?.trim() || null,
             enableTeamsNotifications: !!data.enableTeamsNotifications,
+            companyName,
+            companyCode,
           }).returning()
 
           const hashedPassword = await bcrypt.hash(cu.password, 10)
@@ -798,6 +826,21 @@ export const addClientUsersToExistingProject = wrapServerAction(
           createdUserEmails.push(cu.email.trim().toLowerCase())
           createdUserNames.push(userFullName)
         }
+        // Edited company info → apply it to the project's existing customer users
+        // (owner + client users already linked to this project) so the customer
+        // record stays consistent. Only client-role users are ever touched.
+        if (companyChanged) {
+          const linked = await tx
+            .select({ userId: projectClient.userId })
+            .from(projectClient)
+            .where(eq(projectClient.projectId, projectInfo.id))
+          const customerUserIds = [...new Set([projectInfo.clientId, ...linked.map((l) => l.userId)])]
+          await tx
+            .update(user)
+            .set({ companyName, companyCode, updatedAt: new Date() })
+            .where(and(inArray(user.id, customerUserIds), eq(user.role, 'client')))
+        }
+
         // Link ALL created client users to the project (so they can see it in create ticket page)
         if (createdUserIds.length > 0) {
           const now = new Date()

@@ -26,6 +26,8 @@ export interface ExistingProjectOption {
   clientId: string
   clientName: string | null
   clientEmail: string | null
+  clientCompanyName?: string | null
+  clientCompanyCode?: string | null
 }
 export interface FormErrors { [key: string]: string }
 
@@ -59,6 +61,10 @@ export interface OnboardingState {
   managerList: UserOption[]
   existingModules: ModuleOption[]
   availableProjects: ExistingProjectOption[]
+
+  // Customer company (User section) — stored on the customer user record
+  companyName: string
+  companyCode: string
 
   // Project
   projectName: string
@@ -169,6 +175,8 @@ const initialState: OnboardingState = {
   managerList: [],
   existingModules: [],
   availableProjects: [],
+  companyName: '',
+  companyCode: '',
   projectName: '',
   selectedManager: '',
   selectedProjectId: null,
@@ -288,6 +296,8 @@ function onboardingReducer(state: OnboardingState, action: Action): OnboardingSt
           : []
       return {
         ...state,
+        companyName: d.companyName || '',
+        companyCode: d.companyCode || '',
         projectName: d.project.projectName,
         selectedManager: d.project.managerId,
         projectDescription: d.project.description || '',
@@ -334,21 +344,31 @@ export function useOnboarding(currentUserRole: string, currentUserId: string) {
     if (state.step !== 2) return
     let cancelled = false
     async function loadManagers() {
-      try {
-        const [managers, projects] = await Promise.all([
-          getOnboardingManagers(),
-          getOnboardingExistingProjects(),
-        ])
-        if (!cancelled) {
-          dispatch({ type: 'SET_MANAGERS', managers })
-          dispatch({ type: 'SET_EXISTING_PROJECTS', projects })
-          // Auto-assign if project_manager
-          if (currentUserRole === 'project_manager') {
-            dispatch({ type: 'SET_FIELD', field: 'selectedManager', value: currentUserId })
-          }
+      // Loaded independently: a failure in one list (e.g. existing projects)
+      // must never discard the other — previously a single Promise.all meant an
+      // existing-projects error left the Manager dropdown empty too.
+      const [managersResult, projectsResult] = await Promise.allSettled([
+        getOnboardingManagers(),
+        getOnboardingExistingProjects(),
+      ])
+      if (cancelled) return
+
+      if (managersResult.status === 'fulfilled') {
+        dispatch({ type: 'SET_MANAGERS', managers: managersResult.value })
+        // Auto-assign if project_manager
+        if (currentUserRole === 'project_manager') {
+          dispatch({ type: 'SET_FIELD', field: 'selectedManager', value: currentUserId })
         }
-      } catch (err: any) {
-        if (!cancelled) toast.error('Failed to load managers')
+      } else {
+        console.error('[Onboarding] Failed to load managers:', managersResult.reason)
+        toast.error('Failed to load managers')
+      }
+
+      if (projectsResult.status === 'fulfilled') {
+        dispatch({ type: 'SET_EXISTING_PROJECTS', projects: projectsResult.value })
+      } else {
+        console.error('[Onboarding] Failed to load existing projects:', projectsResult.reason)
+        toast.error('Failed to load existing projects')
       }
     }
     loadManagers()
@@ -410,6 +430,18 @@ export function useOnboarding(currentUserRole: string, currentUserId: string) {
     dispatch({ type: 'SET_FIELD', field: 'existingModeNewModules', value: [] })
     return () => { cancelled = true }
   }, [state.mode, state.selectedProjectId])
+
+  // ── Existing customer: load its company info into the User section ──
+  // When an existing project is picked, show the customer's stored Company
+  // Name / Code so they can be reviewed and edited. A customer with no stored
+  // value keeps whatever was already typed.
+  useEffect(() => {
+    if (state.mode !== 'existing' || !state.selectedProjectId) return
+    const selected = state.availableProjects.find((p) => p.id === state.selectedProjectId)
+    if (!selected) return
+    if (selected.clientCompanyName) dispatch({ type: 'SET_FIELD', field: 'companyName', value: selected.clientCompanyName })
+    if (selected.clientCompanyCode) dispatch({ type: 'SET_FIELD', field: 'companyCode', value: selected.clientCompanyCode })
+  }, [state.mode, state.selectedProjectId, state.availableProjects])
 
   // ── Convenience setters ─────────────────────────────────────────────
   const setField = useCallback((field: string, value: any) => {
@@ -637,6 +669,16 @@ export function useOnboarding(currentUserRole: string, currentUserId: string) {
       return
     }
 
+    // ── Company Name lives in the User section (step 1) but is only required
+    // for a NEW customer, which is known once the mode is chosen on step 2.
+    if (state.step === 2 && state.mode === 'new' && !state.companyName.trim()) {
+      dispatch({ type: 'SET_ERRORS', errors: { companyName: 'Company name is required' } })
+      dispatch({ type: 'SET_STEP', step: 1 })
+      toast.error('Please enter the Company Name in the User section')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+
     // ── Steps 2, 3, 4: Standard validation via validateStep ───────────
     if (!await validateStep(state.step as WizardStep)) {
       toast.error('Please fix the errors before continuing')
@@ -696,6 +738,8 @@ export function useOnboarding(currentUserRole: string, currentUserId: string) {
         password: u.password,
         isAutoGenerated: u.isAutoGenerated, sendEmail: u.sendEmail,
       })),
+      companyName: s.companyName,
+      companyCode: s.companyCode,
       enableTeamsNotifications: s.enableTeamsNotifications,
       supportWallet: {
         supportHours: parseInt(s.supportHours) || 0, supportStartDate: s.supportStartDate,
@@ -893,6 +937,8 @@ export function useOnboarding(currentUserRole: string, currentUserId: string) {
         const result = await addClientUsersToExistingProject({
           projectId: s.selectedProjectId!,
           enableTeamsNotifications: s.enableTeamsNotifications,
+          companyName: s.companyName,
+          companyCode: s.companyCode,
           clientUsers: s.clientUsers.map((u) => ({
             firstName: u.firstName, lastName: u.lastName, email: u.email,
             phoneNumber: u.phoneNumber, countryCode: u.countryCode, designation: u.designation,
@@ -940,6 +986,8 @@ export function useOnboarding(currentUserRole: string, currentUserId: string) {
             contractType: s.contractType as any,
             hypercareDuration: s.hypercareDuration ? parseInt(String(s.hypercareDuration)) as any : undefined,
           },
+          companyName: s.companyName,
+          companyCode: s.companyCode,
         }
         const result = await createCustomerOnboarding(formData)
         if (result.success) {

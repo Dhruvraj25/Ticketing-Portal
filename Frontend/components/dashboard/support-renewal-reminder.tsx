@@ -1,15 +1,15 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format } from 'date-fns'
-import { AlertTriangle, XCircle, CheckCircle2, Shield, Clock, Wallet, Calendar, ExternalLink, X, Bell, RefreshCw } from 'lucide-react'
+import { AlertTriangle, XCircle, CheckCircle2, Shield, Clock, Wallet, Calendar, ExternalLink, X, Bell, RefreshCw, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { useTour } from '@/components/tour/tour-provider'
-import { logRenewalReminderActivity } from '@/app/actions/wallets'
+import { logRenewalReminderActivity, requestSupportRenewal } from '@/app/actions/wallets'
 
 export type RenewalStatus = {
   showReminder: boolean
@@ -38,7 +38,6 @@ function StatusBadge({ config }: { config: BadgeConfig }) {
 }
 
 export function SupportRenewalReminder({ status }: Props) {
-  const router = useRouter()
   // The product-tour welcome modal / an active guided tour must never be
   // stacked under (or over) this popup — whichever appears last stays the
   // only visible overlay so it remains fully responsive (no stale backdrop
@@ -48,6 +47,10 @@ export function SupportRenewalReminder({ status }: Props) {
   const [showPopup, setShowPopup] = useState(false)
   const [dismissedThisSession, setDismissedThisSession] = useState(false)
   const [showBanner, setShowBanner] = useState(true)
+  const [requesting, setRequesting] = useState(false)
+  // Ref guard (not just state) so a fast double-click can't send two emails
+  // before the disabled state re-renders.
+  const requestInFlight = useRef(false)
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -88,11 +91,27 @@ export function SupportRenewalReminder({ status }: Props) {
     try { sessionStorage.setItem(SESSION_KEY, 'true') } catch { /* noop */ }
   }, [])
 
-  const handleRenewSupport = useCallback(() => {
-    setShowPopup(false)
+  // Renew → email the client's Project Manager (no navigation to Support Wallet).
+  const handleRenewSupport = useCallback(async () => {
+    if (requestInFlight.current) return
+    requestInFlight.current = true
+    setRequesting(true)
     logRenewalReminderActivity('Renewal Initiated').catch(() => {})
-    router.push(status.walletId ? `/dashboard/wallets/${status.walletId}` : '/dashboard/wallets')
-  }, [router, status.walletId])
+    try {
+      const result = await requestSupportRenewal()
+      if (result.success) {
+        setShowPopup(false)
+        toast.success('Your renewal request has been sent to your Project Manager.')
+      } else {
+        toast.error(result.error || 'Failed to send your renewal request. Please try again.')
+      }
+    } catch {
+      toast.error('Failed to send your renewal request. Please try again.')
+    } finally {
+      requestInFlight.current = false
+      setRequesting(false)
+    }
+  }, [])
 
   const handleDismissBanner = useCallback(() => {
     setShowBanner(false)
@@ -161,7 +180,7 @@ export function SupportRenewalReminder({ status }: Props) {
           </div>
           <DialogFooter className="px-6 pb-5 pt-2 flex-col sm:flex-row gap-2">
             <Button variant="outline" onClick={handleRemindLater} className="flex-1 rounded-xl"><Clock className="h-4 w-4 mr-1.5" /> Remind Me Later</Button>
-            <Button onClick={handleRenewSupport} className="flex-1 rounded-xl"><ExternalLink className="h-4 w-4 mr-1.5" /> Renew Support</Button>
+            <Button onClick={handleRenewSupport} disabled={requesting} className="flex-1 rounded-xl">{requesting ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <ExternalLink className="h-4 w-4 mr-1.5" />} Renew Support</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -187,7 +206,7 @@ export function SupportRenewalReminder({ status }: Props) {
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <Button size="sm" onClick={handleRenewSupport} className="rounded-lg whitespace-nowrap"><RefreshCw className="h-3.5 w-3.5 mr-1" /> Renew Now</Button>
+              <Button size="sm" onClick={handleRenewSupport} disabled={requesting} className="rounded-lg whitespace-nowrap">{requesting ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1" />} Renew Now</Button>
               <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={handleDismissBanner}><X className="h-4 w-4" /></Button>
             </div>
           </motion.div>

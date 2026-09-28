@@ -25,6 +25,11 @@ export const user = pgTable('user', {
   timeFormat: text('timeFormat').default('12h'),
   dateFormat: text('dateFormat').default('MM/dd/yyyy'),
   emailNotificationsEnabled: boolean('emailNotificationsEnabled').notNull().default(true),
+  // Customer's company info, captured in Customer Onboarding → User section
+  // (migration 0032). Nullable: existing users have neither; the UI falls back
+  // to the user's own name when companyName is empty.
+  companyName: text('companyName'),
+  companyCode: text('companyCode'),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 }, (table) => ({

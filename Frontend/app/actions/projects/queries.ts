@@ -425,7 +425,7 @@ async function _getProjectByIdImpl(projectId: number) {
   const userIds = [p.clientId, p.managerId]
   const [users, [moduleCount], [ticketCount]] = await Promise.all([
     db
-      .select({ id: user.id, name: user.name, email: user.email })
+      .select({ id: user.id, name: user.name, email: user.email, companyName: user.companyName, companyCode: user.companyCode })
       .from(user)
       .where(inArray(user.id, userIds)),
     db
@@ -446,6 +446,9 @@ async function _getProjectByIdImpl(projectId: number) {
     ...p,
     status: p.status as ProjectStatus,
     clientName: client?.name,
+    // Company info from onboarding; null for customers onboarded before it existed.
+    clientCompanyName: client?.companyName ?? null,
+    clientCompanyCode: client?.companyCode ?? null,
     clientEmail: client?.email,
     managerName: manager?.name,
     managerEmail: manager?.email,

@@ -81,6 +81,7 @@ export const SHORTCUT_PAGES_BY_ROLE: Record<UserRole, ShortcutPage[]> = {
     { key: 'notifications', label: 'Notifications', href: '/dashboard/notifications', keywords: 'alerts bell' },
     { key: 'users', label: 'Users', href: '/dashboard/admin/users', keywords: 'user management team members' },
     { key: 'teams', label: 'Microsoft Teams', href: '/dashboard/admin/teams', keywords: 'teams integration' },
+    { key: 'email', label: 'Email Management', href: '/dashboard/admin/email', keywords: 'email sender templates logs delivery' },
     { key: 'settings', label: 'Settings', href: '/dashboard/admin', keywords: 'system settings admin' },
     { key: 'help', label: 'Help & Support', href: '/dashboard/help', keywords: 'help shortcuts docs' },
   ],

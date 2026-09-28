@@ -38,12 +38,15 @@ export function loadTicketDraft(): TicketDraft | null {
   }
 }
 
-/** Persist the given draft, replacing any previous one. Never throws. */
-export function saveTicketDraft(draft: TicketDraft): void {
-  if (typeof window === 'undefined') return
+/** Persist the given draft, replacing any previous one. Never throws — returns false if it could not be saved. */
+export function saveTicketDraft(draft: TicketDraft): boolean {
+  if (typeof window === 'undefined') return false
   try {
     window.localStorage.setItem(TICKET_DRAFT_STORAGE_KEY, JSON.stringify(draft))
-  } catch {}
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Remove the saved draft (called after a successful ticket submission). */

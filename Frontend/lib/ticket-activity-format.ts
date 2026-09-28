@@ -58,11 +58,11 @@ export const ACTION_LABELS: Record<string, { label: string; color: string }> = {
   additional_hours_approved: { label: 'Additional hours approved', color: 'bg-emerald-500' },
   additional_hours_auto_approved: { label: 'Additional hours auto-approved', color: 'bg-gray-50 dark:bg-slate-800/500' },
   override_created: { label: 'Override ticket created', color: 'bg-red-500' },
-  forwarded_to_client: { label: 'Customer Feedback requested', color: 'bg-sky-500' },
+  forwarded_to_client: { label: 'Customer feedback requested', color: 'bg-sky-500' },
   reassigned: { label: 'Reassigned ticket', color: 'bg-purple-500' },
   client_approved: { label: 'Support request marked as completed', color: 'bg-emerald-500' },
   client_rejected: { label: 'Client requested changes', color: 'bg-orange-500' },
-  reopened_by_client: { label: 'Reopened by client', color: 'bg-red-500' },
+  reopened_by_client: { label: 'Reopen', color: 'bg-red-500' },
   // Client-initiated revision request (see revisions.ts requestRevision).
   // Client-visible. Label is deliberately actor-neutral (not "Customer
   // requested revision") — the "by {actor}" suffix already carries the real
@@ -75,8 +75,8 @@ export const ACTION_LABELS: Record<string, { label: string; color: string }> = {
   revision_approved: { label: 'Revision approved', color: 'bg-emerald-500' },
   revision_rejected: { label: 'Revision rejected', color: 'bg-red-500' },
   attachment_uploaded: { label: 'Uploaded file', color: 'bg-sky-500' },
-  review_submitted: { label: 'Customer Feedback Submitted', color: 'bg-amber-500' },
-  review_updated: { label: 'Customer Feedback Updated', color: 'bg-amber-400' },
+  review_submitted: { label: 'Customer feedback submitted', color: 'bg-amber-500' },
+  review_updated: { label: 'Customer feedback updated', color: 'bg-amber-400' },
 }
 
 /** Actions whose newValue is shown as a secondary detail line under the main entry. */

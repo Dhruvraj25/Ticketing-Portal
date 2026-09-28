@@ -114,6 +114,10 @@ export const ReviewStep = memo(function ReviewStep({ state, managerList, existin
 
           <ReviewSection title="Client Users" icon={<UserPlus className="h-4 w-4 text-purple-500 dark:text-purple-400" />} onEdit={() => onEdit(1)}>
             <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="text-muted-foreground">Company:</span> <span className="font-medium">{state.companyName.trim() || '—'}</span></div>
+                <div><span className="text-muted-foreground">Company Code:</span> <span className="font-medium">{state.companyCode.trim() || '—'}</span></div>
+              </div>
               {state.clientUsers.length === 0 ? (
                 <p className="text-sm text-muted-foreground italic">No users added</p>
               ) : (

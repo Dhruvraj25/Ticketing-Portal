@@ -324,6 +324,7 @@ export default async function TicketDetailPage({
                 ticketId={ticket.id}
                 currentStatus={ticket.status as TicketStatus}
                 userRole={user.role}
+                userType={user.userType}
                 clientName={ticket.clientName}
                 estimatedHours={ticket.estimatedHours}
                 estimatedCompletionDate={ticket.estimatedCompletionDate}
