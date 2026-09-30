@@ -28,7 +28,8 @@ export default async function AdminPage() {
 
   return (
     <div className="space-y-8" data-tour="system-settings">
-      <div data-tour="admin-header">
+      {/* Same heading container as the other admin pages (Users, Teams, Email). */}
+      <div data-tour="admin-header" className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6">
       <PageHeader
           title="System Overview"
           subtitle="User management and system-wide administration"

@@ -50,6 +50,7 @@ import {
 import { TicketStatus, TICKET_STATUS_CONFIG, WALLET_STATUS_CONFIG } from '@/lib/types'
 import type { SupportWallet, WalletTransaction, UserRole, WalletTransactionType } from '@/lib/types'
 import { getWalletContractStatus } from '@/lib/wallet-utils'
+import { RESERVED_DISPLAY_TYPE, transactionDisplayType } from '@/lib/wallet-transaction-label'
 import { SupportValidityPicker } from '@/components/ui/support-validity-picker'
 
 // Transaction type badge
@@ -59,6 +60,8 @@ function TransactionTypeBadge({ type }: { type: string }) {
     'Deduct Hours': { label: 'Deduct Hours', color: 'bg-red-50 dark:bg-red-500/15 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/30' },
     'Adjustment': { label: 'Adjustment', color: 'bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/30' },
     'Emergency Credit': { label: 'Emergency Credit', color: 'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/30' },
+    // Display-only: hours reserved for an active ticket (see lib/wallet-transaction-label.ts).
+    [RESERVED_DISPLAY_TYPE]: { label: 'Reserved', color: 'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/30' },
   }
   const c = config[type] || { label: type, color: 'bg-gray-50 dark:bg-slate-800/50 text-gray-600 dark:text-slate-400 border-gray-200 dark:border-slate-800' }
   return (
@@ -409,7 +412,7 @@ export function WalletDetailClient({
                           {format(new Date(t.performedAt), 'MMM d, yyyy HH:mm')}
                         </td>
                         <td className="p-3">
-                          <TransactionTypeBadge type={t.transactionType} />
+                          <TransactionTypeBadge type={transactionDisplayType(t)} />
                         </td>
                         <td className="p-3 text-right text-sm font-semibold text-foreground">{t.hours}</td>
                         <td className="p-3 text-right text-sm text-muted-foreground">{t.previousBalance}</td>

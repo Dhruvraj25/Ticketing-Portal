@@ -28,6 +28,7 @@ import {
   Trash2,
   Upload,
   Sparkles,
+  ShieldCheck,
   Lock,
   KeyRound,
   Eye,
@@ -60,12 +61,15 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
+import { clientAccountTypeLabel } from '@/lib/account-type'
 
 interface UserData {
   id: string
   name: string
   email: string
   role: string
+  /** Client account type: 'approver' | 'standard' (clients only). */
+  userType?: string | null
   createdAt: Date
   avatarUrl?: string | null
   phone?: string | null
@@ -115,6 +119,8 @@ export function ProfileClient({ user }: ProfileClientProps) {
   const router = useRouter()
   const { theme, setTheme } = useTheme()
   const roleConfig = USER_ROLE_CONFIG[user.role as keyof typeof USER_ROLE_CONFIG] || { label: user.role, color: 'bg-muted text-muted-foreground' }
+  // Account Type is shown only as a header badge (clients only).
+  const accountTypeLabel = user.role === 'client' ? clientAccountTypeLabel(user.userType) : null
   const [activeTab, setActiveTab] = useState<'personal' | 'preferences' | 'security'>('personal')
 
   // Personal Info
@@ -401,6 +407,21 @@ export function ProfileClient({ user }: ProfileClientProps) {
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${roleConfig.color}`}>
                     {roleConfig.label}
                   </span>
+                  {accountTypeLabel && (
+                    <span
+                      className={cn(
+                        'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium border whitespace-nowrap',
+                        user.userType === 'approver'
+                          ? 'bg-violet-50 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-500/30'
+                          : 'bg-muted/40 text-foreground/80 border-border',
+                      )}
+                    >
+                      {user.userType === 'approver'
+                        ? <ShieldCheck className="h-3 w-3 shrink-0" aria-hidden="true" />
+                        : <User className="h-3 w-3 shrink-0" aria-hidden="true" />}
+                      {accountTypeLabel}
+                    </span>
+                  )}
                 </div>
                 <p className="text-sm text-muted-foreground flex items-center gap-1.5 mt-0.5">
                   <Mail className="h-3.5 w-3.5 shrink-0" />

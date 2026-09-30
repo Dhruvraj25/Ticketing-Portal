@@ -1,10 +1,12 @@
 'use server'
 
 import { unstable_cache } from 'next/cache'
+import { billableMinutesSql, ticketIsBillable, timeLogIsBillable } from '@/lib/billing-sql'
+import { RESOLVED_STATUS, WORK_TIMER_ACTIONS, type WorkActivityEvent } from '@/lib/work-activity'
 import { getCurrentUser as getUser } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
 import { ticket, ticketHistory, timeLog, user, project, revisionHistory } from '@/lib/db/schema'
-import { eq, and, desc, sql, inArray, gte, lte, sum, count, isNotNull } from 'drizzle-orm'
+import { eq, and, desc, sql, inArray, gte, lte, sum, count, isNotNull, or } from 'drizzle-orm'
 import { wrapServerAction } from '@/lib/performance-profiler'
 
 // ── Cache TTLs ─────────────────────────────────────────────────────────────
@@ -97,7 +99,7 @@ async function _getDeveloperAnalyticsImpl(userId: string, days: number) {
     db
       .select({
         total: sql<number>`COALESCE(SUM(${timeLog.durationMinutes}), 0)::int`,
-        billable: sql<number>`COALESCE(SUM(${timeLog.durationMinutes}) FILTER (WHERE ${timeLog.isBillable} = true), 0)::int`,
+        billable: billableMinutesSql,
       })
       .from(timeLog)
       .where(and(eq(timeLog.userId, userId), gte(timeLog.startTime, since))),
@@ -238,7 +240,7 @@ async function _getWorklogSummaryImpl(userId: string, days: number) {
       .select({
         date: sql<string>`DATE(${timeLog.startTime})::text`,
         totalMinutes: sql<number>`COALESCE(SUM(${timeLog.durationMinutes}), 0)::int`,
-        billableMinutes: sql<number>`COALESCE(SUM(${timeLog.durationMinutes}) FILTER (WHERE ${timeLog.isBillable} = true), 0)::int`,
+        billableMinutes: billableMinutesSql,
       })
       .from(timeLog)
       .where(and(eq(timeLog.userId, userId), gte(timeLog.startTime, since), sql`${timeLog.endTime} IS NOT NULL`))
@@ -249,7 +251,7 @@ async function _getWorklogSummaryImpl(userId: string, days: number) {
     db
       .select({
         totalMinutes: sql<number>`COALESCE(SUM(${timeLog.durationMinutes}), 0)::int`,
-        billableMinutes: sql<number>`COALESCE(SUM(${timeLog.durationMinutes}) FILTER (WHERE ${timeLog.isBillable} = true), 0)::int`,
+        billableMinutes: billableMinutesSql,
       })
       .from(timeLog)
       .where(and(eq(timeLog.userId, userId), gte(timeLog.startTime, since), sql`${timeLog.endTime} IS NOT NULL`)),
@@ -267,7 +269,7 @@ async function _getWorklogSummaryImpl(userId: string, days: number) {
       ticketNumber: ticket.ticketNumber,
       title: ticket.title,
       totalMinutes: sql<number>`COALESCE(SUM(${timeLog.durationMinutes}), 0)::int`,
-      billableMinutes: sql<number>`COALESCE(SUM(${timeLog.durationMinutes}) FILTER (WHERE ${timeLog.isBillable} = true), 0)::int`,
+      billableMinutes: billableMinutesSql,
       entries: count().mapWith(Number),
     })
     .from(timeLog)
@@ -398,7 +400,7 @@ async function _getPaginatedWorklogsImpl(limit: number, offset: number) {
       startTime: timeLog.startTime,
       durationMinutes: timeLog.durationMinutes,
       endTime: timeLog.endTime,
-      isBillable: timeLog.isBillable,
+      isBillable: timeLogIsBillable,
       // JOIN enrichment directly in SQL — no separate user/ticket queries needed
       userName: user.name,
       userRole: user.role,
@@ -475,4 +477,54 @@ export const getCachedWorklogs = wrapServerAction('getCachedWorklogs', async fun
 export const clearWorklogsCache = wrapServerAction('clearWorklogsCache', async function clearWorklogsCache() {
   // No-op: unstable_cache handles invalidation via TTL.
   // The old in-memory Map clear() was process-local.
+})
+
+// ── Worklogs → Activity Log: ticket-wise work events ───────────────────────
+// Read from the EXISTING ticket history (no separate tracking): Started /
+// Paused / Started again / Stopped work (timer_* actions) and "Resolved the
+// ticket" (status_changed → resolved). Ordered ticket by ticket — the ticket
+// with the most recent activity first, each ticket's events newest first — so
+// the feed can be grouped per ticket while still loading in batches.
+// Billable / Non-Billable from the ticket via the shared billing rule.
+export const getTicketWorkActivity = wrapServerAction('getTicketWorkActivity', async function getTicketWorkActivity(limit: number = 20, offset: number = 0): Promise<{ events: WorkActivityEvent[]; hasMore: boolean }> {
+  const currentUser = await getUser()
+  if (currentUser.role !== 'project_manager' && currentUser.role !== 'admin') throw new Error('Access denied')
+  const safeLimit = Math.min(100, Math.max(1, Math.floor(limit)))
+  const safeOffset = Math.max(0, Math.floor(offset))
+
+  const rows = await db
+    .select({
+      id: ticketHistory.id,
+      ticketId: ticketHistory.ticketId,
+      action: ticketHistory.action,
+      newValue: ticketHistory.newValue,
+      createdAt: ticketHistory.createdAt,
+      userName: user.name,
+      ticketNumber: ticket.ticketNumber,
+      ticketTitle: ticket.title,
+      isBillable: ticketIsBillable,
+    })
+    .from(ticketHistory)
+    .innerJoin(ticket, eq(ticketHistory.ticketId, ticket.id))
+    .leftJoin(user, eq(ticketHistory.userId, user.id))
+    .where(or(
+      inArray(ticketHistory.action, [...WORK_TIMER_ACTIONS]),
+      and(eq(ticketHistory.action, 'status_changed'), eq(ticketHistory.newValue, RESOLVED_STATUS)),
+    ))
+    .orderBy(
+      sql`MAX(${ticketHistory.createdAt}) OVER (PARTITION BY ${ticketHistory.ticketId}) DESC`,
+      desc(ticketHistory.ticketId),
+      desc(ticketHistory.createdAt),
+      desc(ticketHistory.id),
+    )
+    .limit(safeLimit + 1)
+    .offset(safeOffset)
+
+  const hasMore = rows.length > safeLimit
+  const events = rows.slice(0, safeLimit).map((r) => ({
+    ...r,
+    userName: r.userName ?? 'Unknown user',
+    isBillable: !!r.isBillable,
+  }))
+  return { events, hasMore }
 })

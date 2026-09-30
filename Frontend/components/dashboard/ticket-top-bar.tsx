@@ -22,14 +22,15 @@ import {
 import { Button } from '@/components/ui/button'
 import { TicketStatus, TICKET_STATUS_CONFIG, TICKET_PRIORITY_CONFIG } from '@/lib/types'
 import { StatCard } from '@/components/dashboard/stat-card'
+import { statusKpis as buildStatusKpis, TOTAL_TICKETS_KPI } from '@/lib/ticket-status-kpis'
 import { cn } from '@/lib/utils'
 
 interface TicketTopBarProps {
   stats: {
-    openCount: number
-    inProgressCount: number
-    resolvedCount: number
-    closedCount: number
+    /** Exact ticket count per status (role-scoped), keyed by TicketStatus value. */
+    statusCounts: Record<string, number>
+    /** All tickets visible to this user (role-scoped). */
+    totalTickets: number
     totalCount: number
   }
   projects: { id: number; projectName: string; projectCode: string }[]
@@ -90,17 +91,27 @@ export const TicketTopBar = memo(function TicketTopBar({
 
   const currentDate = useMemo(() => format(new Date(), 'EEEE, MMMM d, yyyy'), [])
 
+  // One KPI per real ticket status (the single TICKET_STATUS_CONFIG definition,
+  // in its lifecycle order), shown only when that status has tickets —
+  // shared with the Dashboard via lib/ticket-status-kpis.ts.
+  const statusKpis = useMemo(() => buildStatusKpis(stats.statusCounts), [stats.statusCounts])
+
   return (
     <div className="bg-background/95 backdrop-blur-md">
-      {/* KPI Cards Row — always renders with fixed height to prevent CLS */}
-      <div className={cn('px-4 lg:px-6 overflow-hidden transition-all duration-200', showKpis ? 'opacity-100' : 'opacity-0')} style={{ height: showKpis ? 184 : 8, minHeight: showKpis ? 184 : 8 }}>
+      {/* KPI Cards Row — sized by its cards (the counts are server-rendered, so
+          there is no load-time shift to reserve space for) and grows when more
+          status cards wrap onto another row (never clips them). A fixed 184px
+          reserve used to leave a large gap above the filters when the cards fit
+          on one row; the gap is now the row's pb-3 — the same 12px as between
+          the KPI cards. */}
+      <div className={cn('px-4 lg:px-6 overflow-hidden transition-all duration-200', showKpis ? 'opacity-100' : 'opacity-0')} style={{ height: showKpis ? 'auto' : 8 }}>
         {showKpis && (
           <div className="pt-4 pb-3">
-            <div data-tour="ticket-kpis" className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <StatCard title="Total Tickets" value={stats.totalCount} iconName="Ticket" />
-              <StatCard title="Open" value={stats.openCount} iconName="AlertCircle" />
-              <StatCard title="In Progress" value={stats.inProgressCount} iconName="Clock" />
-              <StatCard title="Closed" value={stats.closedCount} iconName="CheckCircle2" />
+            <div data-tour="ticket-kpis" className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-5 gap-3">
+              <StatCard title={TOTAL_TICKETS_KPI.label} value={stats.totalTickets} iconName={TOTAL_TICKETS_KPI.icon} colorTheme={TOTAL_TICKETS_KPI.color} />
+              {statusKpis.map((k) => (
+                <StatCard key={k.status} title={k.label} value={k.count} iconName={k.icon} colorTheme={k.color} />
+              ))}
             </div>
           </div>
         )}
@@ -124,11 +135,13 @@ export const TicketTopBar = memo(function TicketTopBar({
               {/* Status pills */}
               <div data-tour="ticket-status-pills" className="flex items-center gap-1 overflow-x-auto scrollbar-none">
                 {[
+                  // Each pill filters by exactly one status, so it shows that
+                  // status's exact count (not a lumped bucket).
                   { value: 'all', label: 'All', count: stats.totalCount },
-                  { value: TicketStatus.NEW, label: 'New Request', count: stats.openCount },
-                  { value: TicketStatus.IN_PROGRESS, label: 'Work in Progress', count: stats.inProgressCount },
-                  { value: TicketStatus.RESOLVED, label: 'Manager Review', count: stats.resolvedCount },
-                  { value: TicketStatus.CLOSED, label: 'Completed', count: stats.closedCount },
+                  { value: TicketStatus.NEW, label: 'New Request', count: stats.statusCounts[TicketStatus.NEW] ?? 0 },
+                  { value: TicketStatus.IN_PROGRESS, label: 'Work in Progress', count: stats.statusCounts[TicketStatus.IN_PROGRESS] ?? 0 },
+                  { value: TicketStatus.RESOLVED, label: 'Manager Review', count: stats.statusCounts[TicketStatus.RESOLVED] ?? 0 },
+                  { value: TicketStatus.CLOSED, label: 'Completed', count: stats.statusCounts[TicketStatus.CLOSED] ?? 0 },
                 ].map((tab) => (
                   <button
                     key={tab.value}

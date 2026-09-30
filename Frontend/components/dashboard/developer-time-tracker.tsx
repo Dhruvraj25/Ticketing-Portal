@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { startTimer, stopTimer, pauseTimer, resumeTimer } from '@/app/actions/tickets'
+import { canTrackTime } from '@/lib/timer-rules'
 import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -221,7 +222,7 @@ export function DeveloperTimeTracker({
                     <SelectValue placeholder="Select a ticket to work on..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {tickets.map((t) => (
+                    {tickets.filter((t) => canTrackTime(t.status)).map((t) => (
                       <SelectItem key={t.id} value={t.id.toString()}>
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="truncate">{t.ticketNumber}: {t.title}</span>

@@ -1,7 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { updateTicketStatus, startTimer, stopTimer, pauseTimer, resumeTimer, getActiveTimer } from '@/app/actions/tickets'
+import { useState, useEffect, useCallback } from 'react'
+import { canCompleteWork, statusAfterWorkStarts } from '@/lib/ticket-work-flow'
+import { updateTicketStatus, startTimer, stopTimer, pauseTimer, resumeTimer, getTicketTimerState } from '@/app/actions/tickets'
+import { sessionElapsedSeconds, type TimerSession } from '@/lib/timer-rules'
 import { Button } from '@/components/ui/button'
 
 import { cn } from '@/lib/utils'
@@ -18,33 +20,32 @@ type TimerState = 'idle' | 'running' | 'paused'
 export function TicketStatusActions({ ticketId, currentStatus }: TicketStatusActionsProps) {
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [timerState, setTimerState] = useState<TimerState>('idle')
-  const [activeTimerId, setActiveTimerId] = useState<number | null>(null)
+  // Timer state is NEVER tracked locally: it is read from the server
+  // (getTicketTimerState → the same derivation the Time Tracking page uses)
+  // on mount and after every timer action, so a pause/resume/stop made on
+  // either page shows here identically — including after refresh.
+  const [session, setSession] = useState<TimerSession | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [status, setStatus] = useState(currentStatus)
+  const timerState: TimerState = session?.state === 'running' ? 'running' : session?.state === 'paused' ? 'paused' : 'idle'
+  const activeTimerId = timerState !== 'idle' ? session?.entryId ?? null : null
 
-  // Check for active timer on mount
-  useEffect(() => {
-    async function checkTimer() {
-      try {
-        const timer = await getActiveTimer()
-        if (timer && timer.ticketId === ticketId) {
-          setTimerState('running')
-          setActiveTimerId(timer.id)
-        }
-      } catch {}
-    }
-    checkTimer()
+  const loadTimer = useCallback(async () => {
+    try {
+      setSession(await getTicketTimerState(ticketId))
+    } catch {}
   }, [ticketId])
 
-  // Elapsed time counter
+  useEffect(() => { loadTimer() }, [loadTimer])
+
+  // Display only: accumulated seconds + the running segment, ticking while running.
   useEffect(() => {
-    if (timerState !== 'running') return
-    const interval = setInterval(() => {
-      setElapsedSeconds(s => s + 1)
-    }, 1000)
+    if (!session) return
+    setElapsedSeconds(sessionElapsedSeconds(session))
+    if (session.state !== 'running') return
+    const interval = setInterval(() => setElapsedSeconds(sessionElapsedSeconds(session)), 1000)
     return () => clearInterval(interval)
-  }, [timerState])
+  }, [session])
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600)
@@ -58,26 +59,16 @@ export function TicketStatusActions({ ticketId, currentStatus }: TicketStatusAct
     setLoading(action)
     try {
       await actionFn()
-      if (action === 'start_work') {
-        setTimerState('running')
-        setStatus(TicketStatus.IN_PROGRESS)
-      } else if (action === 'stop_work') {
-        setTimerState('idle')
-        setActiveTimerId(null)
-        setElapsedSeconds(0)
-      } else if (action === 'pause_work') {
-        setTimerState('paused')
-      } else if (action === 'resume_work') {
-        setTimerState('running')
-      } else if (action === 'mark_resolved') {
-        setTimerState('idle')
-        setActiveTimerId(null)
-        setElapsedSeconds(0)
-        setStatus(TicketStatus.RESOLVED)
-      }
+      if (action === 'start_work') setStatus(TicketStatus.IN_PROGRESS)
+      else if (action === 'mark_resolved') setStatus(TicketStatus.RESOLVED)
+      else if (action === 'reopen') setStatus(TicketStatus.ASSIGNED)
+      // Resuming work on a not-started (assigned / rework) ticket starts it, as on the server.
+      else if (action === 'resume_work' && statusAfterWorkStarts(status)) setStatus(TicketStatus.IN_PROGRESS)
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed: ${action}`)
     } finally {
+      // Re-read the authoritative timer state (also after a failure).
+      await loadTimer()
       setLoading(null)
     }
   }
@@ -88,7 +79,6 @@ export function TicketStatusActions({ ticketId, currentStatus }: TicketStatusAct
   // REWORK (the manager sent completed work back for another pass; the
   // developer resumes the existing ticket, never a new one).
   const canStartWork = status === TicketStatus.ASSIGNED || status === TicketStatus.REWORK
-  const isInProgress = status === TicketStatus.IN_PROGRESS
   const isResolved = status === TicketStatus.RESOLVED || status === TicketStatus.CLIENT_REVIEW
 
   return (
@@ -114,8 +104,7 @@ export function TicketStatusActions({ ticketId, currentStatus }: TicketStatusAct
             <Button
               onClick={() => handleAction('start_work', async () => {
                 await updateTicketStatus(ticketId, TicketStatus.IN_PROGRESS)
-                const timer = await startTimer(ticketId, 'Started working')
-                setActiveTimerId(timer.id)
+                await startTimer(ticketId, 'Started working')
               })}
               disabled={loading !== null}
               className="bg-primary text-primary-foreground shadow-sm rounded-lg h-10 px-5 transition-transform duration-150 hover:scale-[1.02] active:scale-[0.98]"
@@ -150,8 +139,7 @@ export function TicketStatusActions({ ticketId, currentStatus }: TicketStatusAct
         {timerState === 'paused' && activeTimerId && (
             <Button
               onClick={() => handleAction('resume_work', async () => {
-                const newTimer = await resumeTimer(activeTimerId, ticketId, 'Resumed work')
-                setActiveTimerId(newTimer.id)
+                await resumeTimer(activeTimerId, ticketId, 'Resumed work')
               })}
               disabled={loading !== null}
               className="rounded-lg h-10 px-5 bg-primary text-primary-foreground shadow-sm transition-transform duration-150 hover:scale-[1.02] active:scale-[0.98]"
@@ -183,12 +171,14 @@ export function TicketStatusActions({ ticketId, currentStatus }: TicketStatusAct
         )}
 
         {/* Mark Resolved — when in progress or running/paused */}
-        {(isInProgress || timerState !== 'idle') && (
+        {/* Complete only while work is in progress (lib/ticket-work-flow.ts —
+            the server enforces it too): a newly assigned or REOPENED ticket shows
+            Start Work first, and a paused one is Resumed before completing. */}
+        {canCompleteWork(status) && (
             <Button
               onClick={() => handleAction('mark_resolved', async () => {
                 if (activeTimerId) {
                   await stopTimer(activeTimerId)
-                  setActiveTimerId(null)
                 }
                 await updateTicketStatus(ticketId, TicketStatus.RESOLVED)
               })}
@@ -209,7 +199,9 @@ export function TicketStatusActions({ ticketId, currentStatus }: TicketStatusAct
         {isResolved && timerState === 'idle' && (
             <Button
               onClick={() => handleAction('reopen', async () => {
-                await updateTicketStatus(ticketId, 'in_progress' as TicketStatus)
+                // Back to the resource, not started — like a newly assigned ticket
+                // (lib/ticket-work-flow.ts): Start Work → timer → Complete again.
+                await updateTicketStatus(ticketId, TicketStatus.ASSIGNED)
               })}
               disabled={loading !== null}
               variant="outline"

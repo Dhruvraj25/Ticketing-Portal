@@ -42,6 +42,13 @@ interface UseInfiniteTicketListOptions<T> {
    * instead of appending — mirrors "replace the list rather than append".
    */
   resetKey?: string | number
+  /**
+   * Page number that `initialTickets` represents (default 1: page 1 was
+   * server-rendered). Pass 0 with empty `initialTickets` when the list starts
+   * EMPTY after a reset — e.g. client-side filters — so the next load (the
+   * sentinel is visible on an empty list) fetches page 1 for the new filters.
+   */
+  startPage?: number
 }
 
 export function useInfiniteTicketList<T>({
@@ -50,6 +57,7 @@ export function useInfiniteTicketList<T>({
   fetchPage,
   getId = (t: T) => (t as any).id,
   resetKey,
+  startPage = 1,
 }: UseInfiniteTicketListOptions<T>) {
   const [tickets, setTickets] = useState<T[]>(initialTickets)
   const [hasMore, setHasMore] = useState(initialHasMore)
@@ -59,7 +67,7 @@ export function useInfiniteTicketList<T>({
   // Refs (not state) for values read inside the observer callback / loadMore,
   // so a stale closure never re-triggers a request that's already in flight
   // or already knows there's nothing left to fetch.
-  const pageRef = useRef(1)
+  const pageRef = useRef(startPage)
   const loadingRef = useRef(false)
   const hasMoreRef = useRef(initialHasMore)
   const requestIdRef = useRef(0)
@@ -73,7 +81,7 @@ export function useInfiniteTicketList<T>({
       return
     }
     requestIdRef.current += 1 // invalidates any in-flight request from the old filter set
-    pageRef.current = 1
+    pageRef.current = startPage
     loadingRef.current = false
     hasMoreRef.current = initialHasMore
     setTickets(initialTickets)

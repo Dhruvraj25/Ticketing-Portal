@@ -16,11 +16,15 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  Star, MessageSquare, ThumbsUp, AlertTriangle, Search, RefreshCw,
-  BarChart3, Filter, X, Calendar, Loader2, Users, FileText, Clock,
+  Star, MessageSquare, ThumbsUp, AlertTriangle, Search, RefreshCw, Sparkles,
+  BarChart3, Filter, X, Calendar, Loader2, Users, FileText, Clock, Building2,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/lib/utils'
+import type { CompanyRating } from '@/lib/company-ratings'
+import {
+  activeFeedbackFilterCount, buildCustomerFeedbackFilters, selectedValue, type CustomerFeedbackFilterState,
+} from '@/lib/customer-feedback-filters'
 
 const REVIEW_STATUS_OPTIONS = [
   { value: 'all', label: 'All Customer Feedback' },
@@ -38,7 +42,7 @@ const STAR_RATING_OPTIONS = [
 ]
 
 export default function CustomerReviewsPage() {
-  const [formData, setFormData] = useState<{ projects: any[]; developers: any[]; clients: any[]; managers: any[] }>({ projects: [], developers: [], clients: [], managers: [] })
+  const [formData, setFormData] = useState<{ projects: any[]; developers: any[]; clients: any[]; managers: any[]; modules?: { id: number; moduleName: string; projectId: number }[] }>({ projects: [], developers: [], clients: [], managers: [], modules: [] })
   const [report, setReport] = useState<ReportResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -69,29 +73,22 @@ export default function CustomerReviewsPage() {
     load()
   }, [])
 
-  function buildFilters(): ReportFiltersType {
-    const filters: ReportFiltersType = { reportType: 'customer_review' }
-    if (dateFrom) filters.dateFrom = dateFrom
-    if (dateTo) filters.dateTo = dateTo
-    if (projectId) filters.projectId = Number(projectId)
-    if (moduleId) filters.moduleId = Number(moduleId)
-    if (developerId) filters.developerId = developerId
-    if (clientId) filters.clientId = clientId
-    if (reviewStatus !== 'all') filters.reviewStatus = reviewStatus as 'all' | 'reviewed' | 'pending'
-    if (starRating !== 'all') filters.starRating = starRating as 'all' | '1' | '2' | '3' | '4' | '5'
-    if (managerId && managerId !== '__all__') filters.managerId = managerId
-    filters.page = page
-    filters.pageSize = pageSize
-    return filters
+  const filterState: CustomerFeedbackFilterState = {
+    dateFrom, dateTo, clientId, projectId, moduleId, developerId, managerId, reviewStatus, starRating, ticketNumber,
   }
+  // Filters of the report currently shown — paging re-queries with THESE,
+  // not with panel edits that have not been applied via Generate yet.
+  const [appliedState, setAppliedState] = useState<CustomerFeedbackFilterState | null>(null)
 
-  async function handleGenerate() {
-    setPage(1)
+  async function runReport(state: CustomerFeedbackFilterState, targetPage: number, targetPageSize: number) {
     setLoading(true)
     setError(null)
     try {
-      const result = await getReportData(buildFilters())
+      const result = await getReportData(buildCustomerFeedbackFilters(state, targetPage, targetPageSize) as ReportFiltersType)
       setReport(result)
+      setAppliedState(state)
+      setPage(targetPage)
+      setPageSize(targetPageSize)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate report')
       setReport(null)
@@ -100,8 +97,25 @@ export default function CustomerReviewsPage() {
     }
   }
 
+  function handleGenerate() {
+    return runReport(filterState, 1, pageSize)
+  }
+
+  function goToPage(targetPage: number, targetPageSize = pageSize) {
+    if (appliedState) runReport(appliedState, targetPage, targetPageSize)
+  }
+
   function handleRefresh() {
-    if (report) handleGenerate()
+    if (report && appliedState) runReport(appliedState, page, pageSize)
+  }
+
+  function handleProjectChange(value: string) {
+    setProjectId(value)
+    // Keep the module filter consistent with the chosen project.
+    const pid = selectedValue(value)
+    if (pid && moduleId && !(formData.modules || []).some(m => String(m.id) === moduleId && String(m.projectId) === pid)) {
+      setModuleId('')
+    }
   }
 
   function handleReset() {
@@ -116,13 +130,12 @@ export default function CustomerReviewsPage() {
   const columns = report?.columns || []
 
   const resourcePerformanceData = (report?.extras as any)?.resourcePerformance || []
+  const companyRatingsData: CompanyRating[] = (report?.extras as any)?.companyRatings || []
 
-  const lowRatedData = tableData.filter((row: any) => {
-    const r = Number(row.rating)
-    return r === 1 || r === 2
-  })
+  // Server returns the full filtered lists (every page, not just this one).
+  const lowRatedData: any[] = (report?.extras as any)?.lowRatedTickets || []
 
-  const pendingData = tableData.filter((row: any) => row.reviewSubmitted === 'No')
+  const pendingData: any[] = (report?.extras as any)?.pendingReviewTickets || []
 
   const pendingDataWithDays = pendingData.map((row: any) => {
     const rawDate = row._closedAt
@@ -142,7 +155,7 @@ export default function CustomerReviewsPage() {
     ? pendingDataWithDays.filter((row: any) => String(row.ticketNumber).toLowerCase().includes(ticketNumber.toLowerCase()))
     : pendingDataWithDays
 
-  const activeFilterCount = [dateFrom, dateTo, projectId, moduleId, developerId, clientId, managerId, reviewStatus !== 'all', starRating !== 'all'].filter(Boolean).length
+  const activeFilterCount = activeFeedbackFilterCount(filterState)
 
   return (
     <div className="space-y-5" data-tour="customer-reviews-center">
@@ -208,7 +221,7 @@ export default function CustomerReviewsPage() {
           <div className="space-y-1.5">
             <Label className="text-xs">&nbsp;</Label>
             <Button onClick={handleGenerate} size="sm" disabled={loading} className="rounded-xl h-10 bg-black text-white hover:bg-black/80">
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
               Generate
             </Button>
             </div>
@@ -255,7 +268,7 @@ export default function CustomerReviewsPage() {
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Project</Label>
-                    <Select value={projectId} onValueChange={setProjectId}>
+                    <Select value={projectId} onValueChange={handleProjectChange}>
                       <SelectTrigger className="h-10 rounded-xl bg-white dark:bg-slate-900 border-border">
                         <SelectValue placeholder="All projects" />
                       </SelectTrigger>
@@ -273,7 +286,7 @@ export default function CustomerReviewsPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__all__">All modules / service areas</SelectItem>
-                        {formData.projects.filter(p => !projectId || String(p.id) === projectId).map(p => (<SelectItem key={p.id} value={String(p.id)}>{p.projectName}</SelectItem>))}
+                        {(formData.modules || []).filter(m => !selectedValue(projectId) || String(m.projectId) === projectId).map(m => (<SelectItem key={m.id} value={String(m.id)}>{m.moduleName}</SelectItem>))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -472,6 +485,73 @@ export default function CustomerReviewsPage() {
               </div>
             </div>
 
+            {/* Company Ratings */}
+            {companyRatingsData.length > 0 && (
+              <div data-tour="customer-reviews-company-ratings">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-muted/50">
+                    <Building2 className="h-4 w-4 text-blue-500 dark:text-blue-400" />
+                  </div>
+                  <h3 className="text-sm font-semibold text-foreground">Company Ratings</h3>
+                  <span className="text-xs text-muted-foreground">({companyRatingsData.length})</span>
+                </div>
+                <div className="rounded-xl border border-border overflow-hidden">
+                  <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 z-10">
+                        <tr className="bg-muted/50 border-b border-border">
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Company</th>
+                          <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Closed Tickets</th>
+                          <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Feedback</th>
+                          <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Response Rate</th>
+                          <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Avg Rating</th>
+                          <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">5★</th>
+                          <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">4★</th>
+                          <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">3★</th>
+                          <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">2★</th>
+                          <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">1★</th>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Last Feedback</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {companyRatingsData.map((c, i) => (
+                          <tr key={c.key} className={cn('border-b border-border/30', i % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-muted/10')}>
+                            <td className="px-4 py-3 text-xs font-medium text-foreground">
+                              {c.companyName}
+                              {c.companyCode && <span className="ml-1.5 text-muted-foreground font-normal">({c.companyCode})</span>}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-center tabular-nums">{c.closedTickets}</td>
+                            <td className="px-4 py-3 text-xs text-center tabular-nums">{c.reviews}</td>
+                            <td className="px-4 py-3 text-xs text-center tabular-nums">{c.responseRate === null ? '—' : `${c.responseRate}%`}</td>
+                            <td className="px-4 py-3 text-xs text-center font-semibold">
+                              {c.averageRating === null ? (
+                                <span className="text-muted-foreground font-normal">No feedback</span>
+                              ) : (
+                                <span className={cn(
+                                  'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium',
+                                  c.averageRating >= 4 ? 'bg-green-50 dark:bg-green-500/15 text-green-700 dark:text-green-300' :
+                                  c.averageRating >= 3 ? 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300' :
+                                  'bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300'
+                                )}><Star className="h-3 w-3 fill-current" />{c.averageRating}</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-center text-green-600 dark:text-green-400 font-medium">{c.fiveStarCount}</td>
+                            <td className="px-4 py-3 text-xs text-center text-blue-600 dark:text-blue-400 font-medium">{c.fourStarCount}</td>
+                            <td className="px-4 py-3 text-xs text-center text-amber-600 dark:text-amber-400 font-medium">{c.threeStarCount}</td>
+                            <td className="px-4 py-3 text-xs text-center text-orange-600 dark:text-orange-400 font-medium">{c.twoStarCount}</td>
+                            <td className="px-4 py-3 text-xs text-center text-red-600 dark:text-red-400 font-medium">{c.oneStarCount}</td>
+                            <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                              {c.lastReviewAt ? new Date(c.lastReviewAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Resource Performance */}
             {resourcePerformanceData.length > 0 && (
               <div data-tour="customer-reviews-resource-performance">
@@ -631,7 +711,7 @@ export default function CustomerReviewsPage() {
                     <span className="text-xs text-muted-foreground">Rows per page:</span>
                     <select
                       value={pageSize}
-                      onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}
+                      onChange={e => goToPage(1, Number(e.target.value))}
                       className="h-8 w-16 rounded-lg bg-white dark:bg-slate-900 border border-border text-xs px-2"
                     >
                       <option value={10}>10</option>
@@ -645,7 +725,7 @@ export default function CustomerReviewsPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      onClick={() => goToPage(Math.max(1, page - 1))}
                       disabled={page <= 1}
                       className="h-7 px-2 rounded-lg border border-border text-xs font-medium disabled:opacity-30 hover:bg-muted transition-colors"
                     >
@@ -659,7 +739,7 @@ export default function CustomerReviewsPage() {
                         return (
                           <button
                             key={p}
-                            onClick={() => setPage(p)}
+                            onClick={() => goToPage(p)}
                             className={cn(
                               'h-7 w-7 rounded-lg text-xs font-medium transition-colors',
                               page === p ? 'bg-primary text-primary-foreground' : 'border border-border hover:bg-muted'
@@ -671,7 +751,7 @@ export default function CustomerReviewsPage() {
                       })}
                     </div>
                     <button
-                      onClick={() => setPage(p => Math.min(pag.totalPages, p + 1))}
+                      onClick={() => goToPage(Math.min(pag.totalPages, page + 1))}
                       disabled={page >= pag.totalPages}
                       className="h-7 px-2 rounded-lg border border-border text-xs font-medium disabled:opacity-30 hover:bg-muted transition-colors"
                     >

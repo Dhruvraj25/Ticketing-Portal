@@ -24,4 +24,5 @@ export type {
   ModuleListResult,
   ModuleListItem,
   ModuleTicketStats,
+  ModuleStatusCounts,
 } from './modules/index'

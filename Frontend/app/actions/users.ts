@@ -3,9 +3,10 @@
 import { unstable_cache } from 'next/cache'
 import { getCurrentUser as getUser } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
-import { user, ticket } from '@/lib/db/schema'
+import { user, ticket, project } from '@/lib/db/schema'
 import { and, eq, desc, ne, count, inArray } from 'drizzle-orm'
 import { wrapServerAction, recordActionExecution, cached } from '@/lib/performance-profiler'
+import type { AssignableResource } from '@/lib/ticket-assignment'
 
 // ============================================================================
 // USER LIST (Admin & Project Manager) — for dropdowns and selection (cached 300s)
@@ -19,6 +20,9 @@ async function _getUserListData() {
       name: user.name,
       email: user.email,
       role: user.role,
+      // Customer company (New Project → Company dropdown); null for older clients.
+      companyName: user.companyName,
+      userType: user.userType,
     })
     .from(user)
     .orderBy(desc(user.createdAt))
@@ -89,4 +93,48 @@ const getCachedDevelopers = unstable_cache(
  */
 export const getDevelopers = wrapServerAction('getDevelopers', async function getDevelopers() {
   return getCachedDevelopers()
+})
+
+// ============================================================================
+// ASSIGNABLE RESOURCES — developers + project managers (for assignment)
+// ============================================================================
+// Managers carry the projects they manage: a manager is assignable only to a
+// ticket in one of those projects (lib/ticket-assignment.ts canBeAssignee —
+// enforced again by assignTicket). The plain developer list (getDevelopers)
+// is unchanged for its other uses (e.g. Team).
+
+async function _getAssignableResourcesData(): Promise<AssignableResource[]> {
+  const [developers, managers, managed] = await Promise.all([
+    _getDevelopersData(),
+    db.select({ id: user.id, name: user.name, email: user.email }).from(user).where(eq(user.role, 'project_manager')),
+    db.select({ id: project.id, managerId: project.managerId }).from(project),
+  ])
+  const byManager = new Map<string, number[]>()
+  for (const p of managed) if (p.managerId) byManager.set(p.managerId, [...(byManager.get(p.managerId) ?? []), p.id])
+
+  const managerIds = managers.map((m) => m.id)
+  const counts = managerIds.length > 0
+    ? await db.select({ assignedToId: ticket.assignedToId, count: count() }).from(ticket)
+        .where(and(inArray(ticket.assignedToId, managerIds), ne(ticket.status, 'closed'))).groupBy(ticket.assignedToId)
+    : []
+  const countMap = new Map(counts.map((r) => [r.assignedToId, Number(r.count) || 0]))
+
+  return [
+    ...developers.map((d) => ({ ...d, role: 'developer' as const })),
+    ...managers
+      .filter((m) => (byManager.get(m.id) ?? []).length > 0)
+      .map((m) => ({ ...m, activeTickets: countMap.get(m.id) || 0, role: 'project_manager' as const, managedProjectIds: byManager.get(m.id) ?? [] })),
+  ]
+}
+
+const getCachedAssignableResources = unstable_cache(
+  async () => _getAssignableResourcesData(),
+  ['assignable-resources'],
+  { revalidate: 300, tags: ['lookup-developers', 'lookup-projects'] },
+)
+
+export const getAssignableResources = wrapServerAction('getAssignableResources', async function getAssignableResources(): Promise<AssignableResource[]> {
+  const currentUser = await getUser()
+  if (currentUser.role !== 'project_manager' && currentUser.role !== 'admin') return []
+  return getCachedAssignableResources()
 })

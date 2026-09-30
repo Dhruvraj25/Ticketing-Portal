@@ -14,6 +14,7 @@ export {
   getTicketsList,
   getTicketById,
   getConsolidatedDashboardData,
+  getTicketInsights,
   getDashboardStats,
   getUnassignedTickets,
   getRecentUnassignedTickets,
@@ -41,6 +42,10 @@ export {
   getCommentsCount,
   // Time Logs
   startTimer,
+  getTimerTickets,
+  getTicketTimerState,
+  getMyTimerState,
+  getMyTimeEntriesForExport,
   stopTimer,
   pauseTimer,
   resumeTimer,
@@ -56,12 +61,14 @@ export {
   getCachedWorklogs,
   clearWorklogsCache,
   getPaginatedWorklogs,
+  getTicketWorkActivity,
   // Backward-compat alias
   getTickets,
 } from './tickets/index'
 
 export type {
   TicketListItem,
+  TicketInsights,
   TicketListFilters,
   TicketListResult,
   AttachmentWithUser,

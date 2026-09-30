@@ -16,6 +16,9 @@ function invalidateWalletCaches(walletId: number) {
   revalidateTag('wallet-stats')
   revalidateTag('wallet-low-balance')
   revalidateTag(WALLET_CACHE_TAGS.WALLET_DETAIL(walletId))
+  revalidateTag('wallet-detail')
+  revalidateTag('wallet-project')
+  revalidateTag('wallet-consumption')
   revalidateTag('wallet-transactions')
   // Invalidate dashboard renewal banner cache — hours/contract changes affect it
   revalidateTag('renewal-status')

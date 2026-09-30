@@ -49,13 +49,13 @@ test('createTicket no longer imports checkClientCanCreateTicket at all (replaced
 // ─── Section 1/2: new threshold logic — client blocked, admin/manager bypass ─
 
 test('case A1/A2/A3/A4 wiring: a CLIENT caller is checked against isAtOrBelowCreateThreshold and rejected with buildWalletThresholdError', () => {
-  const body = functionBody(CREATE_SRC, 'export const createTicket')
+  const body = functionBody(CREATE_SRC, 'export const createTicket', 7000)
   assert.match(body, /currentUser\.role === 'client' && isAtOrBelowCreateThreshold\(wallet\)/)
   assert.match(body, /throw buildWalletThresholdError\(\)/)
 })
 
 test('case B5/B6: admin/project_manager are NOT subject to the 10% threshold check (only client role gates on isAtOrBelowCreateThreshold)', () => {
-  const body = functionBody(CREATE_SRC, 'export const createTicket')
+  const body = functionBody(CREATE_SRC, 'export const createTicket', 7000)
   const thresholdCheckIdx = body.indexOf('isAtOrBelowCreateThreshold(wallet)')
   assert.ok(thresholdCheckIdx >= 0)
   const guardLine = body.slice(Math.max(0, thresholdCheckIdx - 80), thresholdCheckIdx)
@@ -125,31 +125,34 @@ test('case: submitEstimate rejects when the proposed hours exceed the wallet, fo
   assert.ok(lastRoleCheck < lastIfClose || lastRoleCheck === -1 || between.slice(lastRoleCheck).includes('throw'), 'the role gate above must be a simple entry guard, not wrapping the wallet check')
 })
 
-test('case D15/D17: approveEstimate re-checks the wallet FRESH at approval time (section 4\'s literal scenario) using buildManagerApprovalInsufficientError', () => {
-  const body = functionBody(ESTIMATES_SRC, 'export const approveEstimate')
-  assert.match(body, /re-check.*approval.*stage|approval-stage recheck/i)
-  assert.match(body, /const \[wallet\] = await db\.select\(\)\.from\(supportWallet\)\.where\(eq\(supportWallet\.clientId, t\.clientId\)\)/, 'must re-fetch the wallet fresh inside this function, not reuse an earlier read')
-  assert.match(body, /checkWalletSufficiency\(t\.estimatedHours, wallet\.remainingHours\)/)
-  assert.match(body, /throw buildManagerApprovalInsufficientError\(t\.estimatedHours, wallet\.remainingHours\)/)
+// Approval now RESERVES the hours (lib/wallet-reservation.ts): the atomic,
+// guarded reservation IS the fresh approval-stage balance check — it cannot be
+// raced by another approval, unlike a separate SELECT-then-UPDATE check.
+test('case D15/D17: approveEstimate checks the wallet FRESH at approval time by reserving atomically, using buildManagerApprovalInsufficientError', () => {
+  const body = functionBody(ESTIMATES_SRC, 'export const approveEstimate', 6000)
+  assert.match(body, /await reserveHoursForTicket\(tx, t, reservationShortfall\(t\.estimatedHours, t\.reservedHours\)/)
+  assert.match(body, /if \(err instanceof WalletReservationError\) throw buildManagerApprovalInsufficientError\(err\.requested, err\.available\)/)
 })
 
-test('case D16: approveEstimate wallet check runs BEFORE the status update commits (sufficient balance -> proceeds to update)', () => {
-  const body = functionBody(ESTIMATES_SRC, 'export const approveEstimate')
-  const checkIdx = body.indexOf('buildManagerApprovalInsufficientError')
+test('case D16: approveEstimate reservation and status update commit together (insufficient balance → nothing is approved)', () => {
+  const body = functionBody(ESTIMATES_SRC, 'export const approveEstimate', 6000)
+  const txIdx = body.indexOf('await db.transaction(async (tx) => {')
   const updateIdx = body.indexOf("status: 'estimate_approved'")
-  assert.ok(checkIdx >= 0 && updateIdx >= 0 && checkIdx < updateIdx, 'the wallet check must run before the ticket status update')
+  const reserveIdx = body.indexOf('await reserveHoursForTicket(tx,')
+  const txEnd = body.indexOf('} catch (err) {')
+  assert.ok(txIdx >= 0 && txIdx < updateIdx && updateIdx < reserveIdx && reserveIdx < txEnd, 'status claim and reservation must be in the same transaction')
 })
 
-test('requestAdditionalHours checks the NEW TOTAL (existing + additional) against the wallet, no role bypass', () => {
+test('requestAdditionalHours checks the part of the NEW TOTAL not already reserved against the AVAILABLE balance, no role bypass', () => {
   const body = functionBody(ESTIMATES_SRC, 'export const requestAdditionalHours')
-  assert.match(body, /const newTotal = \(t\.estimatedHours \|\| 0\) \+ additionalHours/)
-  assert.match(body, /checkWalletSufficiency\(newTotal, wallet\.remainingHours\)/)
+  assert.match(body, /const required = reservationShortfall\(\(t\.estimatedHours \|\| 0\) \+ additionalHours, t\.reservedHours\)/)
+  assert.match(body, /checkWalletSufficiency\(required, wallet\.remainingHours\)/)
 })
 
-test('approveAdditionalHours re-checks the wallet at the approval stage, using buildManagerApprovalInsufficientError', () => {
-  const body = functionBody(ESTIMATES_SRC, 'export const approveAdditionalHours')
-  assert.match(body, /checkWalletSufficiency\(newTotalHours, wallet\.remainingHours\)/)
-  assert.match(body, /throw buildManagerApprovalInsufficientError\(newTotalHours, wallet\.remainingHours\)/)
+test('approveAdditionalHours reserves at the approval stage (atomically), using buildManagerApprovalInsufficientError', () => {
+  const body = functionBody(ESTIMATES_SRC, 'export const approveAdditionalHours', 6000)
+  assert.match(body, /await reserveHoursForTicket\(tx, t, reservationShortfall\(newTotalHours, t\.reservedHours\)/)
+  assert.match(body, /throw buildManagerApprovalInsufficientError\(err\.requested, err\.available\)/)
 })
 
 // ─── Section 6/12/19/20/21: the atomic deduction primitive itself ─────────
@@ -179,28 +182,29 @@ test('clientApproveTicket wraps the ticket status update + wallet deduction + hi
   const txIdx = body.indexOf('await db.transaction(async (tx) => {')
   assert.ok(txIdx >= 0, 'expected a db.transaction(...) wrapping the close operation')
   const txBody = body.slice(txIdx)
-  assert.match(txBody, /deductWalletHoursAtomic\(tx, wallet\.id, totalDeduction\)/, 'the deduction must run through the tx handle')
-  assert.match(txBody, /tx\.update\(ticket\)\.set\(ticketUpdate\)/, 'the ticket status update must run through the tx handle')
+  assert.match(txBody, /consumeReservedHoursAtomic\(tx, wallet\.id, totalDeduction, reservedOnTicket\)/, 'the wallet settlement must run through the tx handle')
+  assert.match(txBody, /tx\.update\(ticket\)\.set\(ticketUpdate\)/, 'the ticket update must run through the tx handle')
   assert.match(txBody, /tx\.insert\(ticketHistory\)/, 'the history insert must run through the tx handle')
 })
 
-test('a failed atomic deduction throws INSIDE the transaction — status stays client_review, no history entry, no wallet mutation (case F19/F20/E15/E17)', () => {
+test('a failed wallet settlement throws INSIDE the transaction — the status claim rolls back (stays client_review), no history entry, no wallet mutation (case F19/F20/E15/E17)', () => {
   const body = functionBody(UPDATE_SRC, 'export const clientApproveTicket', 9000)
   const txIdx = body.indexOf('await db.transaction(async (tx) => {')
-  const deductIdx = body.indexOf('deductWalletHoursAtomic(tx, wallet.id, totalDeduction)', txIdx)
-  const throwIdx = body.indexOf('throw buildWalletInsufficientError', deductIdx)
-  const ticketUpdateIdx = body.indexOf('await tx.update(ticket).set(ticketUpdate)', deductIdx)
-  assert.ok(deductIdx > 0 && throwIdx > deductIdx && ticketUpdateIdx > throwIdx, 'the insufficient-balance throw must happen BEFORE the ticket status update, and both must be inside the same transaction so a throw rolls everything back')
+  const claimIdx = body.indexOf(".where(and(eq(ticket.id, ticketId), eq(ticket.status, 'client_review')))", txIdx)
+  const settleIdx = body.indexOf('consumeReservedHoursAtomic(tx, wallet.id, totalDeduction, reservedOnTicket)', txIdx)
+  const throwIdx = body.indexOf('throw buildWalletInsufficientError', settleIdx)
+  const historyIdx = body.indexOf('await tx.insert(ticketHistory)', settleIdx)
+  assert.ok(txIdx > 0 && claimIdx > txIdx && settleIdx > claimIdx && throwIdx > settleIdx && historyIdx > throwIdx,
+    'claim, settlement, throw and history insert must all be inside the same transaction so a throw rolls everything back')
 })
 
-test('the ticket status update is a SINGLE UPDATE statement (status + consumedHours together when a deduction happened), not two separate writes racing each other', () => {
+test('the close is claimed with ONE conditional status UPDATE (no double close / double settlement), then consumed/reserved hours are written in the same transaction', () => {
   const body = functionBody(UPDATE_SRC, 'export const clientApproveTicket', 9000)
-  assert.match(body, /const ticketUpdate: Record<string, unknown> = \{ status: 'closed', closedAt: new Date\(\), updatedAt: new Date\(\) \}/)
+  assert.match(body, /\.set\(\{ status: 'closed', closedAt: new Date\(\), updatedAt: new Date\(\) \}\)\s*\n\s*\.where\(and\(eq\(ticket\.id, ticketId\), eq\(ticket\.status, 'client_review'\)\)\)/)
+  assert.match(body, /const ticketUpdate: Record<string, unknown> = \{ reservedHours: 0 \}/)
   assert.match(body, /ticketUpdate\.consumedHours = totalDeduction/)
   assert.match(body, /await tx\.update\(ticket\)\.set\(ticketUpdate\)\.where\(eq\(ticket\.id, ticketId\)\)/)
-  // Only ONE tx.update(ticket) call in the whole function.
-  const matches = body.match(/tx\.update\(ticket\)/g) || []
-  assert.equal(matches.length, 1, 'expected exactly one tx.update(ticket) call, not separate status/consumedHours writes')
+  assert.equal((body.match(/\.update\(ticket\)/g) || []).length, 2, 'the status claim + the hours write')
 })
 
 test('the unsafe Math.max(0, ...) floor-without-reject pattern is completely gone from clientApproveTicket', () => {
@@ -214,7 +218,7 @@ test('the old silent catch-and-swallow around the entire wallet deduction is gon
 })
 
 test('wallet-low/wallet-empty notifications fire only AFTER the transaction commits, using the deduction result (never for an aborted close)', () => {
-  const body = functionBody(UPDATE_SRC, 'export const clientApproveTicket', 9000)
+  const body = functionBody(UPDATE_SRC, 'export const clientApproveTicket', 14000)
   const txEndIdx = body.indexOf('await db.transaction')
   const commitEndMarker = body.indexOf('Post-commit: wallet-low/wallet-empty alerts')
   assert.ok(commitEndMarker > txEndIdx)

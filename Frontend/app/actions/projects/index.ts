@@ -15,7 +15,7 @@ export { getProjects, getProjectById, getProjectTicketStats, getProjectNames } f
 export type { ProjectListFilters, ProjectListResult, ProjectListItem } from './queries'
 
 // CRUD
-export { createProject, updateProject, updateProjectStatus, archiveProject, deleteProject } from './crud'
+export { createProject, getProjectCompanies, updateProject, updateProjectStatus, archiveProject, deleteProject } from './crud'
 
 // Assignments
 export { assignClient, assignManager, assignDeveloper, removeDeveloper, getProjectDevelopers } from './assignments'

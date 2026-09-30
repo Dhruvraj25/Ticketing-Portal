@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
@@ -167,6 +167,30 @@ export function DashboardSidebar({ userRole, userName, userEmail, userAvatarUrl 
   const { branding } = useBranding()
   const { collapsed, toggleCollapsed, mobileOpen, setMobileOpen } = useSidebar()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  // Profile card (trigger + popup): clicks inside it never count as "outside".
+  const userMenuRef = useRef<HTMLDivElement>(null)
+
+  // Close the profile popup on any press outside it, or on Escape. Listening
+  // only while open; `pointerdown` also covers touch and closes before the
+  // outside element handles its click.
+  useEffect(() => {
+    if (!userMenuOpen) return
+    const onPointerDown = (e: PointerEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setUserMenuOpen(false)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setUserMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [userMenuOpen])
+
+  // Never leave the popup open behind a navigation or a sidebar collapse.
+  useEffect(() => { setUserMenuOpen(false) }, [pathname, collapsed])
 
   const isDark = theme === 'dark'
   const navItems = navItemsByRole[userRole] ?? []
@@ -323,7 +347,7 @@ export function DashboardSidebar({ userRole, userName, userEmail, userAvatarUrl 
           </div>
 
           {/* User Profile Card */}
-          <div className={cn('mt-3 p-2.5 rounded-2xl border transition-all relative', isDark ? 'bg-slate-800/60 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-200/80 hover:border-slate-300')}>
+          <div ref={userMenuRef} className={cn('mt-3 p-2.5 rounded-2xl border transition-all relative', isDark ? 'bg-slate-800/60 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-200/80 hover:border-slate-300')}>
             <div className="flex items-center gap-3">
               <div
                 onClick={() => {
@@ -348,11 +372,18 @@ export function DashboardSidebar({ userRole, userName, userEmail, userAvatarUrl 
                   <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono mt-0.5">
                     <span className="truncate">{USER_ROLE_CONFIG[userRole]?.label || userRole}</span>
                     <button
-                      onClick={() => setUserMenuOpen(!userMenuOpen)}
+                      type="button"
+                      onClick={() => setUserMenuOpen((open) => !open)}
                       className="p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shrink-0"
                       aria-label="User menu"
+                      aria-haspopup="menu"
+                      aria-expanded={userMenuOpen}
                     >
-                      <ChevronDown size={14} className="text-slate-400" />
+                      {/* Down when closed, up when open. */}
+                      <ChevronDown
+                        size={14}
+                        className={cn('text-slate-400 transition-transform duration-200', userMenuOpen && 'rotate-180')}
+                      />
                     </button>
                   </div>
                 </div>

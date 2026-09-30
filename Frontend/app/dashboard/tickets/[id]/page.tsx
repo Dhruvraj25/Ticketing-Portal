@@ -1,9 +1,11 @@
 import { Suspense } from 'react'
+import { BILLING_LABEL, billingTypeOf } from '@/lib/billing'
 import { notFound } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { getCurrentUser, getTicketById } from '@/app/actions/tickets'
-import { getDevelopers } from '@/app/actions/users'
+import { getAssignableResources } from '@/app/actions/users'
+import { assignableResourcesFor, canWorkOnTicket, type AssignableResource } from '@/lib/ticket-assignment'
 import { cn } from '@/lib/utils'
 import { format, formatDistanceToNow } from 'date-fns'
 import { stripHtml } from '@/lib/format'
@@ -213,11 +215,14 @@ export default async function TicketDetailPage({
     
     // ── Critical path: only fetch user + ticket + developers ──
     // Everything else streams via Suspense below
-    const [user, ticket, developers] = await Promise.all([
+    const [user, ticket, resources] = await Promise.all([
       getCurrentUser(),
       getTicketById(ticketId),
-      getDevelopers().catch(() => [] as { id: string; name: string; email: string; activeTickets: number }[]),
+      getAssignableResources().catch(() => [] as AssignableResource[]),
     ])
+
+    // Resources assignable to THIS ticket: developers + its project's manager.
+    const developers = assignableResourcesFor(resources, ticket.projectId)
 
     const isManagerOrAdmin = user.role === 'project_manager' || user.role === 'admin'
     const isClientUser = user.role === 'client'
@@ -262,6 +267,19 @@ export default async function TicketDetailPage({
       </span>
     )
 
+    // Billable / Non-Billable from the ticket's actual workflow (lib/billing.ts).
+    const billingType = billingTypeOf(ticket)
+    const billingBadge = (
+      <span className={cn(
+        'px-2 py-0.5 rounded-lg text-xs font-medium border',
+        billingType === 'billable'
+          ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30'
+          : 'bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+      )}>
+        {BILLING_LABEL[billingType]}
+      </span>
+    )
+
     pageTimer.finish()
 
     return (
@@ -289,7 +307,7 @@ export default async function TicketDetailPage({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs font-mono text-muted-foreground">{ticket.ticketNumber}</span>
-                    {statusBadge}{priorityBadge}{categoryBadge}
+                    {statusBadge}{priorityBadge}{categoryBadge}{billingBadge}
                   </div>
                   <h1 className="text-lg font-bold text-foreground truncate">{ticket.title}</h1>
                 </div>
@@ -313,8 +331,9 @@ export default async function TicketDetailPage({
               </p>
             </div>
 
-            {/* Status Actions - Developer only — critical path */}
-            {user.role === 'developer' && (
+            {/* Status Actions — the resource working the ticket: developers, or a
+                manager on a ticket assigned to them — critical path */}
+            {canWorkOnTicket(user.role, user.id, ticket.assignedToId) && (
               <TicketStatusActions ticketId={ticket.id} currentStatus={ticket.status as TicketStatus} />
             )}
 
@@ -355,17 +374,19 @@ export default async function TicketDetailPage({
               ticketStatus={ticket.status}
               currentUserRole={user.role}
               currentUserId={user.id}
+              currentUserType={user.userType}
+              ticketClientId={ticket.clientId}
             />
 
             {/* Client Approval Actions — critical */}
             {user.role === 'client' && (ticket.status === 'client_review' || ticket.status === 'closed') && (
-              <ClientApprovalActions ticketId={ticket.id} currentStatus={ticket.status as TicketStatus} revisionCount={ticket.revisionCount || 0} closedAt={ticket.closedAt} />
+              <ClientApprovalActions ticketId={ticket.id} currentStatus={ticket.status as TicketStatus} revisionCount={ticket.revisionCount || 0} closedAt={ticket.closedAt} currentUserId={user.id} ticketClientId={ticket.clientId} raisedByName={ticket.clientName} />
             )}
 
             {/* ── STREAMED SECTIONS ── */}
 
-            {/* Time Tracking — only shown to developers */}
-            {user.role === 'developer' && (
+            {/* Time Tracking — the resource working the ticket (see Status Actions) */}
+            {canWorkOnTicket(user.role, user.id, ticket.assignedToId) && (
               <Suspense fallback={<SectionSkeleton height={280} />}>
                 <TimeLogsWrapper ticketId={ticket.id} />
               </Suspense>

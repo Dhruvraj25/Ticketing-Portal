@@ -115,21 +115,25 @@ export const adminGuide: GuideItem[] = [
 export interface LifecycleStage {
   icon: string
   title: string
+  /** The status label shown on the ticket at this step (lib/types TICKET_STATUS_CONFIG). */
+  status?: string
   description: string
+  /** Where the ticket goes back to when this step is not accepted. */
+  loop?: string
   color: string
 }
 
-
+// Mirrors the actual workflow: estimate approval comes BEFORE a resource is
+// assigned; completed work goes to the manager first, then to the client.
 export const ticketLifecycleStages: LifecycleStage[] = [
-  { icon: 'PlusCircle', title: 'Create Ticket', description: 'A client or team member creates a new ticket describing the issue or request.', color: 'text-blue-500 dark:text-blue-400' },
-  { icon: 'ClipboardCheck', title: 'Manager Review', description: 'A manager reviews the ticket for clarity, completeness, and priority assignment.', color: 'text-indigo-500 dark:text-indigo-400' },
-  { icon: 'UserPlus', title: 'Assign Resource', description: 'The manager assigns a developer based on workload, expertise, and priority.', color: 'text-violet-500 dark:text-violet-400' },
-  { icon: 'Code2', title: 'Development', description: 'The developer works on the ticket, tracking time and updating progress.', color: 'text-amber-500 dark:text-amber-400' },
-  { icon: 'FileText', title: 'Estimate Approval', description: 'An estimate is sent to the client for approval before continued work.', color: 'text-orange-500 dark:text-orange-400' },
-  { icon: 'Clock', title: 'Waiting for Client', description: 'The ticket awaits client feedback, approval, or additional information.', color: 'text-rose-500 dark:text-rose-400' },
-  { icon: 'RefreshCw', title: 'Revision', description: 'The client requests changes. The ticket goes back for rework.', color: 'text-purple-500 dark:text-purple-400' },
-  { icon: 'CheckCircle2', title: 'Resolved', description: 'Work is complete and the solution is delivered to the client for verification.', color: 'text-emerald-500 dark:text-emerald-400' },
-  { icon: 'CheckSquare', title: 'Closed', description: 'The client confirms satisfaction and the ticket is closed.', color: 'text-green-500 dark:text-green-400' },
+  { icon: 'PlusCircle', title: 'Ticket Raised', status: 'New Request', description: 'The client raises a ticket describing the issue or request.', color: 'text-blue-500 dark:text-blue-400' },
+  { icon: 'FileText', title: 'Estimate Submitted', status: 'Awaiting Estimate Approval', description: 'The manager reviews the request and submits an effort estimate to the client.', color: 'text-sky-500 dark:text-sky-400' },
+  { icon: 'ClipboardCheck', title: 'Estimate Approved', status: 'Estimate Approved', description: "The client's approver account approves the estimate.", loop: 'Rejected → Requested for Revision: the manager revises and resubmits the estimate.', color: 'text-emerald-500 dark:text-emerald-400' },
+  { icon: 'UserPlus', title: 'Resource Assigned', status: 'Assigned to Resource', description: 'Once the estimate is approved, the manager assigns a developer to the ticket.', color: 'text-violet-500 dark:text-violet-400' },
+  { icon: 'Code2', title: 'Work in Progress', status: 'Work in Progress', description: "The developer works on the ticket and logs time. If more time is needed, additional hours are requested for the client approver's approval.", color: 'text-amber-500 dark:text-amber-400' },
+  { icon: 'ShieldCheck', title: 'Manager Review', status: 'Manager Review', description: 'The developer marks the work complete and the manager reviews it.', loop: 'Needs changes → Rework: sent back to the developer.', color: 'text-indigo-500 dark:text-indigo-400' },
+  { icon: 'Send', title: 'Client Review', status: 'Awaiting Client Review', description: 'The manager forwards the completed work to the client who raised the ticket.', loop: 'Changes needed → Requested for Revision: once the manager approves it, work resumes.', color: 'text-rose-500 dark:text-rose-400' },
+  { icon: 'CheckSquare', title: 'Completed', status: 'Completed', description: 'The client who raised the ticket approves & completes it, and the approved estimate hours (including any approved additional hours) are deducted from the support wallet. The client can then leave feedback, and can reopen the ticket within 7 days.', color: 'text-green-500 dark:text-green-400' },
 ]
 
 // Status Guide
@@ -168,6 +172,7 @@ export const priorityGuides: PriorityGuide[] = [
   { level: 'Low', description: 'Minor issues that do not block work.', usage: 'Cosmetic changes, documentation updates, nice-to-have features.', color: 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/15 border-green-200 dark:border-green-500/30' },
   { level: 'Medium', description: 'Issues with moderate impact on workflow.', usage: 'Feature requests, non-urgent bug fixes, improvements.', color: 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/15 border-amber-200 dark:border-amber-500/30' },
   { level: 'High', description: 'Major issues that affect productivity.', usage: 'Critical bugs, broken functionality, blocking issues for key users.', color: 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-500/15 border-orange-200 dark:border-orange-500/30' },
+  { level: 'Urgent', description: 'Time-sensitive issues that need immediate attention.', usage: 'Severe problems blocking a key business process or deadline, with no workaround.', color: 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/15 border-rose-200 dark:border-rose-500/30' },
   { level: 'Critical', description: 'System-wide issues that halt operations.', usage: 'Production outages, data loss, security breaches, system-down scenarios.', color: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/15 border-red-200 dark:border-red-500/30' },
 ]
 

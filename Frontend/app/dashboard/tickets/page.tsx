@@ -1,5 +1,5 @@
-import { getCurrentUser, getTicketsList, getConsolidatedDashboardData } from '@/app/actions/tickets'
-import { getDevelopers } from '@/app/actions/users'
+import { getCurrentUser, getTicketsList, getConsolidatedDashboardData, getTicketInsights } from '@/app/actions/tickets'
+import { getAssignableResources } from '@/app/actions/users'
 import { getProjectNames } from '@/app/actions/projects'
 import { TicketsPageClient } from './tickets-page-client'
 
@@ -38,6 +38,8 @@ export default async function TicketsPage({
 
   const projectsPromise = getProjectNames().catch(() => [] as { id: number; projectName: string; projectCode: string }[])
   const dashboardPromise = getConsolidatedDashboardData()
+  // Insights are scoped to the signed-in user on the server (developer → own tickets).
+  const insightsPromise = getTicketInsights().catch(() => null)
 
   // Get user first to determine role — this already started in parallel
   // with tickets, projects, and dashboard queries via the promises above.
@@ -45,13 +47,14 @@ export default async function TicketsPage({
   const isManagerOrAdmin = user.role === 'project_manager' || user.role === 'admin'
 
   // Fetch developers (conditional) in parallel with remaining results
-  const [ticketResult, projectsResult, dashboardData, developers] = await Promise.all([
+  const [ticketResult, projectsResult, dashboardData, developers, insights] = await Promise.all([
     ticketPromise,
     projectsPromise,
     dashboardPromise,
     isManagerOrAdmin
-      ? getDevelopers().catch(() => [] as { id: string; name: string; email: string; activeTickets: number }[])
+      ? getAssignableResources().catch(() => [] as { id: string; name: string; email: string; activeTickets: number }[])
       : Promise.resolve([] as { id: string; name: string; email: string; activeTickets: number }[]),
+    insightsPromise,
   ])
 
   const roleTitle = {
@@ -63,25 +66,25 @@ export default async function TicketsPage({
 
   const { tickets, total, page, limit, totalPages } = ticketResult
 
-  // Use accurate counts from getConsolidatedDashboardData across ALL tickets
-  const { openTickets: openCount, inProgressTickets: inProgressCount, resolvedTickets: resolvedCount } = dashboardData
-  const closedCount = dashboardData.totalTickets - openCount - inProgressCount - resolvedCount
+  // Exact per-status counts (role-scoped) from getConsolidatedDashboardData —
+  // no derived/lumped buckets (the old 'closed = total − others' counted every
+  // other status as closed).
+  const { statusCounts, totalTickets } = dashboardData
 
   return (
     <TicketsPageClient
       user={user}
       tickets={tickets as any}
       stats={{
-        openCount,
-        inProgressCount,
-        resolvedCount,
-        closedCount,
+        statusCounts,
+        totalTickets,
         totalCount: total,
       }}
       roleTitle={roleTitle}
       projects={projectsResult}
       initialView={params.view as 'list' | 'grid' | undefined}
       developers={developers}
+      insights={insights}
       pagination={{ page, totalPages, total, limit }}
     />
   )

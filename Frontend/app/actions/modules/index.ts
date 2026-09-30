@@ -10,7 +10,7 @@
 
 // Queries
 export { getModules, getModuleById, getModulesByProjectIds, getModulesByProject, getModulesTicketStats } from './queries'
-export type { ModuleListFilters, ModuleListResult, ModuleListItem, ModuleTicketStats } from './queries'
+export type { ModuleListFilters, ModuleListResult, ModuleListItem, ModuleTicketStats, ModuleStatusCounts } from './queries'
 
 // CRUD
 export { createModule, updateModule, updateModuleStatus, archiveModule, deleteModule } from './crud'

@@ -37,7 +37,7 @@ test('requestRevision: the manager/admin Rework branch writes action "rework_req
   // branches the action code on requester role.
   const fnStart = REVISIONS_SRC.indexOf('export const requestRevision')
   assert.notEqual(fnStart, -1)
-  const fnBlock = REVISIONS_SRC.slice(fnStart, fnStart + 5000)
+  const fnBlock = REVISIONS_SRC.slice(fnStart, fnStart + 8000)
   assert.match(fnBlock, /action:\s*isClientRequest\s*\?\s*'revision_requested'\s*:\s*'rework_requested'/)
 })
 

@@ -5,12 +5,16 @@ import { ReviewForm } from '@/components/dashboard/review-form'
 import { ReviewDisplay } from '@/components/dashboard/review-display'
 import { getReviewByTicketId } from '@/app/actions/reviews'
 import { Loader2, Star } from 'lucide-react'
+import { canSubmitTicketReview, REVIEW_NOT_ALLOWED_MESSAGE } from '@/lib/client-ticket-rules'
 
 interface TicketReviewSectionProps {
   ticketId: number
   ticketStatus: string
   currentUserRole: string
   currentUserId: string
+  /** Client user type ('approver' | 'standard') and the ticket's raiser — see lib/client-ticket-rules.ts. */
+  currentUserType?: string | null
+  ticketClientId?: string | null
 }
 
 export function TicketReviewSection({
@@ -18,7 +22,11 @@ export function TicketReviewSection({
   ticketStatus,
   currentUserRole,
   currentUserId,
+  currentUserType,
+  ticketClientId,
 }: TicketReviewSectionProps) {
+  // Raiser or company approver may review (server re-checks, project-scoped).
+  const canReview = currentUserRole === 'client' && canSubmitTicketReview({ id: currentUserId, userType: currentUserType }, ticketClientId)
   const [review, setReview] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -57,8 +65,8 @@ export function TicketReviewSection({
           if (existing) {
             // Review exists — show the display
             setShowForm(false)
-          } else if (currentUserRole === 'client') {
-            // No review yet and user is the client — auto-show the form
+          } else if (canReview) {
+            // No review yet and this client may review — auto-show the form
             setShowForm(true)
           }
         }
@@ -66,7 +74,7 @@ export function TicketReviewSection({
         // Fetch failed (network / DB error). For clients, still show the
         // review form so they can submit even if fetching existing review
         // failed. For other roles, just show nothing (error is non-fatal).
-        if (!cancelled && currentUserRole === 'client') {
+        if (!cancelled && canReview) {
           setShowForm(true)
         }
       } finally {
@@ -76,7 +84,7 @@ export function TicketReviewSection({
 
     fetchReview()
     return () => { cancelled = true }
-  }, [ticketId, isClosed, currentUserRole])
+  }, [ticketId, isClosed, canReview])
 
   if (!isClosed || loading) {
     if (loading && isClosed) {
@@ -92,7 +100,7 @@ export function TicketReviewSection({
   // Show form for client without review — persists until they submit.
   // No onCancel prop, so the Cancel button is not rendered. The client must
   // either submit the review to dismiss the form.
-  if (currentUserRole === 'client' && showForm && !review) {
+  if (canReview && showForm && !review) {
     return (
       <ReviewForm
         ticketId={ticketId}
@@ -122,6 +130,16 @@ export function TicketReviewSection({
       <div className="rounded-xl bg-muted/20 border border-border/50 p-4 text-center">
         <Star className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
         <p className="text-xs text-muted-foreground">No review submitted for this ticket</p>
+      </div>
+    )
+  }
+
+  // A client account that may not review (not the raiser, not an approver).
+  if (currentUserRole === 'client') {
+    return (
+      <div className="rounded-xl bg-muted/20 border border-border/50 p-4 text-center">
+        <Star className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
+        <p className="text-xs text-muted-foreground">{REVIEW_NOT_ALLOWED_MESSAGE}</p>
       </div>
     )
   }

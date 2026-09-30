@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
@@ -10,6 +10,7 @@ import { useTheme } from '@/components/theme-provider'
 import { useSidebar } from '@/components/dashboard/sidebar-provider'
 import { HelpHub } from '@/components/dashboard/help-hub'
 import { signOutAndRedirect } from '@/lib/client-sign-out'
+import { useDismissOnOutside } from '@/hooks/use-dismiss-on-outside'
 import { USER_ROLE_CONFIG } from '@/lib/types'
 import type { UserRole } from '@/lib/types'
 
@@ -33,6 +34,12 @@ export function TopHeader({ userName, userEmail, userAvatarUrl, userRole }: TopH
   const { setMobileOpen } = useSidebar()
   const [searchQuery, setSearchQuery] = useState('')
   const [showUserMenu, setShowUserMenu] = useState(false)
+  // Wraps the avatar trigger AND the popup: presses inside never dismiss it.
+  const userMenuRef = useRef<HTMLDivElement>(null)
+  const closeUserMenu = useCallback(() => setShowUserMenu(false), [])
+  useDismissOnOutside(userMenuRef, showUserMenu, closeUserMenu)
+  // Never carry an open popup over to another page.
+  useEffect(() => { setShowUserMenu(false) }, [pathname])
 
   const isDark = theme === 'dark'
 
@@ -80,7 +87,7 @@ export function TopHeader({ userName, userEmail, userAvatarUrl, userRole }: TopH
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search tickets, customers, projects..."
+            placeholder="Search tickets..."
             aria-label="Search tickets"
             className={cn(
               'w-full pl-9 pr-10 py-1.5 rounded-lg text-sm border outline-none transition-all',
@@ -129,14 +136,16 @@ export function TopHeader({ userName, userEmail, userAvatarUrl, userRole }: TopH
         <div className={`flex items-center gap-3 border-l pl-5 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
           <HelpHub userRole={userRole} />
 
-          <div className="relative">
+          <div className="relative" ref={userMenuRef}>
             <button
               type="button"
-              onClick={() => setShowUserMenu(!showUserMenu)}
+              onClick={() => setShowUserMenu((open) => !open)}
               data-tour="top-user-menu"
               className="w-8 h-8 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700 cursor-pointer hover:ring-2 hover:ring-emerald-500 transition-all"
               title={`${userName} (${USER_ROLE_CONFIG[userRole]?.label || userRole})`}
               aria-label="User menu"
+              aria-haspopup="menu"
+              aria-expanded={showUserMenu}
             >
               <div className="w-full h-full bg-slate-950 dark:bg-emerald-500 text-white dark:text-slate-950 flex items-center justify-center font-bold text-xs font-mono">
                 {userAvatarUrl ? (

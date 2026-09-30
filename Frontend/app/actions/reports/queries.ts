@@ -2,7 +2,7 @@
 'use server'
 
 import { db } from '@/lib/db'
-import { project, user, projectClient } from '@/lib/db/schema'
+import { project, user, projectClient, module as moduleTable } from '@/lib/db/schema'
 import { eq, inArray, or } from 'drizzle-orm'
 import { unstable_cache } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth-utils'
@@ -145,7 +145,8 @@ async function _getReportFormDataImpl(role: string, userId: string) {
   // Before: 1 query that loads ALL users → JS filter by role (3 passes over full dataset)
   // After:  3 parallel queries, each with WHERE role = ? (uses index on role column)
   // Expected: report form load in <20ms vs 100-300ms with large user tables
-  const [developers, clients, managers] = await Promise.all([
+  const projectIds = projects.map((p) => p.id)
+  const [developers, clients, managers, modules] = await Promise.all([
     db
       .select({ id: user.id, name: user.name, email: user.email, role: user.role })
       .from(user)
@@ -161,9 +162,18 @@ async function _getReportFormDataImpl(role: string, userId: string) {
       .from(user)
       .where(eq(user.role, 'project_manager'))
       .orderBy(user.name),
+    // Real modules of the visible projects (the Customer Feedback module filter
+    // matches ticket.moduleId, so it must offer module ids, not project ids).
+    projectIds.length > 0
+      ? db
+          .select({ id: moduleTable.id, moduleName: moduleTable.moduleName, projectId: moduleTable.projectId })
+          .from(moduleTable)
+          .where(inArray(moduleTable.projectId, projectIds))
+          .orderBy(moduleTable.moduleName)
+      : Promise.resolve([] as { id: number; moduleName: string; projectId: number }[]),
   ])
 
-  return { projects, developers, clients, managers }
+  return { projects, developers, clients, managers, modules }
 }
 
 // ─── Cross-request cached (primitives only, no headers()) ─────────────────

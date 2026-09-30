@@ -218,6 +218,8 @@ export interface ProjectWithRelations {
   updatedAt: Date
   moduleCount?: number
   ticketCount?: number
+  /** Tickets in status 'closed' (project completion = closed / total). */
+  closedTicketCount?: number
 }
 
 export interface ModuleWithRelations {

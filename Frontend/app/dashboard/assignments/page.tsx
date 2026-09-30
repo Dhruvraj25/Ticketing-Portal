@@ -1,6 +1,6 @@
 import { PageTimer } from '@/lib/performance-profiler'
 import { getCurrentUser, getUnassignedTickets } from '@/app/actions/tickets'
-import { getDevelopers } from '@/app/actions/users'
+import { getAssignableResources } from '@/app/actions/users'
 import { redirect } from 'next/navigation'
 import { PageHeader } from '@/components/dashboard/page-header-server'
 import { AssignmentPanel } from '@/components/dashboard/assignment-panel'
@@ -19,7 +19,8 @@ export default async function AssignmentsPage() {
   pageTimer.mark('Data Fetching')
   const [unassignedTickets, developers] = await Promise.all([
     getUnassignedTickets(),
-    getDevelopers(),
+    // Developers + project managers (a manager only for their own projects).
+    getAssignableResources(),
   ])
 
   pageTimer.mark('Render')
@@ -27,7 +28,8 @@ export default async function AssignmentsPage() {
 
   return (
     <div className="space-y-6" data-tour="assignments-panel">
-      <div data-tour="assignments-header">
+      {/* Same white header card as the other dashboard pages (e.g. Client Management). */}
+      <div data-tour="assignments-header" className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-6">
       <PageHeader
           title="Ticket Assignments"
           subtitle="Assign tickets to developers in your team"

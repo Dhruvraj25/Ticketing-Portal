@@ -5,6 +5,10 @@ import { headers } from 'next/headers'
 import { unstable_cache } from 'next/cache'
 import { pushActionContext, popActionContext } from '@/lib/performance-profiler'
 import type { UserRole } from '@/lib/types'
+import { db } from '@/lib/db'
+import { session as sessionTable } from '@/lib/db/schema'
+import { and, eq, gt } from 'drizzle-orm'
+import { sessionTokenFromCookieValue } from '@/lib/session-token'
 
 /**
  * Safer version of React.cache() that falls back to no caching if React's
@@ -133,6 +137,32 @@ function extractSessionToken(cookieHeader: string): string | null {
 }
 
 /**
+ * Is the session behind this cookie still in the session table (and unexpired)?
+ *
+ * The L1/L2 caches remember a user per session cookie for minutes. When an
+ * admin resets an account's password its sessions are DELETED
+ * (lib/session-revocation.ts) — this re-check makes a cache hit for a revoked
+ * session fail at once, on every server instance, instead of after the TTL.
+ * One indexed lookup by the unique token; the cache still skips the expensive
+ * Better Auth flow. Returns null when the check itself fails (DB hiccup) — the
+ * caller then falls back to the full Better Auth lookup, never to the cache.
+ */
+async function isSessionStillActive(cookieValue: string): Promise<boolean | null> {
+  const token = sessionTokenFromCookieValue(cookieValue)
+  if (!token) return false
+  try {
+    const [row] = await db
+      .select({ id: sessionTable.id })
+      .from(sessionTable)
+      .where(and(eq(sessionTable.token, token), gt(sessionTable.expiresAt, new Date())))
+      .limit(1)
+    return !!row
+  } catch {
+    return null
+  }
+}
+
+/**
  * Internal implementation: performs the actual Better Auth flow.
  * Wrapped by safeCache() below so it runs exactly ONCE per request.
  *
@@ -160,10 +190,16 @@ async function getCurrentUserImpl(): Promise<UserData> {
   if (isDev && process.env.DEBUG_PERF) timingLog.push(`cookies=${Math.round(performance.now() - t1)}ms`)
 
   // ── 2. Check L1 in-memory cache ────────────────────────────────────────
+  // A cached user is only trusted while its session row still exists — a
+  // revoked session (password reset by an admin) falls through to step 4,
+  // where Better Auth finds no session and the request is sent to /sign-in.
+  let sessionActive: boolean | null = null
   if (sessionToken) {
     const t2 = performance.now()
     const cached = authCache.get(sessionToken)
-    if (cached && cached.expiresAt > Date.now()) {
+    if (cached && cached.expiresAt > Date.now()) sessionActive = await isSessionStillActive(sessionToken)
+    if (cached && sessionActive !== true) authCache.delete(sessionToken)
+    if (cached && cached.expiresAt > Date.now() && sessionActive === true) {
       if (isDev && process.env.DEBUG_PERF) {
         timingLog.push(`L1-HIT=${Math.round(performance.now() - t2)}ms`)
         console.log(`  [AUTH]   L1 cache HIT | ${timingLog.join(' | ')}`)
@@ -174,11 +210,12 @@ async function getCurrentUserImpl(): Promise<UserData> {
   }
 
   // ── 3. Check L2 (unstable_cache) cross-instance cache ───────────────────
-  if (sessionToken && _l2CacheAvailable) {
+  if (sessionToken && _l2CacheAvailable && sessionActive !== false) {
     const t3 = performance.now()
     try {
       const l2UserData = await getCachedAuthUserL2(sessionToken)
-      if (l2UserData) {
+      if (l2UserData && sessionActive === null) sessionActive = await isSessionStillActive(sessionToken)
+      if (l2UserData && sessionActive === true) {
         // Populate L1 cache for future in-process requests
         authCache.set(sessionToken, {
           data: l2UserData,

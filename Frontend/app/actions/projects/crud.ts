@@ -1,7 +1,7 @@
 'use server'
 
 import { db } from '@/lib/db'
-import { project } from '@/lib/db/schema'
+import { project, projectClient, user } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { VALIDATION, validateField } from '@/lib/types'
@@ -11,6 +11,7 @@ import { wrapServerAction } from '@/lib/performance-profiler'
 import { getCurrentUser } from '@/lib/auth-utils'
 import { dispatchNotification } from '@/lib/notify-all'
 import { deriveProjectCodeBase, withUniqueProjectCode } from '@/lib/project-code'
+import { buildCompanyDirectory, resolveCompany } from '@/lib/company-directory'
 
 // ============================================================================
 // CREATE
@@ -25,9 +26,50 @@ function invalidateProjectCaches(projectId?: number) {
   revalidateTag('project-ticket-analytics', { expire: 60 })
 }
 
+/** Client users (with their company fields) — the only source of company data. */
+async function loadCompanyDirectoryUsers() {
+  return db
+    .select({
+      id: user.id,
+      role: user.role,
+      companyName: user.companyName,
+      companyCode: user.companyCode,
+      userType: user.userType,
+      createdAt: user.createdAt,
+    })
+    .from(user)
+    .where(eq(user.role, 'client'))
+}
+
+export interface ProjectCompanyOption {
+  key: string
+  companyName: string
+  companyCode: string | null
+  clientCount: number
+}
+
+/**
+ * New Project → Company dropdown: unique customer companies (from client
+ * users' companyName/companyCode). Returns companies only — never individual
+ * user names or emails.
+ */
+export const getProjectCompanies = wrapServerAction('getProjectCompanies', async function getProjectCompanies(): Promise<ProjectCompanyOption[]> {
+  const currentUser = await getCurrentUser()
+  if (currentUser.role !== 'project_manager' && currentUser.role !== 'admin') {
+    throw new Error('Access denied')
+  }
+  return buildCompanyDirectory(await loadCompanyDirectoryUsers()).map((c) => ({
+    key: c.key,
+    companyName: c.companyName,
+    companyCode: c.companyCode,
+    clientCount: c.clientUserIds.length,
+  }))
+})
+
 export const createProject = wrapServerAction('createProject', async function createProject(data: {
   projectName: string
-  clientId: string
+  /** Company identifier from getProjectCompanies — resolved again here (authoritative). */
+  companyKey: string
   managerId: string
   description?: string
   startDate?: string
@@ -38,9 +80,25 @@ export const createProject = wrapServerAction('createProject', async function cr
     throw new Error('Only project managers and admins can create projects')
   }
 
+  if (!data.companyKey) {
+    throw new Error('Please select a company')
+  }
+
   if (!data.managerId) {
     throw new Error('A project manager must be selected')
   }
+
+  // The project is created for EVERY client user of the selected company.
+  // Resolved server-side from the database — never from a client-supplied
+  // list of user ids. Only role='client' users belong to a company.
+  const company = resolveCompany(await loadCompanyDirectoryUsers(), data.companyKey)
+  if (!company) {
+    throw new Error('The selected company was not found. Refresh the page and try again.')
+  }
+  if (company.clientUserIds.length === 0) {
+    throw new Error('This company has no client users assigned.')
+  }
+  const clientId = company.representativeId
 
   const nameErr = validateField(data.projectName, VALIDATION.PROJECT_NAME_MAX_LENGTH, 'Project name')
   if (nameErr) throw new Error(nameErr)
@@ -51,21 +109,34 @@ export const createProject = wrapServerAction('createProject', async function cr
 
   const projectCodeBase = deriveProjectCodeBase(data.projectName)
 
-  const newProject = await withUniqueProjectCode(projectCodeBase, async (projectCode) => {
-    const [inserted] = await db
+  // Project + ALL company client links in one transaction (no partial
+  // relationships). Same model as Customer Onboarding: project.clientId is the
+  // owner (the company's representative) and every client user — owner
+  // included — gets a project_client row.
+  const newProject = await withUniqueProjectCode(projectCodeBase, (projectCode) => db.transaction(async (tx) => {
+    const [inserted] = await tx
       .insert(project)
       .values({
         projectName: data.projectName,
         projectCode,
-        clientId: data.clientId,
+        clientId,
         managerId: data.managerId,
         description: data.description ?? null,
         startDate: data.startDate ?? null,
         status: 'active',
       })
       .returning()
+    const now = new Date()
+    await tx.insert(projectClient).values(
+      company.clientUserIds.map((userId) => ({
+        projectId: inserted.id,
+        userId,
+        assignedBy: currentUser.id,
+        assignedAt: now,
+      })),
+    )
     return inserted
-  })
+  }))
   const projectCode = newProject.projectCode
 
   // Auto-create support wallet for the new project
@@ -95,9 +166,9 @@ export const createProject = wrapServerAction('createProject', async function cr
     },
   ]
   // Client (project owner): In-App + Email + Teams
-  if (data.clientId) {
+  if (clientId) {
     recipients.push({
-      userId: data.clientId,
+      userId: clientId,
       inApp: {
         title: 'New Project Created',
         message: `A new project ${data.projectName} (${projectCode}) has been created for you.`,

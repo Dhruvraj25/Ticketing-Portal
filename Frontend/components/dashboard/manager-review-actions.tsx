@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import { resourceLabel } from '@/lib/ticket-assignment'
 import { useRouter } from 'next/navigation'
 import { managerForwardToClient, managerReassignDeveloper } from '@/app/actions/tickets'
 import { requestRevision } from '@/app/actions/revisions'
@@ -25,10 +26,12 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Loader2, Send, UserRoundCog, ShieldCheck, RefreshCw, Upload } from 'lucide-react'
-import { VALIDATION } from '@/lib/types'
+import { VALIDATION } from '@/lib/types'
+import { actionFailure } from '@/lib/client-ticket-rules'
 
 interface Developer {
   id: string
+  role?: 'developer' | 'project_manager'
   name: string
   email: string
   activeTickets: number
@@ -131,12 +134,18 @@ export function ManagerReviewActions({ ticketId, developers, ticketNumber, revis
     setError(null)
     setLoading('revision')
     try {
-      await requestRevision({
+      const res = await requestRevision({
         ticketId,
         revisionNotes: revisionNotes.trim(),
         priority: revisionPriority || null,
         attachmentIds: revisionAttachmentIds.length > 0 ? revisionAttachmentIds : null,
       })
+      // Client refusals are returned as a structured result (never thrown).
+      const failure = actionFailure(res)
+      if (failure) {
+        setError(failure)
+        return
+      }
       setRevisionDialogOpen(false)
       setRevisionNotes('')
       setRevisionPriority('')
@@ -222,7 +231,7 @@ export function ManagerReviewActions({ ticketId, developers, ticketNumber, revis
                 {developers.map((dev) => (
                   <SelectItem key={dev.id} value={dev.id}>
                     <div className="flex items-center justify-between gap-4 w-full">
-                      <span>{dev.name}</span>
+                      <span>{resourceLabel(dev)}</span>
                       <span className="text-xs text-muted-foreground">
                         {dev.activeTickets} active
                       </span>

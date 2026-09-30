@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Filter, X, Search, Calendar } from 'lucide-react'
+import { Filter, X, Sparkles, Calendar } from 'lucide-react'
 import { TicketStatus, type UserRole } from '@/lib/types'
 import type { ReportFilters as ReportFiltersType } from '@/app/actions/reports'
 import { checkAccess } from '@/app/actions/reports/types'
@@ -204,7 +204,7 @@ export const ReportFilters = memo(function ReportFilters({ projects, developers,
           </Button>
 
           <Button onClick={() => handleApply()} size="sm" className="rounded-xl h-11 flex-1 sm:flex-none bg-black text-white hover:bg-black/80">
-            <Search className="mr-2 h-4 w-4" />
+            <Sparkles className="mr-2 h-4 w-4" />
             Generate
           </Button>
         </div>

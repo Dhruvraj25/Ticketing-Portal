@@ -21,6 +21,8 @@ export interface ReportFilters {
   reviewStatus?: 'all' | 'reviewed' | 'pending'
   starRating?: 'all' | '1' | '2' | '3' | '4' | '5'
   managerId?: string
+  /** Customer Feedback: ticket number contains (case-insensitive). */
+  ticketNumber?: string
   page?: number
   pageSize?: number
 }

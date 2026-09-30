@@ -5,13 +5,20 @@ import { getCurrentUser as getUser } from '@/lib/auth-utils'
 import { getPortalUrl } from '@/lib/urls'
 import { db } from '@/lib/db'
 import { ticket, ticketHistory, comment, timeLog, attachment, user, project, module as moduleTable, projectClient, supportWallet, walletTransaction } from '@/lib/db/schema'
-import { eq, and, inArray, count } from 'drizzle-orm'
+import { eq, and, inArray, count, isNull } from 'drizzle-orm'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import type { TicketStatus } from '@/lib/types'
 import { dispatchNotification, shouldNotifyWalletLow, shouldNotifyWalletEmpty, WALLET_LOW_THRESHOLD } from '@/lib/notify-all'
 import { VALIDATION, validateField } from '@/lib/types'
 import { wrapServerAction } from '@/lib/performance-profiler'
-import { deductWalletHoursAtomic, buildWalletInsufficientError } from '@/lib/wallet-validation'
+import { buildWalletInsufficientError } from '@/lib/wallet-validation'
+import { consumeReservedHoursAtomic, planClose } from '@/lib/wallet-reservation'
+import { findTicketWallet, refreshWalletViews } from '@/lib/ticket-wallet'
+import { ASSIGNABLE_STATUS, DIRECT_ASSIGNABLE_STATUS, canAssignResource, canBeAssignee } from '@/lib/ticket-assignment'
+import { canCompleteWork, COMPLETE_REQUIRES_WORK_MESSAGE, reopenStatusFor } from '@/lib/ticket-work-flow'
+import { canCloseTicket, clientTicketActionDenial, NO_TICKET_ACCESS_MESSAGE, type ClientActionResult } from '@/lib/client-ticket-rules'
+import { getFriendlyError } from '@/lib/error-utils'
+import { isClientOfTicketProject, ticketRaiserName } from '@/lib/client-ticket-permissions'
 
 export const clearManagerAnalyticsCache = wrapServerAction('clearManagerAnalyticsCache', async function clearManagerAnalyticsCache() {
   // Clears all in-memory analytics caches imported from history module
@@ -31,6 +38,11 @@ export const updateTicketStatus = wrapServerAction('updateTicketStatus', async f
   if (!t) throw new Error('Ticket not found')
   if (currentUser.role === 'developer' && t.assignedToId !== currentUser.id) {
     throw new Error('You can only update status of tickets assigned to you')
+  }
+  // Completion only from work in progress (lib/ticket-work-flow.ts): a newly
+  // assigned or REOPENED ticket must go Start Work → timer → Complete first.
+  if (newStatus === 'resolved' && !canCompleteWork(t.status)) {
+    throw new Error(COMPLETE_REQUIRES_WORK_MESSAGE)
   }
 
   const updateData: Record<string, unknown> = { status: newStatus, updatedAt: new Date() }
@@ -186,6 +198,23 @@ export const updateTicketPriority = wrapServerAction('updateTicketPriority', asy
   return { success: true, priority }
 })
 
+/**
+ * Who may be the resource (lib/ticket-assignment.ts canBeAssignee): a
+ * developer, or a project manager of THIS ticket's project (a manager can
+ * assign themselves there). Never trusts the id sent by the browser. Used by
+ * both Assign and Reassign.
+ */
+async function assertAssignableResource(t: { projectId: number | null }, resourceId: string): Promise<void> {
+  const [assignee] = await db.select({ role: user.role }).from(user).where(eq(user.id, resourceId)).limit(1)
+  if (!assignee) throw new Error('The selected resource could not be found.')
+  const managesProject = assignee.role === 'project_manager' && t.projectId
+    ? (await db.select({ id: project.id }).from(project).where(and(eq(project.id, t.projectId), eq(project.managerId, resourceId))).limit(1)).length > 0
+    : false
+  if (!canBeAssignee({ role: assignee.role, managedProjectIds: managesProject && t.projectId ? [t.projectId] : [] }, t.projectId)) {
+    throw new Error('This resource cannot be assigned to this ticket. Managers can only be assigned to tickets in projects they manage.')
+  }
+}
+
 export const assignTicket = wrapServerAction('assignTicket', async function assignTicket(ticketId: number, developerId: string, skipEstimateWorkflow = false) {
   const currentUser = await getUser()
   if (currentUser.role !== 'project_manager' && currentUser.role !== 'admin') {
@@ -195,13 +224,39 @@ export const assignTicket = wrapServerAction('assignTicket', async function assi
   const [t] = await db.select().from(ticket).where(eq(ticket.id, ticketId)).limit(1)
   if (!t) throw new Error('Ticket not found')
 
-  await db.update(ticket).set({
+  // Lifecycle rule (lib/ticket-assignment.ts): assign only after the client has
+  // approved the estimate (or, for "Assign Directly", from a NEW ticket), and
+  // never over an existing assignee — changing the resource is Reassign.
+  if (t.assignedToId) {
+    throw new Error('This ticket is already assigned to a resource. Use Reassign to change it.')
+  }
+  if (!canAssignResource(t, skipEstimateWorkflow)) {
+    throw new Error(
+      skipEstimateWorkflow
+        ? 'Assign Directly is only available for new tickets.'
+        : 'A resource can be assigned only after the client approves the estimate.',
+    )
+  }
+
+  await assertAssignableResource(t, developerId)
+
+  // Atomic guard against duplicate/concurrent assignment (double-click, two
+  // managers at once): the update only applies while the ticket is STILL
+  // unassigned and in the expected status.
+  const updated = await db.update(ticket).set({
     assignedToId: developerId, assignedById: currentUser.id,
     assignedAt: new Date(), status: 'assigned', updatedAt: new Date(),
     // Persist the skip-estimate state: "Assign Directly" skips the estimate
     // workflow, which makes this ticket's worklogs NON-BILLABLE.
     ...(skipEstimateWorkflow ? { estimateWorkflowSkipped: true } : {}),
-  }).where(eq(ticket.id, ticketId))
+  }).where(and(
+    eq(ticket.id, ticketId),
+    isNull(ticket.assignedToId),
+    eq(ticket.status, skipEstimateWorkflow ? DIRECT_ASSIGNABLE_STATUS : ASSIGNABLE_STATUS),
+  )).returning({ id: ticket.id })
+  if (updated.length === 0) {
+    throw new Error('This ticket was just assigned or changed status. Refresh to see its current state.')
+  }
 
   const [developer] = await db.select({ name: user.name, email: user.email }).from(user).where(eq(user.id, developerId)).limit(1)
 
@@ -389,6 +444,7 @@ export const managerReassignDeveloper = wrapServerAction('managerReassignDevelop
 
   const [t] = await db.select().from(ticket).where(eq(ticket.id, ticketId)).limit(1)
   if (!t) throw new Error('Ticket not found')
+  await assertAssignableResource(t, newDeveloperId)
 
   const [developer] = await db.select({ name: user.name }).from(user).where(eq(user.id, newDeveloperId)).limit(1)
 
@@ -451,14 +507,44 @@ export const managerReassignDeveloper = wrapServerAction('managerReassignDevelop
 
 // ── Client Approval Actions ────────────────────────────────────────────────
 
-export const clientApproveTicket = wrapServerAction('clientApproveTicket', async function clientApproveTicket(ticketId: number) {
+/**
+ * Client "Approve & Complete". Returns a structured result — refusals and
+ * failures are NEVER thrown: in production Next.js strips messages from errors
+ * thrown by server actions, so a thrown refusal reached the UI as a generic /
+ * minified React error instead of the real reason.
+ */
+export const clientApproveTicket = wrapServerAction('clientApproveTicket', async function clientApproveTicket(ticketId: number): Promise<ClientActionResult> {
+  try {
+    return await closeTicketAsClient(ticketId)
+  } catch (err) {
+    // Unexpected failure (e.g. database) — log server-side, return a safe message.
+    console.error('[clientApproveTicket] failed:', err instanceof Error ? err.message : err)
+    return { success: false, error: getFriendlyError(err) }
+  }
+})
+
+async function closeTicketAsClient(ticketId: number): Promise<ClientActionResult> {
   const currentUser = await getUser()
-  if (currentUser.role !== 'client') throw new Error('Only clients can approve tickets')
+  if (currentUser.role !== 'client') return { success: false, error: 'Only clients can approve tickets.' }
 
   const [t] = await db.select().from(ticket).where(eq(ticket.id, ticketId)).limit(1)
-  if (!t) throw new Error('Ticket not found')
-  if (t.clientId !== currentUser.id) throw new Error('Access denied')
-  if (t.status !== 'client_review') throw new Error('Ticket is not awaiting your approval')
+  if (!t) return { success: false, error: 'Ticket not found.' }
+  // Only the client account that CREATED the ticket may close it
+  // (lib/client-ticket-rules.ts). A colleague on the same project is told who
+  // created it; anyone else learns nothing about the ticket. Checked BEFORE any
+  // write, notification or activity-log entry.
+  if (!canCloseTicket(currentUser, t.clientId)) {
+    const actorOnProject = await isClientOfTicketProject(currentUser.id, t)
+    const error = clientTicketActionDenial({
+      actorId: currentUser.id,
+      ticketClientId: t.clientId,
+      raiserName: actorOnProject ? await ticketRaiserName(t.clientId) : null,
+      actorOnProject,
+      action: 'close',
+    })
+    return { success: false, error: error ?? NO_TICKET_ACCESS_MESSAGE }
+  }
+  if (t.status !== 'client_review') return { success: false, error: 'This ticket is not awaiting your approval.' }
 
   const estimatedHours = t.estimatedHours || 0
   const additionalHours = t.additionalHoursApproved ? (t.additionalHoursRequested || 0) : 0
@@ -467,17 +553,20 @@ export const clientApproveTicket = wrapServerAction('clientApproveTicket', async
   // the new total). Adding additionalHoursRequested again here would deduct
   // the additional hours TWICE, so the deduction is just estimatedHours.
   const totalDeduction = estimatedHours
+  // Hours this ticket already holds in reserve (reserved when its estimate /
+  // additional hours were approved — lib/wallet-reservation.ts). Closing
+  // converts them to consumed hours; only a shortfall (e.g. tickets approved
+  // before reservations existed) is taken from the available balance.
+  const reservedOnTicket = t.reservedHours || 0
 
-  // One wallet per client — resolved once before the transaction. This
-  // pre-transaction snapshot is used only for the wallet-low/-empty
-  // threshold-crossing comparison and the walletTransaction audit log's
-  // "previousBalance" field (cosmetic); the actual never-negative guarantee
-  // comes from the atomic conditional UPDATE inside the transaction below,
-  // not from this snapshot.
+  // The ticket's wallet (raiser's, else the project owner's — lib/ticket-wallet.ts),
+  // resolved once before the transaction. This pre-transaction snapshot is
+  // used only for the wallet-low/-empty threshold-crossing comparison; the
+  // never-negative guarantee comes from the atomic conditional UPDATE inside
+  // the transaction below, not from this snapshot.
   let wallet: typeof supportWallet.$inferSelect | undefined
-  if (t.clientId && totalDeduction > 0) {
-    const [w] = await db.select().from(supportWallet).where(eq(supportWallet.clientId, t.clientId)).limit(1)
-    wallet = w
+  if (totalDeduction > 0 || reservedOnTicket > 0) {
+    wallet = (await findTicketWallet(db, t)) ?? undefined
   }
 
   // Section 6/12/19/20: the ticket status change, the wallet deduction, and
@@ -493,28 +582,43 @@ export const clientApproveTicket = wrapServerAction('clientApproveTicket', async
   let deductionResult: { remainingHours: number } | null = null
   const previousRemaining = wallet?.remainingHours ?? null
 
+  let alreadyClosed = false
   await db.transaction(async (tx) => {
-    const ticketUpdate: Record<string, unknown> = { status: 'closed', closedAt: new Date(), updatedAt: new Date() }
+    // Claim the close: only one request can move client_review → closed, so a
+    // double click can never settle the wallet twice.
+    const [claimed] = await tx
+      .update(ticket)
+      .set({ status: 'closed', closedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(ticket.id, ticketId), eq(ticket.status, 'client_review')))
+      .returning({ id: ticket.id })
+    if (!claimed) {
+      alreadyClosed = true
+      return
+    }
+    const ticketUpdate: Record<string, unknown> = { reservedHours: 0 }
 
-    if (wallet && totalDeduction > 0) {
-      const deducted = await deductWalletHoursAtomic(tx, wallet.id, totalDeduction)
-      if (!deducted) {
-        // Insufficient balance at the moment of closing — get the TRUE
-        // current value for the error message rather than reporting the
-        // (possibly now-stale) pre-transaction snapshot.
+    if (wallet && (totalDeduction > 0 || reservedOnTicket > 0)) {
+      const settled = await consumeReservedHoursAtomic(tx, wallet.id, totalDeduction, reservedOnTicket)
+      if (!settled) {
+        // The unreserved part of the deduction exceeds the AVAILABLE balance —
+        // report the TRUE current value, not the pre-transaction snapshot.
         const [current] = await tx.select({ remainingHours: supportWallet.remainingHours }).from(supportWallet).where(eq(supportWallet.id, wallet.id)).limit(1)
-        throw buildWalletInsufficientError(totalDeduction, current?.remainingHours ?? wallet.remainingHours)
+        throw buildWalletInsufficientError(planClose(totalDeduction, reservedOnTicket).extraRequired, current?.remainingHours ?? wallet.remainingHours)
       }
-      deductionResult = deducted
+      deductionResult = settled
       ticketUpdate.consumedHours = totalDeduction
+      const previousBalance = settled.remainingHours - planClose(totalDeduction, reservedOnTicket).availableChange
 
-      await tx.insert(walletTransaction).values({
-        walletId: wallet.id, transactionType: 'Deduct Hours', hours: totalDeduction,
-        previousBalance: wallet.remainingHours, newBalance: deducted.remainingHours,
-        reason: `Ticket #${t.ticketNumber} closed`,
-        remarks: `${totalDeduction}h deducted on ticket close (est: ${estimatedHours}h${additionalHours > 0 ? `, additional: ${additionalHours}h` : ''}) - ${t.title}`,
-        performedBy: currentUser.name || currentUser.id,
-      })
+      if (totalDeduction > 0) {
+        await tx.insert(walletTransaction).values({
+          walletId: wallet.id, transactionType: 'Deduct Hours', hours: totalDeduction,
+          previousBalance, newBalance: settled.remainingHours,
+          reason: `Ticket #${t.ticketNumber} closed`,
+          remarks: `${totalDeduction}h deducted on ticket close (est: ${estimatedHours}h${additionalHours > 0 ? `, additional: ${additionalHours}h` : ''}` +
+            `${reservedOnTicket > 0 ? `; ${Math.min(reservedOnTicket, totalDeduction)}h from reserved hours` : ''}) - ${t.title}`,
+          performedBy: currentUser.name || currentUser.id,
+        })
+      }
     }
 
     await tx.update(ticket).set(ticketUpdate).where(eq(ticket.id, ticketId))
@@ -523,6 +627,9 @@ export const clientApproveTicket = wrapServerAction('clientApproveTicket', async
       ticketId, userId: currentUser.id, action: 'client_approved', newValue: 'closed',
     })
   })
+  // Another request closed it first — nothing was written by this one.
+  if (alreadyClosed) return { success: false, error: 'This ticket is not awaiting your approval.' }
+  if (wallet) refreshWalletViews(wallet.id)
 
   // Post-commit: wallet-low/wallet-empty alerts, firing only after a
   // SUCCESSFUL, committed deduction (never for a close that didn't deduct,
@@ -781,7 +888,8 @@ export const clientApproveTicket = wrapServerAction('clientApproveTicket', async
   revalidateTag('project-ticket-analytics', { expire: 60 })
   revalidateTag('consolidated-dashboard-stats', { expire: 60 })
   revalidateTag('ticket-by-id', { expire: 60 })
-})
+  return { success: true }
+}
 
 export const clientReopenTicket = wrapServerAction('clientReopenTicket', async function clientReopenTicket(ticketId: number, reason: string) {
   const currentUser = await getUser()
@@ -801,7 +909,9 @@ export const clientReopenTicket = wrapServerAction('clientReopenTicket', async f
     }
   }
 
-  await db.update(ticket).set({ status: 'in_progress', closedAt: null, updatedAt: new Date() }).where(eq(ticket.id, ticketId))
+  // Back to the resource, NOT started (lib/ticket-work-flow.ts) — like a newly
+  // assigned ticket: Start Work → timer → Complete again. Time logs untouched.
+  await db.update(ticket).set({ status: reopenStatusFor(t.assignedToId), closedAt: null, updatedAt: new Date() }).where(eq(ticket.id, ticketId))
 
   await db.insert(ticketHistory).values({
     ticketId, userId: currentUser.id, action: 'reopened_by_client',

@@ -222,7 +222,7 @@ function StatusGuideSection({ statuses }: { statuses: StatusGuide[] }) {
 
 function PriorityGuideSection({ priorities }: { priorities: PriorityGuide[] }) {
   return (
-    <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
+    <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5'>
       {priorities.map((p) => (
         <Card key={p.level} className={cn('p-4 border shadow-sm', p.color)}>
           <div className='flex items-center gap-2 mb-2'>
@@ -520,8 +520,13 @@ function HeroSection({ searchQuery, onSearchChange, searchResults, onResultClick
   onResultClick: (id: string) => void
   onClearSearch: () => void
 }) {
-  return (            <div className='relative overflow-hidden rounded-2xl bg-primary/5 border border-border px-6 py-10 sm:px-10 sm:py-14 mb-8' data-tour="help-hero">
-      <div aria-hidden="true" className='pointer-events-none absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2' />
+  // No overflow-hidden on the hero itself: it would clip the search results
+  // dropdown (absolute, below the input). Only the decorative glow is clipped,
+  // and the hero stacks above the sections that follow it (z-20).
+  return (            <div className='relative z-20 rounded-2xl bg-primary/5 border border-border px-6 py-10 sm:px-10 sm:py-14 mb-8' data-tour="help-hero">
+      <div aria-hidden="true" className='pointer-events-none absolute inset-0 overflow-hidden rounded-2xl'>
+        <div className='absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2' />
+      </div>
       <div className='relative z-10 max-w-2xl mx-auto text-center'>
         <motion.div
           initial={{ opacity: 0, y: 20 }}

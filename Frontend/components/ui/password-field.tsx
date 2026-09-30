@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Eye, EyeOff, Copy, RefreshCw, Check, X } from 'lucide-react'
+import { Eye, EyeOff, Copy, Sparkles, Check, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -120,7 +120,7 @@ export function PasswordField({
 
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={handleGenerate} type="button">
-            <RefreshCw className={'h-3.5 w-3.5 mr-1'} />
+            <Sparkles className={'h-3.5 w-3.5 mr-1'} />
             {value ? 'Regenerate' : 'Generate'}
           </Button>
           {value && (

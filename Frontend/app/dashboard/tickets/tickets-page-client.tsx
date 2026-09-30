@@ -17,7 +17,7 @@ import type { TicketWithRelations, UserRole } from '@/lib/types'
 import { TicketTopBar } from '@/components/dashboard/ticket-top-bar'
 import { PageHeaderIcon } from '@/components/dashboard/page-header-icon'
 import { TicketRightPanel } from '@/components/dashboard/ticket-right-panel'
-import { getTicketsList, type TicketListItem } from '@/app/actions/tickets'
+import { getTicketsList, type TicketListItem, type TicketInsights } from '@/app/actions/tickets'
 import { useInfiniteTicketList, useLoadMoreSentinel } from '@/lib/use-infinite-ticket-list'
 
 // Infinite-scroll batch size — initial load and every subsequent "load more"
@@ -35,10 +35,10 @@ interface TicketsPageClientProps {
   user: { id: string; name: string; role: UserRole }
   tickets: TicketListItem[]
   stats: {
-    openCount: number
-    inProgressCount: number
-    resolvedCount: number
-    closedCount: number
+    /** Exact ticket count per status (role-scoped). */
+    statusCounts: Record<string, number>
+    /** All tickets visible to this user (role-scoped). */
+    totalTickets: number
     totalCount: number
   }
   roleTitle: string
@@ -46,6 +46,8 @@ interface TicketsPageClientProps {
   initialView?: 'list' | 'grid'
   developers?: { id: string; name: string; email: string; activeTickets: number }[]
   pagination?: PaginationInfo
+  /** Role-scoped Insights counts (null if they could not be loaded). */
+  insights?: TicketInsights | null
 }
 
 export function TicketsPageClient({
@@ -57,6 +59,7 @@ export function TicketsPageClient({
   initialView = 'list',
   developers,
   pagination,
+  insights,
 }: TicketsPageClientProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -316,7 +319,7 @@ export function TicketsPageClient({
             list instead of nested beneath it. */}
         <aside data-tour="tickets-right-panel" className="min-w-0 lg:border-l lg:border-border/50 overflow-y-auto overscroll-behavior-contain bg-background/50">
           <div className="p-4">
-            <TicketRightPanel userRole={user.role} />
+            <TicketRightPanel userRole={user.role} insights={insights ?? null} />
           </div>
         </aside>
       </div>

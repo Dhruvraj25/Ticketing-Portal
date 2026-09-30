@@ -100,7 +100,12 @@ export function SupportRenewalReminder({ status }: Props) {
     try {
       const result = await requestSupportRenewal()
       if (result.success) {
+        // Close AND mark handled for this session — closing alone let the
+        // auto-open effect (it runs whenever the popup is closed and not
+        // dismissed) reopen the popup ~800ms later, again and again.
         setShowPopup(false)
+        setDismissedThisSession(true)
+        try { sessionStorage.setItem(SESSION_KEY, 'true') } catch { /* noop */ }
         toast.success('Your renewal request has been sent to your Project Manager.')
       } else {
         toast.error(result.error || 'Failed to send your renewal request. Please try again.')
@@ -180,7 +185,7 @@ export function SupportRenewalReminder({ status }: Props) {
           </div>
           <DialogFooter className="px-6 pb-5 pt-2 flex-col sm:flex-row gap-2">
             <Button variant="outline" onClick={handleRemindLater} className="flex-1 rounded-xl"><Clock className="h-4 w-4 mr-1.5" /> Remind Me Later</Button>
-            <Button onClick={handleRenewSupport} disabled={requesting} className="flex-1 rounded-xl">{requesting ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <ExternalLink className="h-4 w-4 mr-1.5" />} Renew Support</Button>
+            <Button onClick={handleRenewSupport} disabled={requesting} className="flex-1 rounded-xl">{requesting ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <ExternalLink className="h-4 w-4 mr-1.5" />} Renew Support Contract</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

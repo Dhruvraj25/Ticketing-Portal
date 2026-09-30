@@ -43,9 +43,10 @@ test('project.projectCode carries a NOT NULL UNIQUE constraint (case 1: unique p
 test('createProject uses deriveProjectCodeBase + withUniqueProjectCode instead of the old timestamp-suffixed generator', () => {
   assert.match(CRUD_SRC, /import \{ deriveProjectCodeBase, withUniqueProjectCode \} from '@\/lib\/project-code'/)
   assert.doesNotMatch(CRUD_SRC, /Date\.now\(\)\.toString\(36\)/, 'the old non-deterministic, non-retrying generator must be gone')
-  const body = functionBody(CRUD_SRC, 'export const createProject', 2000)
+  const body = functionBody(CRUD_SRC, 'export const createProject', 5000)
   assert.match(body, /const projectCodeBase = deriveProjectCodeBase\(data\.projectName\)/)
-  assert.match(body, /withUniqueProjectCode\(projectCodeBase, async \(projectCode\) => \{/)
+  // Like onboarding, the retry wraps the WHOLE transaction (project + company client links).
+  assert.match(body, /withUniqueProjectCode\(projectCodeBase, \(projectCode\) => db\.transaction\(async \(tx\) => \{/)
 })
 
 test('createCustomerOnboarding uses deriveProjectCodeBase + withUniqueProjectCode, retrying the WHOLE transaction (not just the insert)', () => {

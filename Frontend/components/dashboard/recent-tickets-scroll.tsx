@@ -2,6 +2,7 @@
 
 import { useRef } from 'react'
 import { Loader2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { TicketList } from '@/components/dashboard/ticket-card'
 import { getRecentTicketsPage } from '@/app/actions/dashboard'
 import { useInfiniteTicketList, useLoadMoreSentinel } from '@/lib/use-infinite-ticket-list'
@@ -13,6 +14,11 @@ interface RecentTicketsScrollProps {
   showClient: boolean
   showAssignee: boolean
   emptyMessage: string
+  /**
+   * Extra classes for the scroll container — e.g. the dashboard lets it fill
+   * the space beside Analytics on desktop (flex-1, no max height).
+   */
+  scrollClassName?: string
 }
 
 /**
@@ -31,6 +37,7 @@ export function RecentTicketsScroll({
   showClient,
   showAssignee,
   emptyMessage,
+  scrollClassName,
 }: RecentTicketsScrollProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
@@ -55,7 +62,7 @@ export function RecentTicketsScroll({
     <div
       ref={containerRef}
       data-tour="dashboard-recent-tickets-scroll"
-      className="max-h-[900px] overflow-y-auto overscroll-behavior-contain rounded-2xl"
+      className={cn('max-h-[900px] overflow-y-auto overscroll-behavior-contain rounded-2xl', scrollClassName)}
     >
       <TicketList
         tickets={tickets}

@@ -145,11 +145,10 @@ export function TeamClient({ developers, devProjectsMap, isAdmin }: TeamClientPr
   const stats = useMemo(() => {
     const total = developers.length
     const active = developers.filter(d => d.activeTickets > 0).length
-    const onLeave = 0 // No field yet
     const avgWorkload = total > 0
       ? Math.round((developers.reduce((s, d) => s + d.activeTickets, 0) / total) * 10) / 10
       : 0
-    return { total, active, onLeave, avgWorkload }
+    return { total, active, avgWorkload }
   }, [developers])
 
   // Max workload for percentage
@@ -249,12 +248,11 @@ export function TeamClient({ developers, devProjectsMap, isAdmin }: TeamClientPr
         data-tour="team-kpis"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="grid grid-cols-2 sm:grid-cols-4 gap-4"
+        className="grid grid-cols-1 sm:grid-cols-3 gap-4"
       >
         <StatCard title="Total Members" value={stats.total} iconName="Users" delay={0} />
         <StatCard title="Active Members" value={stats.active} iconName="Briefcase" delay={1} />
-        <StatCard title="On Leave" value={stats.onLeave} iconName="Clock" delay={2} />
-        <StatCard title="Avg Workload" value={stats.avgWorkload} iconName="BarChart3" delay={3} />
+        <StatCard title="Avg Workload" value={stats.avgWorkload} iconName="BarChart3" delay={2} />
       </motion.div>
 
       {/* Search & Filters */}

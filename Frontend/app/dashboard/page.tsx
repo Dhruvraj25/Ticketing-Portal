@@ -6,8 +6,8 @@ import type {
   SidebarDataResult,
   DashboardUser,
 } from '@/app/actions/dashboard'
-import { StatCard, type KpiColorTheme } from '@/components/dashboard/stat-card'
-import { TicketStatus } from '@/lib/types'
+import { StatCard } from '@/components/dashboard/stat-card'
+import { statusKpis, TOTAL_TICKETS_KPI } from '@/lib/ticket-status-kpis'
 import { RecentTicketsScroll } from '@/components/dashboard/recent-tickets-scroll'
 import { PageHeader, CurrentDate } from '@/components/dashboard/page-header-server'
 import { Button } from '@/components/ui/button'
@@ -36,79 +36,35 @@ function SidebarSkeleton() {
 
 // ─── Critical Content (renders immediately, data pre-fetched) ───────────────
 
-function StatsSection({ consolidatedStats, userRole }: { consolidatedStats: ConsolidatedStats; userRole: string }) {
-  const isManagerOrAdmin = userRole === 'project_manager' || userRole === 'admin'
-
-  const cards: { title: string; value: number; href: string; iconName?: string; colorTheme?: KpiColorTheme }[] = [
-    { title: 'Total Tickets', value: consolidatedStats.totalTickets, href: '/dashboard/reports/view?report=ticket_summary' },
-    { title: 'Open', value: consolidatedStats.openTickets, href: '/dashboard/reports/view?report=ticket_status&status=open' },
-    { title: 'In Progress', value: consolidatedStats.inProgressTickets, href: '/dashboard/reports/view?report=ticket_status&status=in_progress' },
-    { title: 'Resolved', value: consolidatedStats.resolvedTickets, href: '/dashboard/reports/view?report=ticket_resolution' },
-  ]
-
-  // R19 — Manager/Admin KPI cards for the two DISTINCT revision-style states.
-  // 'Rework' = manager sent completed work back to the resource; 'Requested
-  // for Revision' = client asked for changes (work revision / rejected
-  // estimate). Cards render ONLY when the count is above zero.
-  if (isManagerOrAdmin) {
-    if (consolidatedStats.reworkCount > 0) {
-      cards.push({
-        title: 'Rework',
-        value: consolidatedStats.reworkCount,
-        href: `/dashboard/reports/view?report=ticket_summary&status=${TicketStatus.REWORK}`,
-        iconName: 'RefreshCw',
-        colorTheme: 'orange',
-      })
-    }
-    if (consolidatedStats.revisionRequestedCount > 0) {
-      cards.push({
-        title: 'Requested for Revision',
-        value: consolidatedStats.revisionRequestedCount,
-        href: `/dashboard/reports/view?report=ticket_summary&status=${TicketStatus.REQUEST_FOR_REVISION}`,
-        iconName: 'RefreshCw',
-        colorTheme: 'violet',
-      })
-    }
-  }
-  // Developers — keep visibility of their revision-state tickets (zero-hidden).
-  if (userRole === 'developer' && consolidatedStats.openRevisions > 0) {
-    cards.push({
-      title: 'Pending Revisions',
-      value: consolidatedStats.openRevisions,
-      href: `/dashboard/tickets?status=${TicketStatus.REQUEST_FOR_REVISION}`,
-      iconName: 'RefreshCw',
-      colorTheme: 'violet',
-    })
-  }
-  if (consolidatedStats.pendingEstimates > 0) {
-    cards.push({ title: 'Pending Estimates', value: consolidatedStats.pendingEstimates, href: `/dashboard/tickets?status=${TicketStatus.ESTIMATE_PENDING}` })
-  }
-
-  // Grid columns adapt to the card count so there is no empty slot in the row.
-  // Clients always get 4 cards (Pending Revisions is excluded), managers/admins
-  // get 5, and 6 cards (pending estimates included) flow into 2 neat rows of 3.
-  const kpiGridClass =
-    cards.length >= 3
-      ? 'sm:grid-cols-5 lg:grid-cols-5'
-      : cards.length === 3
-        ? 'sm:grid-cols-2 lg:grid-cols-3'
-        : 'sm:grid-cols-2 lg:grid-cols-3'
-
+function StatsSection({ consolidatedStats }: { consolidatedStats: ConsolidatedStats }) {
+  // SAME KPI categories for every role (lib/ticket-status-kpis.ts): Total
+  // Tickets + one card per ticket status, each with its own fixed color/icon.
+  // The COUNTS are role-scoped on the server (ticketStatsScope — the same scope
+  // as the Tickets list): developer → tickets assigned to them; client →
+  // own tickets (Approver: their organization's); manager / admin → the
+  // tickets they can access. Status cards with 0 tickets are not rendered.
+  // Replaces the old per-role Open / In Progress / Resolved buckets, which
+  // merged statuses (e.g. "Resolved" = Manager Review + Client Review) and left
+  // some statuses (Assigned, Estimate Approved, Completed) uncounted.
+  const perStatus = statusKpis(consolidatedStats.statusCounts)
   return (
-    // Width-only wrapper: the grid itself (columns/gap/breakpoints below) is
-    // unchanged — this just keeps the KPI row from stretching to the full
-    // dashboard content width and centers it, so individual cards read as
-    // compact rather than full-bleed.
     <div className="max-w-[1200px] w-full mx-auto">
-      <div data-tour="dashboard-kpis" className={`grid grid-cols-1 gap-3 ${kpiGridClass}`}>
-        {cards.map((card) => (
+      <div data-tour="dashboard-kpis" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <StatCard
+          title={TOTAL_TICKETS_KPI.label}
+          value={consolidatedStats.totalTickets}
+          href="/dashboard/tickets"
+          iconName={TOTAL_TICKETS_KPI.icon}
+          colorTheme={TOTAL_TICKETS_KPI.color}
+        />
+        {perStatus.map((k) => (
           <StatCard
-            key={card.title}
-            title={card.title}
-            value={card.value}
-            href={card.href}
-            iconName={card.iconName}
-            colorTheme={card.colorTheme}
+            key={k.status}
+            title={k.label}
+            value={k.count}
+            href={`/dashboard/tickets?status=${k.status}`}
+            iconName={k.icon}
+            colorTheme={k.color}
           />
         ))}
       </div>
@@ -138,8 +94,15 @@ function RecentTicketsSection({
   userRole: string
 }) {
   return (
-    <div data-tour="dashboard-recent-tickets" className="lg:col-span-2 space-y-3">
-      <div className="flex items-center justify-between">
+    // Desktop (two columns): this cell is as tall as the grid row, which the
+    // Analytics column beside it sets — the inner panel is taken out of the
+    // row-height calculation (absolute inset-0) and fills it, so the ticket
+    // list ends level with Analytics and scrolls internally (header + View all
+    // stay visible). lg:min-h keeps a usable list when Analytics is short.
+    // Single column (< lg): unchanged — normal flow, list capped at 900px.
+    <div className="lg:col-span-2 relative lg:min-h-[640px]">
+    <div data-tour="dashboard-recent-tickets" className="space-y-3 lg:space-y-0 lg:absolute lg:inset-0 lg:flex lg:flex-col lg:gap-3">
+      <div className="flex items-center justify-between shrink-0">
         <h2 className="text-sm font-semibold text-foreground">
           {userRole === 'client' ? 'Your Recent Tickets' : 'Recent Tickets'}
         </h2>
@@ -156,7 +119,9 @@ function RecentTicketsSection({
         // Assignee (developer) is internal — never surfaced to clients (R15).
         showAssignee={userRole !== 'developer' && userRole !== 'client'}
         emptyMessage={userRole === 'client' ? "You haven't submitted any tickets yet" : "No tickets in your queue"}
+        scrollClassName="lg:flex-1 lg:min-h-0 lg:max-h-none"
       />
+    </div>
     </div>
   )
 }
@@ -233,7 +198,7 @@ export default async function DashboardPage() {
 </div>
       <div className="space-y-4">
         {/* ── CRITICAL PATH: KPI cards — data already loaded ───────── */}
-        <StatsSection consolidatedStats={consolidatedStats} userRole={user.role} />
+        <StatsSection consolidatedStats={consolidatedStats} />
 
         {/* Admin Project Metrics — already loaded in critical data
         {user.role === 'admin' && projectMetrics && (

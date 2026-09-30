@@ -16,6 +16,7 @@ export {
   getProjectNames,
   // CRUD
   createProject,
+  getProjectCompanies,
   updateProject,
   updateProjectStatus,
   archiveProject,

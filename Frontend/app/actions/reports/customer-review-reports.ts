@@ -2,53 +2,49 @@
 
 import { db } from '@/lib/db'
 import { ticketReview, ticket, user, project, module as moduleTable, timeLog } from '@/lib/db/schema'
-import { eq, and, or, count, sql, desc, asc, avg, gte, lte, lt, inArray } from 'drizzle-orm'
+import { eq, and, or, count, sql, desc, asc, avg, gte, lte, lt, inArray, ilike, isNull, isNotNull } from 'drizzle-orm'
 import { wrapServerAction } from '@/lib/performance-profiler'
 import type { ReportFilters, ReportResult } from './types'
 import type { CurrentUser } from './queries'
+import { aggregateCompanyRatings, UNASSIGNED_COMPANY_KEY } from '@/lib/company-ratings'
 
+// One filter scope for the WHOLE report: closed tickets LEFT JOIN their review.
+// Every query below (table, KPIs, charts, company ratings, low-rated and
+// pending lists) applies these same conditions, so every section always
+// reflects exactly the selected filters:
+//   - dates → the ticket's closed date (same as the table's "Closed Date");
+//   - client / project / resource / module / manager → the ticket's own fields;
+//   - feedback status / star rating / ticket # → the review and the ticket.
+// Review aggregates join ticket_review → ticket and use this scope too, so a
+// filter can never apply to the table but not to the ratings (or vice versa).
 function buildConditions(filters: ReportFilters) {
-  const ticketConditions = [eq(ticket.status, 'closed')]
-  const reviewConditions: any[] = []
+  const conditions: any[] = [eq(ticket.status, 'closed')]
 
-  if (filters.dateFrom) {
-    ticketConditions.push(gte(ticket.closedAt, new Date(filters.dateFrom)))
-    reviewConditions.push(gte(ticketReview.createdAt, new Date(filters.dateFrom)))
-  }
-  if (filters.dateTo) {
-    ticketConditions.push(lte(ticket.closedAt, new Date(filters.dateTo + 'T23:59:59.999Z')))
-    reviewConditions.push(lte(ticketReview.createdAt, new Date(filters.dateTo + 'T23:59:59.999Z')))
-  }
-  if (filters.projectId) {
-    ticketConditions.push(eq(ticket.projectId, filters.projectId))
-    reviewConditions.push(eq(ticketReview.projectId, filters.projectId))
-  }
-  if (filters.clientId) {
-    ticketConditions.push(eq(ticket.clientId, filters.clientId))
-    reviewConditions.push(eq(ticketReview.clientId, filters.clientId))
-  }
-  if (filters.developerId) {
-    ticketConditions.push(eq(ticket.assignedToId, filters.developerId))
-    reviewConditions.push(eq(ticketReview.assignedToId, filters.developerId))
-  }
-  if (filters.moduleId) {
-    ticketConditions.push(eq(ticket.moduleId, filters.moduleId))
-  }
+  if (filters.dateFrom) conditions.push(gte(ticket.closedAt, new Date(filters.dateFrom)))
+  if (filters.dateTo) conditions.push(lte(ticket.closedAt, new Date(filters.dateTo + 'T23:59:59.999Z')))
+  if (filters.projectId) conditions.push(eq(ticket.projectId, filters.projectId))
+  if (filters.clientId) conditions.push(eq(ticket.clientId, filters.clientId))
+  if (filters.developerId) conditions.push(eq(ticket.assignedToId, filters.developerId))
+  if (filters.moduleId) conditions.push(eq(ticket.moduleId, filters.moduleId))
   if (filters.managerId) {
-    ticketConditions.push(sql`${ticket.projectId} IN (SELECT id FROM project WHERE "managerId" = ${filters.managerId})`)
+    conditions.push(sql`${ticket.projectId} IN (SELECT id FROM project WHERE "managerId" = ${filters.managerId})`)
   }
-  if (filters.reviewStatus === 'reviewed') {
-    reviewConditions.push(sql`${ticketReview.id} IS NOT NULL`)
-  } else if (filters.reviewStatus === 'pending') {
-    ticketConditions.push(sql`${ticketReview.id} IS NULL`)
+  const ticketNumber = filters.ticketNumber?.trim()
+  if (ticketNumber) {
+    const escaped = ticketNumber.replace(/[\%_]/g, (c) => `\${c}`)
+    conditions.push(ilike(ticket.ticketNumber, `%${escaped}%`))
   }
+  if (filters.reviewStatus === 'reviewed') conditions.push(isNotNull(ticketReview.id))
+  else if (filters.reviewStatus === 'pending') conditions.push(isNull(ticketReview.id))
   if (filters.starRating && filters.starRating !== 'all') {
-    reviewConditions.push(eq(ticketReview.overallRating, Number(filters.starRating)))
+    conditions.push(eq(ticketReview.overallRating, Number(filters.starRating)))
   }
 
-  const ticketWhere = ticketConditions.length > 0 ? and(...ticketConditions) : undefined
-  const reviewWhere = reviewConditions.length > 0 ? and(...reviewConditions) : undefined
-  return { ticketWhere, reviewWhere, ticketConditions }
+  /** Closed tickets in scope (use with ticket LEFT JOIN ticket_review). */
+  const ticketWhere = and(...conditions)!
+  /** Reviews in scope (use with ticket_review INNER JOIN ticket). */
+  const reviewWhere = and(...conditions, isNotNull(ticketReview.id))!
+  return { ticketWhere, reviewWhere }
 }
 
 export const getCustomerReviewReport = wrapServerAction('getCustomerReviewReport', async function getCustomerReviewReport(
@@ -76,10 +72,10 @@ export const getCustomerReviewReport = wrapServerAction('getCustomerReviewReport
     db
       .select({
         avgRating: avg(ticketReview.overallRating).mapWith(Number),
-        fiveStar: sql<number>`COUNT(*) FILTER (WHERE overall_rating = 5)::int`,
-        lowRated: sql<number>`COUNT(*) FILTER (WHERE overall_rating <= 2)::int`,
+        fiveStar: sql<number>`COUNT(*) FILTER (WHERE ${ticketReview.overallRating} = 5)::int`,
+        lowRated: sql<number>`COUNT(*) FILTER (WHERE ${ticketReview.overallRating} <= 2)::int`,
       })
-      .from(ticketReview)
+      .from(ticketReview).innerJoin(ticket, eq(ticket.id, ticketReview.ticketId))
       .where(reviewWhere ?? sql`1=1`),
   ])
 
@@ -124,7 +120,7 @@ export const getCustomerReviewReport = wrapServerAction('getCustomerReviewReport
   // Rating Distribution chart
   const distribution = await db
     .select({ rating: ticketReview.overallRating, count: count().mapWith(Number) })
-    .from(ticketReview)
+    .from(ticketReview).innerJoin(ticket, eq(ticket.id, ticketReview.ticketId))
     .where(reviewWhere ?? sql`1=1`)
     .groupBy(ticketReview.overallRating)
     .orderBy(desc(ticketReview.overallRating))
@@ -139,7 +135,7 @@ export const getCustomerReviewReport = wrapServerAction('getCustomerReviewReport
   // Avg Rating by Resource chart
   const ratingByResource = await db
     .select({ assignedToId: ticketReview.assignedToId, avgRating: avg(ticketReview.overallRating).mapWith(Number), count: count().mapWith(Number) })
-    .from(ticketReview)
+    .from(ticketReview).innerJoin(ticket, eq(ticket.id, ticketReview.ticketId))
     .where(and(reviewWhere ? reviewWhere : sql`1=1`, sql`${ticketReview.assignedToId} IS NOT NULL`))
     .groupBy(ticketReview.assignedToId)
     .orderBy(desc(avg(ticketReview.overallRating)))
@@ -158,7 +154,7 @@ export const getCustomerReviewReport = wrapServerAction('getCustomerReviewReport
   // Avg Rating by Project chart
   const ratingByProject = await db
     .select({ projectId: ticketReview.projectId, avgRating: avg(ticketReview.overallRating).mapWith(Number), count: count().mapWith(Number) })
-    .from(ticketReview)
+    .from(ticketReview).innerJoin(ticket, eq(ticket.id, ticketReview.ticketId))
     .where(and(reviewWhere ? reviewWhere : sql`1=1`, sql`${ticketReview.projectId} IS NOT NULL`))
     .groupBy(ticketReview.projectId)
     .orderBy(desc(avg(ticketReview.overallRating)))
@@ -174,10 +170,54 @@ export const getCustomerReviewReport = wrapServerAction('getCustomerReviewReport
     value: Math.round(Number(r.avgRating) * 10) / 10,
   }))
 
+  // Company-wise ratings — same overall_rating average, grouped by the company
+  // of the ticket's raiser (else the project owner's company). SQL groups by
+  // (raiser, project owner); lib/company-ratings folds those into companies.
+  const [closedByRaiser, reviewsByRaiser, companyUsers] = await Promise.all([
+    db
+      .select({
+        raiserId: ticket.clientId,
+        projectOwnerId: project.clientId,
+        closedTickets: count(ticket.id).mapWith(Number),
+        reviewedTickets: count(ticketReview.id).mapWith(Number),
+      })
+      .from(ticket)
+      .leftJoin(ticketReview, eq(ticket.id, ticketReview.ticketId))
+      .leftJoin(project, eq(project.id, ticket.projectId))
+      .where(ticketWhere ?? sql`1=1`)
+      .groupBy(ticket.clientId, project.clientId),
+    db
+      .select({
+        raiserId: ticket.clientId,
+        projectOwnerId: project.clientId,
+        reviews: count(ticketReview.id).mapWith(Number),
+        ratingSum: sql<number>`COALESCE(SUM(${ticketReview.overallRating}), 0)::int`,
+        fiveStar: sql<number>`COUNT(*) FILTER (WHERE ${ticketReview.overallRating} = 5)::int`,
+        fourStar: sql<number>`COUNT(*) FILTER (WHERE ${ticketReview.overallRating} = 4)::int`,
+        threeStar: sql<number>`COUNT(*) FILTER (WHERE ${ticketReview.overallRating} = 3)::int`,
+        twoStar: sql<number>`COUNT(*) FILTER (WHERE ${ticketReview.overallRating} = 2)::int`,
+        oneStar: sql<number>`COUNT(*) FILTER (WHERE ${ticketReview.overallRating} = 1)::int`,
+        lastReviewAt: sql<Date | null>`MAX(${ticketReview.createdAt})`,
+      })
+      .from(ticketReview)
+      .innerJoin(ticket, eq(ticket.id, ticketReview.ticketId))
+      .leftJoin(project, eq(project.id, ticket.projectId))
+      .where(reviewWhere ?? sql`1=1`)
+      .groupBy(ticket.clientId, project.clientId),
+    db
+      .select({ id: user.id, role: user.role, companyName: user.companyName, companyCode: user.companyCode, userType: user.userType, createdAt: user.createdAt })
+      .from(user)
+      .where(eq(user.role, 'client')),
+  ])
+  const companyRatings = aggregateCompanyRatings(companyUsers, [...closedByRaiser, ...reviewsByRaiser])
+  const byCompanyData = companyRatings
+    .filter(c => c.averageRating !== null && c.key !== UNASSIGNED_COMPANY_KEY)
+    .map(c => ({ name: c.companyName, value: c.averageRating as number }))
+
   // Avg Rating by Module (by project as proxy) chart
   const ratingByModule = await db
     .select({ moduleId: ticketReview.projectId, avgRating: avg(ticketReview.overallRating).mapWith(Number), count: count().mapWith(Number) })
-    .from(ticketReview)
+    .from(ticketReview).innerJoin(ticket, eq(ticket.id, ticketReview.ticketId))
     .where(and(reviewWhere ? reviewWhere : sql`1=1`, sql`${ticketReview.projectId} IS NOT NULL`))
     .groupBy(ticketReview.projectId)
     .orderBy(desc(avg(ticketReview.overallRating)))
@@ -195,7 +235,7 @@ export const getCustomerReviewReport = wrapServerAction('getCustomerReviewReport
 
   const monthlyData = await db
     .select({ month: sql<string>`to_char(${ticketReview.createdAt}, 'YYYY-MM')`, avgRating: avg(ticketReview.overallRating).mapWith(Number) })
-    .from(ticketReview)
+    .from(ticketReview).innerJoin(ticket, eq(ticket.id, ticketReview.ticketId))
     .where(and(reviewWhere ? reviewWhere : sql`1=1`, gte(ticketReview.createdAt, twelveMonthsAgo)))
     .groupBy(sql`to_char(${ticketReview.createdAt}, 'YYYY-MM')`)
     .orderBy(sql`to_char(${ticketReview.createdAt}, 'YYYY-MM')`)
@@ -210,21 +250,19 @@ export const getCustomerReviewReport = wrapServerAction('getCustomerReviewReport
     .select({
       assignedToId: ticketReview.assignedToId, count: count().mapWith(Number),
       avgRating: avg(ticketReview.overallRating).mapWith(Number),
-      fiveStar: sql<number>`COUNT(*) FILTER (WHERE overall_rating = 5)::int`,
-      fourStar: sql<number>`COUNT(*) FILTER (WHERE overall_rating = 4)::int`,
-      threeStar: sql<number>`COUNT(*) FILTER (WHERE overall_rating = 3)::int`,
-      twoStar: sql<number>`COUNT(*) FILTER (WHERE overall_rating = 2)::int`,
-      oneStar: sql<number>`COUNT(*) FILTER (WHERE overall_rating = 1)::int`,
+      fiveStar: sql<number>`COUNT(*) FILTER (WHERE ${ticketReview.overallRating} = 5)::int`,
+      fourStar: sql<number>`COUNT(*) FILTER (WHERE ${ticketReview.overallRating} = 4)::int`,
+      threeStar: sql<number>`COUNT(*) FILTER (WHERE ${ticketReview.overallRating} = 3)::int`,
+      twoStar: sql<number>`COUNT(*) FILTER (WHERE ${ticketReview.overallRating} = 2)::int`,
+      oneStar: sql<number>`COUNT(*) FILTER (WHERE ${ticketReview.overallRating} = 1)::int`,
     })
-    .from(ticketReview)
+    .from(ticketReview).innerJoin(ticket, eq(ticket.id, ticketReview.ticketId))
     .where(and(reviewWhere ? reviewWhere : sql`1=1`, sql`${ticketReview.assignedToId} IS NOT NULL`))
     .groupBy(ticketReview.assignedToId)
     .orderBy(desc(avg(ticketReview.overallRating)))
 
-  // Low Rating Tickets (1-2 stars)
-  const lowRatingWhere = reviewWhere
-    ? and(reviewWhere, sql`${ticketReview.overallRating} <= 2`)
-    : sql`${ticketReview.overallRating} <= 2`
+  // Low Rating Tickets (1-2 stars) — across ALL pages of the filtered scope
+  const lowRatingWhere = and(reviewWhere, sql`${ticketReview.overallRating} <= 2`)
 
   const lowRatedTickets = await db
     .select({
@@ -238,22 +276,14 @@ export const getCustomerReviewReport = wrapServerAction('getCustomerReviewReport
       reviewCreatedAt: ticketReview.createdAt,
     })
     .from(ticketReview)
-    .leftJoin(ticket, eq(ticketReview.ticketId, ticket.id))
+    .innerJoin(ticket, eq(ticketReview.ticketId, ticket.id))
     .where(lowRatingWhere)
     .orderBy(desc(ticketReview.createdAt))
+    .limit(500)
 
-  // ── OPTIMIZATION: Replace NOT IN with LEFT JOIN anti-join ───────────────
-  // Before: Queried ALL reviewed ticketIds, loaded them into a JS Set,
-  //         then used NOT IN (500+ IDs) — huge SQL string, slow planner.
-  // After:  LEFT JOIN ... WHERE review.id IS NULL — standard anti-join
-  //         pattern that PostgreSQL optimizes to an anti-join plan.
-  const pendingConditions: any[] = [eq(ticket.status, 'closed')]
-  if (filters.dateFrom) pendingConditions.push(gte(ticket.closedAt, new Date(filters.dateFrom)))
-  if (filters.dateTo) pendingConditions.push(lte(ticket.closedAt, new Date(filters.dateTo + 'T23:59:59.999Z')))
-  if (filters.projectId) pendingConditions.push(eq(ticket.projectId, filters.projectId))
-  if (filters.clientId) pendingConditions.push(eq(ticket.clientId, filters.clientId))
-  if (filters.developerId) pendingConditions.push(eq(ticket.assignedToId, filters.developerId))
-
+  // Pending feedback — closed tickets in scope with no review (LEFT JOIN
+  // anti-join). Same scope as everything else, so e.g. a star-rating or
+  // "Reviewed" filter correctly leaves this list empty.
   const pendingReviewTickets = await db
     .select({
       ticketNumber: ticket.ticketNumber,
@@ -264,7 +294,7 @@ export const getCustomerReviewReport = wrapServerAction('getCustomerReviewReport
     })
     .from(ticket)
     .leftJoin(ticketReview, eq(ticket.id, ticketReview.ticketId))
-    .where(and(...pendingConditions, sql`${ticketReview.id} IS NULL`))
+    .where(and(ticketWhere, isNull(ticketReview.id)))
     .orderBy(desc(ticket.closedAt))
     .limit(500)
 
@@ -324,6 +354,7 @@ export const getCustomerReviewReport = wrapServerAction('getCustomerReviewReport
     { type: 'bar' as const, title: 'Rating Distribution', data: ratingDistData },
     { type: 'bar' as const, title: 'Average Rating by Resource', data: byResourceData.slice(0, 15) },
     { type: 'bar' as const, title: 'Average Rating by Project', data: byProjectData.slice(0, 15) },
+    { type: 'bar' as const, title: 'Average Rating by Company', data: byCompanyData.slice(0, 15) },
     { type: 'bar' as const, title: 'Average Rating by Module', data: byModuleData.slice(0, 10) },
     { type: 'line' as const, title: 'Monthly Customer Satisfaction Trend', data: monthlyTrendData },
   ]
@@ -344,6 +375,17 @@ export const getCustomerReviewReport = wrapServerAction('getCustomerReviewReport
     const c = await db.select({ name: user.name }).from(user).where(eq(user.id, filters.clientId)).limit(1)
     if (c[0]) appliedFilters.push(`client: ${c[0].name}`)
   }
+  if (filters.moduleId) {
+    const m = await db.select({ name: moduleTable.moduleName }).from(moduleTable).where(eq(moduleTable.id, filters.moduleId)).limit(1)
+    if (m[0]) appliedFilters.push(`module: ${m[0].name}`)
+  }
+  if (filters.managerId) {
+    const m = await db.select({ name: user.name }).from(user).where(eq(user.id, filters.managerId)).limit(1)
+    if (m[0]) appliedFilters.push(`manager: ${m[0].name}`)
+  }
+  if (filters.reviewStatus && filters.reviewStatus !== 'all') appliedFilters.push(`feedback: ${filters.reviewStatus}`)
+  if (filters.starRating && filters.starRating !== 'all') appliedFilters.push(`rating: ${filters.starRating}★`)
+  if (filters.ticketNumber?.trim()) appliedFilters.push(`ticket #: ${filters.ticketNumber.trim()}`)
 
   // Build resource performance with names
   const rpIds = resourcePerformance.map(r => r.assignedToId).filter((id): id is string => id !== null && id !== undefined)
@@ -383,6 +425,27 @@ export const getCustomerReviewReport = wrapServerAction('getCustomerReviewReport
     charts,
     extras: {
       resourcePerformance: rpData,
+      companyRatings,
+      // Full filtered lists (not just the current table page), in the same
+      // row shape the page renders for the table.
+      lowRatedTickets: lowRatedTickets.map(r => ({
+        ticketNumber: r.ticketNumber,
+        client: r.clientName,
+        project: r.projectName,
+        assignedResource: r.assignedToName,
+        manager: r.managerName,
+        rating: r.overallRating,
+        customerComment: r.reviewComment || '—',
+        reviewDate: r.reviewCreatedAt ? formatDate(r.reviewCreatedAt) : '—',
+      })),
+      pendingReviewTickets: pendingReviewTickets.map(r => ({
+        ticketNumber: r.ticketNumber,
+        client: r.clientName,
+        project: r.projectName,
+        assignedResource: r.assignedToName,
+        closedDate: r.closedAt ? formatDate(r.closedAt) : '—',
+        _closedAt: r.closedAt ? r.closedAt.toISOString() : '',
+      })),
       pagination: { page, pageSize, total: totalDataCount, totalPages: Math.ceil(totalDataCount / pageSize) },
     },
   }

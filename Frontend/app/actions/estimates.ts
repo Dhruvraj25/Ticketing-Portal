@@ -12,42 +12,16 @@ import { dispatchNotification } from '@/lib/notify-all'
 import { AUTO_APPROVAL_DAYS, AUTO_APPROVAL_REMINDER_DAYS, VALIDATION, validateField } from '@/lib/types'
 import { wrapServerAction } from '@/lib/performance-profiler'
 import { checkWalletSufficiency, buildManagerApprovalInsufficientError, buildWalletInsufficientError } from '@/lib/wallet-validation'
+import { approverCanActOnTicket } from '@/lib/client-ticket-permissions'
+import { findTicketWallet, refreshWalletViews, releaseTicketReservation, reserveHoursForTicket, WalletReservationError } from '@/lib/ticket-wallet'
+import { reservationShortfall } from '@/lib/wallet-reservation'
 
 // ============================================================================
 // ESTIMATE APPROVAL ACTIONS
 // ============================================================================
 
-/**
- * Client Approver model (see getClientOrgUserIds in app/actions/tickets/queries.ts):
- * an organization's Approver acts on estimates / additional hours for tickets
- * raised by the Standard client users of the SAME project — not only on
- * tickets they raised themselves. Callers must already have verified
- * role === 'client' and userType === 'approver'.
- *
- * Deliberately PROJECT-scoped: the approver AND the ticket's client must both
- * be clients of the ticket's own project (primary client or linked via
- * project_client), so an approver can never act on another project's or
- * another organization's tickets.
- */
-async function approverCanActOnTicket(
-  approverId: string,
-  t: { clientId: string | null; projectId: number | null },
-): Promise<boolean> {
-  if (t.clientId === approverId) return true
-  if (!t.clientId || !t.projectId) return false
-
-  const [[proj], links] = await Promise.all([
-    db.select({ clientId: project.clientId }).from(project).where(eq(project.id, t.projectId)).limit(1),
-    db
-      .select({ userId: projectClient.userId })
-      .from(projectClient)
-      .where(and(eq(projectClient.projectId, t.projectId), inArray(projectClient.userId, [approverId, t.clientId]))),
-  ])
-  if (!proj) return false
-
-  const projectClientIds = new Set<string>([proj.clientId, ...links.map((l) => l.userId)])
-  return projectClientIds.has(approverId) && projectClientIds.has(t.clientId)
-}
+// Project-scoped Client Approver check — shared with ticket close / reviews.
+// See lib/client-ticket-permissions.ts.
 
 export const submitEstimate = wrapServerAction('submitEstimate', async function submitEstimate(ticketId: number, data: {
   estimatedHours: number
@@ -79,9 +53,10 @@ export const submitEstimate = wrapServerAction('submitEstimate', async function 
   // to the client) an estimate the client's wallet cannot actually support —
   // no role bypass for this rule (unlike the 10% creation threshold, which
   // only ever applied to clients). Re-fetched fresh here, never trusted from
-  // an earlier read (section 10).
-  if (t.clientId) {
-    const [wallet] = await db.select().from(supportWallet).where(eq(supportWallet.clientId, t.clientId)).limit(1)
+  // an earlier read (section 10). remainingHours is the AVAILABLE balance —
+  // hours already reserved by other approved tickets are not counted.
+  {
+    const wallet = await findTicketWallet(db, t)
     if (wallet) {
       const sufficiencyCheck = checkWalletSufficiency(data.estimatedHours, wallet.remainingHours)
       if (!sufficiencyCheck.ok) throw buildWalletInsufficientError(data.estimatedHours, wallet.remainingHours)
@@ -174,38 +149,49 @@ export const approveEstimate = wrapServerAction('approveEstimate', async functio
   if (t.status !== 'estimate_pending') throw new Error('Estimate is not pending your approval')
   if (!t.estimatedHours) throw new Error('No estimate found')
 
-  // Section 4 (manager-approval-stage recheck) + section 10 (never trust a
-  // stale browser balance): re-fetch the wallet fresh right here, immediately
-  // before the approval commits. If the balance dropped since the estimate
-  // was submitted (another ticket closed and consumed hours in the interim,
-  // for example), the approval must not be allowed to proceed.
-  if (t.clientId) {
-    const [wallet] = await db.select().from(supportWallet).where(eq(supportWallet.clientId, t.clientId)).limit(1)
-    if (wallet) {
-      const sufficiencyCheck = checkWalletSufficiency(t.estimatedHours, wallet.remainingHours)
-      if (!sufficiencyCheck.ok) throw buildManagerApprovalInsufficientError(t.estimatedHours, wallet.remainingHours)
-    }
-  }
+  // Approving RESERVES the estimate's hours in the ticket's Support Wallet
+  // (lib/wallet-reservation.ts): reserved += h, available -= h, atomically —
+  // the reservation itself is the fresh, race-safe balance check (section
+  // 4/10), so two approvals can never both take the same available hours.
+  // The status claim (WHERE status = 'estimate_pending') makes a double click
+  // or two approvers at once reserve only ONCE. Status change, reservation,
+  // wallet history and activity log commit together or not at all.
+  let reservedWalletId: number | null = null
+  try {
+    await db.transaction(async (tx) => {
+      const [claimed] = await tx
+        .update(ticket)
+        .set({
+          status: 'estimate_approved',
+          estimateApprovedAt: new Date(),
+          estimateApprovedBy: currentUser.id,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(ticket.id, ticketId), eq(ticket.status, 'estimate_pending')))
+        .returning({ id: ticket.id })
+      if (!claimed) throw new Error('Estimate is not pending your approval')
 
-  await db
-    .update(ticket)
-    .set({
-      status: 'estimate_approved',
-      estimateApprovedAt: new Date(),
-      estimateApprovedBy: currentUser.id,
-      updatedAt: new Date(),
+      const reservation = await reserveHoursForTicket(tx, t, reservationShortfall(t.estimatedHours, t.reservedHours), {
+        performedBy: currentUser.name || currentUser.id,
+        reason: `Ticket #${t.ticketNumber} estimate approved`,
+      })
+      reservedWalletId = reservation?.walletId ?? null
+
+      await tx.insert(ticketHistory).values({
+        ticketId,
+        userId: currentUser.id,
+        action: 'estimate_approved',
+        oldValue: 'estimate_pending',
+        // Secondary detail line under "Estimate approved By [actor]"
+        // (see formatActivityEntry() / DETAIL_LINE_ACTIONS in ticket-activity-format.ts).
+        newValue: `${t.estimatedHours}h estimate approved`,
+      })
     })
-    .where(eq(ticket.id, ticketId))
-
-  await db.insert(ticketHistory).values({
-    ticketId,
-    userId: currentUser.id,
-    action: 'estimate_approved',
-    oldValue: 'estimate_pending',
-    // Secondary detail line under "Estimate approved By [actor]"
-    // (see formatActivityEntry() / DETAIL_LINE_ACTIONS in ticket-activity-format.ts).
-    newValue: `${t.estimatedHours}h estimate approved`,
-  })
+  } catch (err) {
+    if (err instanceof WalletReservationError) throw buildManagerApprovalInsufficientError(err.requested, err.available)
+    throw err
+  }
+  refreshWalletViews(reservedWalletId)
 
   // Notify manager
   const [p] = await db
@@ -501,21 +487,40 @@ export const updateEstimate = wrapServerAction('updateEstimate', async function 
     throw new Error('Estimated hours must be a positive number')
   }
 
+  // A revised estimate needs a new approval, so any hours this ticket still
+  // holds in reserve (from an earlier approval) are released first — the new
+  // approval reserves the new amount. The revised estimate must fit the
+  // available balance including what is released (same rule as submitEstimate).
+  const wallet = await findTicketWallet(db, t)
+  if (wallet) {
+    const available = wallet.remainingHours + (t.reservedHours || 0)
+    const sufficiencyCheck = checkWalletSufficiency(data.estimatedHours, available)
+    if (!sufficiencyCheck.ok) throw buildWalletInsufficientError(data.estimatedHours, available)
+  }
+
   const approvalDeadline = new Date()
   approvalDeadline.setDate(approvalDeadline.getDate() + AUTO_APPROVAL_DAYS)
 
-  await db
-    .update(ticket)
-    .set({
-      estimatedHours: data.estimatedHours,
-      estimatedCompletionDate: data.estimatedCompletionDate,
-      estimateNotes: data.estimateNotes,
-      estimateSubmittedAt: new Date(),
-      status: 'estimate_pending',
-      approvalDeadline,
-      updatedAt: new Date(),
+  let releasedWalletId: number | null = null
+  await db.transaction(async (tx) => {
+    releasedWalletId = await releaseTicketReservation(tx, t, {
+      performedBy: currentUser.name || currentUser.id,
+      reason: `Ticket #${t.ticketNumber} estimate revised`,
     })
-    .where(eq(ticket.id, ticketId))
+    await tx
+      .update(ticket)
+      .set({
+        estimatedHours: data.estimatedHours,
+        estimatedCompletionDate: data.estimatedCompletionDate,
+        estimateNotes: data.estimateNotes,
+        estimateSubmittedAt: new Date(),
+        status: 'estimate_pending',
+        approvalDeadline,
+        updatedAt: new Date(),
+      })
+      .where(eq(ticket.id, ticketId))
+  })
+  if (releasedWalletId) refreshWalletViews(releasedWalletId)
 
   await db.insert(ticketHistory).values({
     ticketId,
@@ -576,14 +581,15 @@ export const requestAdditionalHours = wrapServerAction('requestAdditionalHours',
 
   // Section 5: additional-hours is another place hours are "estimated/
   // allocated" — check against the wallet the same way a fresh estimate
-  // would be. Compares the NEW TOTAL (existing + additional) against the
-  // client's current remaining balance; no role bypass.
-  if (t.clientId) {
-    const [wallet] = await db.select().from(supportWallet).where(eq(supportWallet.clientId, t.clientId)).limit(1)
+  // would be; no role bypass. The part of the NEW TOTAL (existing +
+  // additional) not already reserved by this ticket must fit the AVAILABLE
+  // balance — i.e. just the additional hours once the estimate is reserved.
+  {
+    const wallet = await findTicketWallet(db, t)
     if (wallet) {
-      const newTotal = (t.estimatedHours || 0) + additionalHours
-      const sufficiencyCheck = checkWalletSufficiency(newTotal, wallet.remainingHours)
-      if (!sufficiencyCheck.ok) throw buildWalletInsufficientError(newTotal, wallet.remainingHours)
+      const required = reservationShortfall((t.estimatedHours || 0) + additionalHours, t.reservedHours)
+      const sufficiencyCheck = checkWalletSufficiency(required, wallet.remainingHours)
+      if (!sufficiencyCheck.ok) throw buildWalletInsufficientError(required, wallet.remainingHours)
     }
   }
 
@@ -668,33 +674,48 @@ export const approveAdditionalHours = wrapServerAction('approveAdditionalHours',
 
   const newTotalHours = (t.estimatedHours || 0) + t.additionalHoursRequested
 
-  // Section 4/5/10: re-check at the approval stage, against the CURRENT
-  // wallet balance, not a value trusted from when the request was made.
-  if (t.clientId) {
-    const [wallet] = await db.select().from(supportWallet).where(eq(supportWallet.clientId, t.clientId)).limit(1)
-    if (wallet) {
-      const sufficiencyCheck = checkWalletSufficiency(newTotalHours, wallet.remainingHours)
-      if (!sufficiencyCheck.ok) throw buildManagerApprovalInsufficientError(newTotalHours, wallet.remainingHours)
-    }
-  }
+  // Section 4/5/10: approving RESERVES the hours not yet held by this ticket
+  // (normally just the additional hours), atomically against the CURRENT
+  // available balance. The claim (still unapproved, same request) stops a
+  // double click from approving/reserving twice.
+  let reservedWalletId: number | null = null
+  try {
+    await db.transaction(async (tx) => {
+      const [claimed] = await tx
+        .update(ticket)
+        .set({
+          additionalHoursApproved: true,
+          additionalHoursApprovedBy: currentUser.id,
+          estimatedHours: newTotalHours,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(ticket.id, ticketId),
+          eq(ticket.additionalHoursApproved, false),
+          eq(ticket.additionalHoursRequested, t.additionalHoursRequested!),
+        ))
+        .returning({ id: ticket.id })
+      if (!claimed) throw new Error('Additional hours already approved')
 
-  await db
-    .update(ticket)
-    .set({
-      additionalHoursApproved: true,
-      additionalHoursApprovedBy: currentUser.id,
-      estimatedHours: newTotalHours,
-      updatedAt: new Date(),
+      const reservation = await reserveHoursForTicket(tx, t, reservationShortfall(newTotalHours, t.reservedHours), {
+        performedBy: currentUser.name || currentUser.id,
+        reason: `Ticket #${t.ticketNumber} additional hours approved`,
+      })
+      reservedWalletId = reservation?.walletId ?? null
+
+      await tx.insert(ticketHistory).values({
+        ticketId,
+        userId: currentUser.id,
+        action: 'additional_hours_approved',
+        oldValue: `${t.additionalHoursRequested}h requested`,
+        newValue: `${t.additionalHoursRequested}h approved, total: ${newTotalHours}h`,
+      })
     })
-    .where(eq(ticket.id, ticketId))
-
-  await db.insert(ticketHistory).values({
-    ticketId,
-    userId: currentUser.id,
-    action: 'additional_hours_approved',
-    oldValue: `${t.additionalHoursRequested}h requested`,
-    newValue: `${t.additionalHoursRequested}h approved, total: ${newTotalHours}h`,
-  })
+  } catch (err) {
+    if (err instanceof WalletReservationError) throw buildManagerApprovalInsufficientError(err.requested, err.available)
+    throw err
+  }
+  refreshWalletViews(reservedWalletId)
 
   // Notify manager
   const [p] = await db
@@ -927,26 +948,54 @@ export const processEstimateAutoApprovals = wrapServerAction('processEstimateAut
       ),
     )
 
+  let autoApprovedCount = 0
   for (const t of pendingEstimates) {
     const estimatedHours = t.estimatedHours || 0
 
-    await db
-      .update(ticket)
-      .set({
-        status: 'estimate_approved',
-        autoApproved: true,
-        autoApprovedAt: now,
-        estimateApprovedAt: now,
-        updatedAt: now,
-      })
-      .where(eq(ticket.id, t.id))
+    // Same as a manual approval: claim the status and reserve the hours
+    // atomically. If the wallet no longer has enough AVAILABLE hours, the
+    // estimate is NOT auto-approved (it stays pending for a manual decision)
+    // — approving it would promise hours the wallet does not have.
+    let reservedWalletId: number | null = null
+    try {
+      const approved = await db.transaction(async (tx) => {
+        const [claimed] = await tx
+          .update(ticket)
+          .set({
+            status: 'estimate_approved',
+            autoApproved: true,
+            autoApprovedAt: now,
+            estimateApprovedAt: now,
+            updatedAt: now,
+          })
+          .where(and(eq(ticket.id, t.id), eq(ticket.status, 'estimate_pending')))
+          .returning({ id: ticket.id })
+        if (!claimed) return false
 
-    await db.insert(ticketHistory).values({
-      ticketId: t.id,
-      userId: t.clientId,
-      action: 'auto_approved',
-      newValue: `Auto-approved after ${AUTO_APPROVAL_DAYS} days (${estimatedHours}h)`,
-    })
+        const reservation = await reserveHoursForTicket(tx, t, reservationShortfall(estimatedHours, t.reservedHours), {
+          performedBy: 'System (auto-approval)',
+          reason: `Ticket #${t.ticketNumber} estimate auto-approved`,
+        })
+        reservedWalletId = reservation?.walletId ?? null
+
+        await tx.insert(ticketHistory).values({
+          ticketId: t.id,
+          userId: t.clientId,
+          action: 'auto_approved',
+          newValue: `Auto-approved after ${AUTO_APPROVAL_DAYS} days (${estimatedHours}h)`,
+        })
+        return true
+      })
+      if (!approved) continue
+    } catch (err) {
+      if (err instanceof WalletReservationError) {
+        console.warn(`[AutoApproval] ticket ${t.id} left pending: needs ${err.requested}h, ${err.available}h available`)
+        continue
+      }
+      throw err
+    }
+    autoApprovedCount++
+    refreshWalletViews(reservedWalletId)
 
     // Notify client (in-app)
     await dispatchNotification({
@@ -1009,27 +1058,57 @@ export const processEstimateAutoApprovals = wrapServerAction('processEstimateAut
       ),
     )
 
+  let additionalAutoApprovedCount = 0
   for (const t of pendingAdditionalHours) {
     const additionalHours = t.additionalHoursRequested || 0
     const newTotal = (t.estimatedHours || 0) + additionalHours
 
-    await db
-      .update(ticket)
-      .set({
-        additionalHoursApproved: true,
-        additionalHoursAutoApproved: true,
-        additionalHoursApprovedBy: null, // auto-approved
-        estimatedHours: newTotal,
-        updatedAt: now,
-      })
-      .where(eq(ticket.id, t.id))
+    // Claim + reserve atomically (as approveAdditionalHours); left pending if
+    // the wallet can no longer cover the hours.
+    let reservedWalletId: number | null = null
+    try {
+      const approved = await db.transaction(async (tx) => {
+        const [claimed] = await tx
+          .update(ticket)
+          .set({
+            additionalHoursApproved: true,
+            additionalHoursAutoApproved: true,
+            additionalHoursApprovedBy: null, // auto-approved
+            estimatedHours: newTotal,
+            updatedAt: now,
+          })
+          .where(and(
+            eq(ticket.id, t.id),
+            eq(ticket.additionalHoursApproved, false),
+            eq(ticket.additionalHoursRequested, additionalHours),
+          ))
+          .returning({ id: ticket.id })
+        if (!claimed) return false
 
-    await db.insert(ticketHistory).values({
-      ticketId: t.id,
-      userId: t.clientId,
-      action: 'additional_hours_auto_approved',
-      newValue: `Additional ${additionalHours}h auto-approved, total: ${newTotal}h`,
-    })
+        const reservation = await reserveHoursForTicket(tx, t, reservationShortfall(newTotal, t.reservedHours), {
+          performedBy: 'System (auto-approval)',
+          reason: `Ticket #${t.ticketNumber} additional hours auto-approved`,
+        })
+        reservedWalletId = reservation?.walletId ?? null
+
+        await tx.insert(ticketHistory).values({
+          ticketId: t.id,
+          userId: t.clientId,
+          action: 'additional_hours_auto_approved',
+          newValue: `Additional ${additionalHours}h auto-approved, total: ${newTotal}h`,
+        })
+        return true
+      })
+      if (!approved) continue
+    } catch (err) {
+      if (err instanceof WalletReservationError) {
+        console.warn(`[AutoApproval] ticket ${t.id} additional hours left pending: needs ${err.requested}h, ${err.available}h available`)
+        continue
+      }
+      throw err
+    }
+    additionalAutoApprovedCount++
+    refreshWalletViews(reservedWalletId)
 
     await dispatchNotification({
       eventType: 'additional_hours_auto_approved',
@@ -1052,8 +1131,8 @@ export const processEstimateAutoApprovals = wrapServerAction('processEstimateAut
   }
 
   return {
-    autoApproved: pendingEstimates.length,
-    additionalHoursAutoApproved: pendingAdditionalHours.length,
+    autoApproved: autoApprovedCount,
+    additionalHoursAutoApproved: additionalAutoApprovedCount,
   }
 })
 

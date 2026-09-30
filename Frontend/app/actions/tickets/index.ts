@@ -11,6 +11,7 @@ export {
   getTicketById,
   getTickets,
   getConsolidatedDashboardData,
+  getTicketInsights,
   getDashboardStats,
   getUnassignedTickets,
   getRecentUnassignedTickets,
@@ -24,6 +25,7 @@ export {
 
 export type {
   TicketListItem,
+  TicketInsights,
   TicketListFilters,
   TicketListResult,
 } from './queries'
@@ -51,6 +53,10 @@ export {
 
 export {
   startTimer,
+  getTimerTickets,
+  getTicketTimerState,
+  getMyTimerState,
+  getMyTimeEntriesForExport,
   stopTimer,
   pauseTimer,
   resumeTimer,
@@ -68,6 +74,7 @@ export {
   getCachedWorklogs,
   clearWorklogsCache,
   getPaginatedWorklogs,
+  getTicketWorkActivity,
 } from './history'
 
 export type { AttachmentWithUser } from '@/lib/types'

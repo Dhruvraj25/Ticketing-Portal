@@ -100,6 +100,7 @@ export interface ProjectListItem {
   managerEmail?: string
   moduleCount: number
   ticketCount: number
+  closedTicketCount: number
 }
 
 /**
@@ -288,6 +289,9 @@ export const getProjects = wrapServerAction('getProjects', async function getPro
           // no separate round-trips needed, no N+1.
           moduleCount: sql<number>`(SELECT COUNT(*)::int FROM ${moduleTable} WHERE ${moduleTable.projectId} = ${project.id})`.mapWith(Number),
           ticketCount: sql<number>`(SELECT COUNT(*)::int FROM ${ticket} WHERE ${ticket.projectId} = ${project.id})`.mapWith(Number),
+          // Completed (closed) tickets — the basis of project completion, the
+          // same rule as the Project Progress report (reports/project-reports.ts).
+          closedTicketCount: sql<number>`(SELECT COUNT(*)::int FROM ${ticket} WHERE ${ticket.projectId} = ${project.id} AND ${ticket.status} = 'closed')`.mapWith(Number),
         })
         .from(project)
         .leftJoin(clientUser, eq(project.clientId, clientUser.id))
@@ -336,6 +340,7 @@ export const getProjects = wrapServerAction('getProjects', async function getPro
     managerEmail: r.managerEmail ?? undefined,
     moduleCount: r.moduleCount,
     ticketCount: r.ticketCount,
+    closedTicketCount: r.closedTicketCount,
   }))
 
   const mappingTime = performance.now() - stageStart

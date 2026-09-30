@@ -1,6 +1,7 @@
 'use client'
 
 import { memo, useCallback, useRef, useEffect, useState } from 'react'
+import { assignableResourcesFor, isReadyForResourceAssignment, resourceLabel, type AssignableResource } from '@/lib/ticket-assignment'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { startComponentRender, endComponentRender } from '@/lib/performance-profiler'
@@ -37,7 +38,7 @@ interface TicketCardProps {
   index?: number
   isSelected?: boolean
   onSelect?: (id: number) => void
-  developers?: { id: string; name: string; email: string; activeTickets: number }[]
+  developers?: AssignableResource[]
   userRole?: string
   onAssignmentComplete?: () => void
 }
@@ -91,7 +92,9 @@ export const TicketCard = memo(function TicketCard({
   const [assigned, setAssigned] = useState(false)
 
   const isManagerOrAdmin = userRole === 'project_manager' || userRole === 'admin'
-  const showQuickAssign = developers && developers.length > 0 && isManagerOrAdmin && !assigned
+  // Only once the client has approved the estimate and no resource is assigned
+  // yet (lib/ticket-assignment.ts — the server enforces the same rule).
+  const showQuickAssign = developers && developers.length > 0 && isManagerOrAdmin && !assigned && isReadyForResourceAssignment(ticket)
 
   const handleAssign = async (e: React.MouseEvent) => {
     e.preventDefault()
@@ -194,7 +197,8 @@ export const TicketCard = memo(function TicketCard({
                     {ticket.attachmentCount}
                   </span>
                 ) : null}
-                {ticket.revisionCount && ticket.revisionCount > 0 && (
+                {/* Boolean condition: `count && …` rendered a literal "0" when the count was 0. */}
+                {(ticket.revisionCount ?? 0) > 0 && (
                   <span className="flex items-center gap-1 text-orange-600 dark:text-orange-400">
                     <RefreshCw className="h-3 w-3" />
                     {ticket.revisionCount}
@@ -232,10 +236,10 @@ export const TicketCard = memo(function TicketCard({
               <SelectValue placeholder="Assign to..." />
             </SelectTrigger>
             <SelectContent>
-              {developers?.map((dev) => (
+              {assignableResourcesFor(developers ?? [], ticket.projectId).map((dev) => (
                 <SelectItem key={dev.id} value={dev.id} className="text-xs">
                   <div className="flex items-center justify-between w-full gap-2">
-                    <span>{dev.name}</span>
+                    <span>{resourceLabel(dev)}</span>
                     <span className="text-[11px] text-muted-foreground">({dev.activeTickets} active)</span>
                   </div>
                 </SelectItem>
@@ -269,7 +273,7 @@ interface TicketListProps {
   emptyMessage?: string
   selectedTicketId?: number | null
   onTicketSelect?: (id: number) => void
-  developers?: { id: string; name: string; email: string; activeTickets: number }[]
+  developers?: AssignableResource[]
   userRole?: string
   onAssignmentComplete?: () => void
 }
@@ -359,7 +363,7 @@ interface TicketGridProps {
   emptyMessage?: string
   selectedTicketId?: number | null
   onTicketSelect?: (id: number) => void
-  developers?: { id: string; name: string; email: string; activeTickets: number }[]
+  developers?: AssignableResource[]
   userRole?: string
   onAssignmentComplete?: () => void
 }

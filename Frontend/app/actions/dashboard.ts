@@ -26,6 +26,8 @@ export interface DashboardUser {
 }
 
 export interface ConsolidatedStats {
+  /** Exact ticket count per status, in the caller's role scope. */
+  statusCounts: Record<string, number>
   totalTickets: number
   openTickets: number
   inProgressTickets: number

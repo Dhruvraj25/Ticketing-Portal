@@ -68,7 +68,7 @@ test('the sidebar is no longer unconditionally hidden below lg — it stacks und
 })
 
 test('TicketRightPanel (Quick Actions / Analytics / Insights) is rendered unchanged — same component, same props', () => {
-  assert.match(SRC, /<TicketRightPanel userRole=\{user\.role\}\s*\/>/)
+  assert.match(SRC, /<TicketRightPanel userRole=\{user\.role\}( insights=\{insights \?\? null\})?\s*\/>/)
 })
 
 test('the ticket-list scroll container keeps its exact internal-scroll classes and infinite-scroll wiring (max-h, overflow-y-auto, sentinel ref)', () => {

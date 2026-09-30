@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { format, formatDistanceToNow } from 'date-fns'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { RESERVED_DISPLAY_TYPE, transactionDisplayType } from '@/lib/wallet-transaction-label'
 import { PageHeaderIcon } from '@/components/dashboard/page-header-icon'
 import {
   Wallet,
@@ -15,6 +16,7 @@ import {
   Plus,
   RefreshCw,
   Shield,
+  Activity,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -56,6 +58,8 @@ function TransactionTypeBadge({ type }: { type: string }) {
     'Deduct Hours': { label: 'Deducted', color: 'bg-red-50 dark:bg-red-500/15 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/30' },
     'Adjustment': { label: 'Adjustment', color: 'bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/30' },
     'Emergency Credit': { label: 'Emergency Credit', color: 'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/30' },
+    // Display-only: hours reserved for an active ticket (see lib/wallet-transaction-label.ts).
+    [RESERVED_DISPLAY_TYPE]: { label: 'Reserved', color: 'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/30' },
   }
   const c = config[type] || { label: type, color: 'bg-gray-50 dark:bg-slate-800/50 text-gray-600 dark:text-slate-400 border-gray-200 dark:border-slate-800' }
   return (
@@ -188,7 +192,7 @@ export function SupportWalletClient({ user, wallet, transactions }: SupportWalle
       )}
 
       {/* Wallet Summary Cards */}
-      <div data-tour="wallet-summary" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div data-tour="wallet-summary" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -209,11 +213,11 @@ export function SupportWalletClient({ user, wallet, transactions }: SupportWalle
           transition={{ delay: 0.1 }}
           className="rounded-xl bg-white dark:bg-slate-900 border border-border p-5 shadow-sm"
         >
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Used Hours</p>
-          <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{wallet.consumedHours + wallet.reservedHours}</p>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Reserved Hours</p>
+          <p className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">{wallet.reservedHours}</p>
           <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
-            <Clock className="h-3 w-3" />
-            {wallet.consumedHours > 0 ? `${wallet.consumedHours}h consumed, ${wallet.reservedHours}h reserved` : 'No hours used yet'}
+            <Activity className="h-3 w-3" />
+            {wallet.reservedHours > 0 ? 'Allocated to active tickets' : 'No active reservations'}
           </div>
         </motion.div>
 
@@ -221,6 +225,20 @@ export function SupportWalletClient({ user, wallet, transactions }: SupportWalle
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
+          className="rounded-xl bg-white dark:bg-slate-900 border border-border p-5 shadow-sm"
+        >
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Consumed Hours</p>
+          <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{wallet.consumedHours}</p>
+          <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
+            <Clock className="h-3 w-3" />
+            {wallet.consumedHours > 0 ? 'Completed work' : 'No hours consumed yet'}
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
           className="rounded-xl bg-white dark:bg-slate-900 border border-border p-5 shadow-sm"
         >
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Remaining Hours</p>
@@ -352,14 +370,23 @@ export function SupportWalletClient({ user, wallet, transactions }: SupportWalle
                       </span>
                     </td>
                     <td className="p-3">
-                      <TransactionTypeBadge type={t.transactionType} />
+                      <TransactionTypeBadge type={transactionDisplayType(t)} />
                     </td>
-                    <td className={cn(
-                      'p-3 text-right text-sm font-semibold',
-                      t.transactionType === 'Deduct Hours' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'
-                    )}>
-                      {t.transactionType === 'Deduct Hours' ? `-${Math.abs(t.hours)}` : `+${Math.abs(t.hours)}`}
-                    </td>
+                    {(() => {
+                      // Adjustments (e.g. hours reserved for an approved
+                      // estimate) can lower the balance — sign them by their
+                      // actual effect, not as a credit.
+                      const isDebit = t.transactionType === 'Deduct Hours' ||
+                        (t.transactionType === 'Adjustment' && t.newBalance < t.previousBalance)
+                      return (
+                        <td className={cn(
+                          'p-3 text-right text-sm font-semibold',
+                          isDebit ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'
+                        )}>
+                          {isDebit ? `-${Math.abs(t.hours)}` : `+${Math.abs(t.hours)}`}
+                        </td>
+                      )
+                    })()}
                     <td className="p-3 text-right text-sm font-semibold text-foreground">{t.newBalance}</td>
                     <td className="p-3 text-sm text-muted-foreground">
                       {t.performedByName || t.performedBy}

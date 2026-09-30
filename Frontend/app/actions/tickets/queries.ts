@@ -387,6 +387,9 @@ async function _getTicketByIdImpl(ticketId: number) {
       approvalDeadline: ticket.approvalDeadline,
       additionalHoursRequested: ticket.additionalHoursRequested,
       additionalHoursApproved: ticket.additionalHoursApproved,
+      // Billable / Non-Billable classification source (lib/billing.ts)
+      estimateWorkflowSkipped: ticket.estimateWorkflowSkipped,
+      consumedHours: ticket.consumedHours,
     })
     .from(ticket)
     .where(eq(ticket.id, ticketId))
@@ -539,9 +542,14 @@ export const getCachedDevelopers = wrapServerAction('getCachedDevelopers', async
 //
 // Before: ~1700ms | Target: <300ms
 
-/** Internal implementation: runs the FILTER query */
-async function _getConsolidatedDashboardDataImpl(role: string, userId: string, userType: string | null = null) {
-  // Build role-based filter
+/**
+ * Which tickets a user's ticket STATISTICS may include (KPIs, Insights):
+ *   developer → only tickets assigned to them;
+ *   client    → their own (Approver: their organization's);
+ *   manager / admin → all tickets.
+ * Always derived from the server-side session — never from request input.
+ */
+async function ticketStatsScope(role: string, userId: string, userType: string | null = null) {
   const conditions: any[] = []
   if (role === 'client') {
     // Approver: org-wide counts (own + standard accounts of the same client).
@@ -554,9 +562,23 @@ async function _getConsolidatedDashboardDataImpl(role: string, userId: string, u
   } else if (role === 'developer') {
     conditions.push(eq(ticket.assignedToId, userId))
   }
-  const baseFilter = conditions.length > 0 ? and(...conditions) : undefined
+  return conditions.length > 0 ? and(...conditions) : undefined
+}
+
+/** Internal implementation: runs the FILTER query */
+async function _getConsolidatedDashboardDataImpl(role: string, userId: string, userType: string | null = null) {
+  // Build role-based filter
+  const baseFilter = await ticketStatsScope(role, userId, userType)
 
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+
+  // Exact per-status counts (same role scope) for the Tickets page KPI cards —
+  // one card per real ticket status, shown only when its count is > 0.
+  const statusRowsPromise = db
+    .select({ status: ticket.status, n: count().mapWith(Number) })
+    .from(ticket)
+    .where(baseFilter)
+    .groupBy(ticket.status)
 
   // ── SINGLE query: 1 scan, 8 FILTERs ─────────────────────────────────
   const [result] = await db
@@ -595,7 +617,11 @@ async function _getConsolidatedDashboardDataImpl(role: string, userId: string, u
     .from(ticket)
     .where(baseFilter)
 
+  const statusCounts: Record<string, number> = {}
+  for (const row of await statusRowsPromise) statusCounts[row.status] = row.n
+
   return {
+    statusCounts,
     totalTickets: result.total,
     openTickets: result.open,
     inProgressTickets: result.inProgress,
@@ -629,6 +655,35 @@ const getCachedConsolidatedData = unstable_cache(
 export const getConsolidatedDashboardData = wrapServerAction('getConsolidatedDashboardData', async function getConsolidatedDashboardData() {
   const { id: userId, role, userType } = await getUser()
   return getCachedConsolidatedData(JSON.stringify({ role, userId, userType }))
+})
+
+// ── Tickets page → Insights ────────────────────────────────────────────────
+// Real, role-scoped counts for the Insights widget (previously hard-coded
+// text shown identically to everyone). The user comes ONLY from the session,
+// so a developer can never read another developer's insights.
+export interface TicketInsights {
+  resolvedToday: number
+  awaitingClient: number
+  inProgress: number
+}
+
+export const getTicketInsights = wrapServerAction('getTicketInsights', async function getTicketInsights(): Promise<TicketInsights> {
+  const { id: userId, role, userType } = await getUser()
+  const scope = await ticketStatsScope(role, userId, (userType as string | null) ?? null)
+  const startOfToday = new Date()
+  startOfToday.setHours(0, 0, 0, 0)
+
+  const [row] = await db
+    .select({
+      // resolvedAt is stamped when a ticket moves to 'resolved' (tickets/update.ts).
+      resolvedToday: sql<number>`COUNT(*) FILTER (WHERE ${ticket.resolvedAt} >= ${startOfToday})::int`.mapWith(Number),
+      awaitingClient: sql<number>`COUNT(*) FILTER (WHERE ${ticket.status} = 'client_review')::int`.mapWith(Number),
+      inProgress: sql<number>`COUNT(*) FILTER (WHERE ${ticket.status} = 'in_progress')::int`.mapWith(Number),
+    })
+    .from(ticket)
+    .where(scope)
+
+  return { resolvedToday: row?.resolvedToday ?? 0, awaitingClient: row?.awaitingClient ?? 0, inProgress: row?.inProgress ?? 0 }
 })
 
 // Lightweight wrapper for pages that only need 4 basic stats

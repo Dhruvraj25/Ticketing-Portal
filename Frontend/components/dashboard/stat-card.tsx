@@ -16,6 +16,7 @@ import {
 export type KpiColorTheme =
   | 'blue' | 'emerald' | 'purple' | 'orange' | 'cyan'
   | 'indigo' | 'amber' | 'violet' | 'green' | 'red' | 'gray'
+  | 'sky' | 'rose'
 
 interface KpiTheme {
   bg: string
@@ -38,6 +39,8 @@ const THEME_MAP: Record<KpiColorTheme, KpiTheme> = {
   violet:   { bg: 'bg-white dark:bg-slate-900', iconBg: 'bg-violet-100 dark:bg-violet-500/20', iconColor: 'text-violet-600 dark:text-violet-400', btnBg: 'bg-violet-50 dark:bg-violet-500/10', btnHoverBg: 'hover:bg-violet-100 dark:hover:bg-violet-500/20', btnText: 'text-violet-700 dark:text-violet-300', accent: 'border-violet-200 dark:border-violet-500/30' },
   green:    { bg: 'bg-white dark:bg-slate-900', iconBg: 'bg-green-100 dark:bg-green-500/20', iconColor: 'text-green-600 dark:text-green-400', btnBg: 'bg-green-50 dark:bg-green-500/10', btnHoverBg: 'hover:bg-green-100 dark:hover:bg-green-500/20', btnText: 'text-green-700 dark:text-green-300', accent: 'border-green-200 dark:border-green-500/30' },
   red:      { bg: 'bg-white dark:bg-slate-900', iconBg: 'bg-red-100 dark:bg-red-500/20', iconColor: 'text-red-600 dark:text-red-400', btnBg: 'bg-red-50 dark:bg-red-500/10', btnHoverBg: 'hover:bg-red-100 dark:hover:bg-red-500/20', btnText: 'text-red-700 dark:text-red-300', accent: 'border-red-200 dark:border-red-500/30' },
+  sky:      { bg: 'bg-white dark:bg-slate-900', iconBg: 'bg-sky-100 dark:bg-sky-500/20', iconColor: 'text-sky-600 dark:text-sky-400', btnBg: 'bg-sky-50 dark:bg-sky-500/10', btnHoverBg: 'hover:bg-sky-100 dark:hover:bg-sky-500/20', btnText: 'text-sky-700 dark:text-sky-300', accent: 'border-sky-200 dark:border-sky-500/30' },
+  rose:     { bg: 'bg-white dark:bg-slate-900', iconBg: 'bg-rose-100 dark:bg-rose-500/20', iconColor: 'text-rose-600 dark:text-rose-400', btnBg: 'bg-rose-50 dark:bg-rose-500/10', btnHoverBg: 'hover:bg-rose-100 dark:hover:bg-rose-500/20', btnText: 'text-rose-700 dark:text-rose-300', accent: 'border-rose-200 dark:border-rose-500/30' },
   gray:     { bg: 'bg-white dark:bg-slate-900', iconBg: 'bg-gray-100 dark:bg-slate-800', iconColor: 'text-gray-500 dark:text-slate-400', btnBg: 'bg-gray-50 dark:bg-slate-800/50', btnHoverBg: 'hover:bg-gray-100 dark:hover:bg-slate-800', btnText: 'text-gray-600 dark:text-slate-400', accent: 'border-gray-200 dark:border-slate-800' },
 }
 

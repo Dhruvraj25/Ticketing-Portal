@@ -10,6 +10,8 @@ import { useUserTimezone } from '@/components/timezone-provider'
 import { Badge } from '@/components/ui/badge'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { ClipboardList, Activity, ChevronDown, Timer } from 'lucide-react'
+import { TicketWorkActivity } from '@/components/dashboard/ticket-work-activity'
+import type { WorkActivityEvent } from '@/lib/work-activity'
 
 interface LogEntry {
   id: number
@@ -90,7 +92,14 @@ function LogRow({ log }: { log: LogEntry }) {
 
 const MemoizedLogRow = memo(LogRow)
 
-export function ActivityLogPanel({ initialLogs, initialHasMore }: { initialLogs: LogEntry[]; initialHasMore: boolean }) {
+export function ActivityLogPanel({ initialLogs, initialHasMore, initialTicketActivity }: {
+  initialLogs: LogEntry[]
+  initialHasMore: boolean
+  /** First batch of ticket-wise work events (existing ticket history). */
+  initialTicketActivity: { events: WorkActivityEvent[]; hasMore: boolean }
+}) {
+  // "Ticket activity" = ticket-wise work events; "Time entries" = the existing time-log list.
+  const [view, setView] = useState<'tickets' | 'entries'>('tickets')
   const [logs, setLogs] = useState<LogEntry[]>(initialLogs)
   const [hasMoreState, setHasMore] = useState(initialHasMore)
   const [loading, setLoading] = useState(false)
@@ -164,7 +173,8 @@ export function ActivityLogPanel({ initialLogs, initialHasMore }: { initialLogs:
 
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [hasMoreState, loadMore])
+    // `view`: the time-entries sentinel only exists in that view — re-attach when it mounts.
+  }, [hasMoreState, loadMore, view])
 
   // Memoize the log list to avoid unnecessary re-renders
   const logList = useMemo(() => {
@@ -220,19 +230,35 @@ export function ActivityLogPanel({ initialLogs, initialHasMore }: { initialLogs:
             <div>
               <h3 className="text-sm font-semibold text-foreground">Activity Log</h3>
               <p className="text-[11px] text-muted-foreground">
-                {logs.length} log{logs.length !== 1 ? 's' : ''} loaded
+                {view === 'tickets'
+                  ? 'Ticket-wise work activity'
+                  : `${logs.length} log${logs.length !== 1 ? 's' : ''} loaded`}
               </p>
             </div>
           </div>
-          {hasMoreState && (
-            <Badge variant="outline" className="text-[11px] text-muted-foreground">
-              <ChevronDown className="h-3 w-3 mr-1" />
-              Scroll for more
-            </Badge>
-          )}
+          <div role="tablist" aria-label="Activity Log view" className="flex items-center gap-1 rounded-lg bg-muted/40 p-0.5">
+            {([['tickets', 'Ticket activity'], ['entries', 'Time entries']] as const).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={view === key}
+                onClick={() => setView(key)}
+                className={cn(
+                  'px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors',
+                  view === key ? 'bg-white dark:bg-slate-800 text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Scrollable list area */}
+        {view === 'tickets' ? (
+          <TicketWorkActivity initialEvents={initialTicketActivity.events} initialHasMore={initialTicketActivity.hasMore} />
+        ) : (
+        /* Scrollable list area (time entries) */
         <div
           className={cn(
             'overflow-y-auto',
@@ -283,7 +309,16 @@ export function ActivityLogPanel({ initialLogs, initialHasMore }: { initialLogs:
               </p>
             </div>
           )}
+          {hasMoreState && !loading && (
+            <div className="text-center pb-3">
+              <Badge variant="outline" className="text-[11px] text-muted-foreground">
+                <ChevronDown className="h-3 w-3 mr-1" />
+                Scroll for more
+              </Badge>
+            </div>
+          )}
         </div>
+        )}
       </div>
     </>
   )

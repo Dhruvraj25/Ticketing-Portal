@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Download, FileText, FileSpreadsheet, FileJson, FileType, Loader2, Check } from 'lucide-react'
 import { motion } from 'framer-motion'
+import { buildXlsx, XLSX_MIME } from '@/lib/office-export'
 
 interface ReportsExportProps {
   analytics: any
@@ -158,31 +159,32 @@ export function ReportsExport({ analytics, devStats, productivity, totalWorkMinu
         }
 
         case 'xlsx': {
-          // Simple Excel-compatible XML spreadsheet
-          const xml = `<?xml version="1.0"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
-  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-  <Worksheet ss:Name="Summary">
-    <Table>
-      <Row><Cell><Data ss:Type="String">Support Hero Report</Data></Cell></Row>
-      <Row><Cell><Data ss:Type="String">Generated: ${new Date().toLocaleString()}</Data></Cell></Row>
-      <Row/>
-      <Row><Cell><Data ss:Type="String">Metric</Data></Cell><Cell><Data ss:Type="String">Value</Data></Cell></Row>
-      <Row><Cell><Data ss:Type="String">Total Tickets</Data></Cell><Cell><Data ss:Type="Number">${analytics.totalTickets}</Data></Cell></Row>
-      <Row><Cell><Data ss:Type="String">Resolved</Data></Cell><Cell><Data ss:Type="Number">${analytics.resolvedTickets}</Data></Cell></Row>
-      <Row><Cell><Data ss:Type="String">Avg Resolution (h)</Data></Cell><Cell><Data ss:Type="Number">${analytics.avgResolutionHours}</Data></Cell></Row>
-      <Row><Cell><Data ss:Type="String">Team Hours</Data></Cell><Cell><Data ss:Type="Number">${Math.round(totalWorkMinutes / 60 * 10) / 10}</Data></Cell></Row>
-    </Table>
-  </Worksheet>
-  <Worksheet ss:Name="Developers">
-    <Table>
-      <Row><Cell><Data ss:Type="String">Name</Data></Cell><Cell><Data ss:Type="String">Active</Data></Cell><Cell><Data ss:Type="String">Resolved</Data></Cell><Cell><Data ss:Type="String">Hours</Data></Cell></Row>
-      ${devStats.map((d: any) => `<Row><Cell><Data ss:Type="String">${d.name}</Data></Cell><Cell><Data ss:Type="Number">${d.activeTickets}</Data></Cell><Cell><Data ss:Type="Number">${d.resolvedTickets}</Data></Cell><Cell><Data ss:Type="Number">${Math.round(d.totalTimeMinutes / 60 * 10) / 10}</Data></Cell></Row>`).join('')}
-    </Table>
-  </Worksheet>
-</Workbook>`
-          downloadFile(xml, 'report.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+          // Real Office Open XML workbook (a ZIP package) — see lib/office-export.ts.
+          const xlsx = buildXlsx([
+            {
+              name: 'Summary',
+              rows: [
+                ['Support Hero Report'],
+                [`Generated: ${new Date().toLocaleString()}`],
+                [],
+                ['Metric', 'Value'],
+                ['Total Tickets', Number(analytics.totalTickets)],
+                ['Resolved', Number(analytics.resolvedTickets)],
+                ['Avg Resolution (h)', Number(analytics.avgResolutionHours)],
+                ['Team Hours', Math.round(totalWorkMinutes / 60 * 10) / 10],
+              ],
+              boldRows: [0, 3],
+            },
+            {
+              name: 'Developers',
+              rows: [
+                ['Name', 'Active', 'Resolved', 'Hours'],
+                ...devStats.map((d: any) => [d.name, Number(d.activeTickets), Number(d.resolvedTickets), Math.round(d.totalTimeMinutes / 60 * 10) / 10]),
+              ],
+              boldRows: [0],
+            },
+          ])
+          downloadFile(xlsx, 'report.xlsx', XLSX_MIME)
           break
         }
       }
@@ -196,14 +198,18 @@ export function ReportsExport({ analytics, devStats, productivity, totalWorkMinu
     }
   }
 
-  function downloadFile(content: string, filename: string, mimeType: string) {
-    const blob = new Blob([content], { type: mimeType })
+  function downloadFile(content: string | Uint8Array, filename: string, mimeType: string) {
+    // Binary (Uint8Array) for .xlsx, text for the other formats.
+    const blob = new Blob([content as BlobPart], { type: mimeType })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     a.download = filename
+    document.body.appendChild(a)
     a.click()
-    URL.revokeObjectURL(url)
+    a.remove()
+    // Revoking immediately can cancel the download in some browsers.
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
   const exportFormats = [
@@ -211,7 +217,7 @@ export function ReportsExport({ analytics, devStats, productivity, totalWorkMinu
     { id: 'json', label: 'JSON', icon: FileJson, description: 'Raw data export' },
     { id: 'txt', label: 'Text', icon: FileType, description: 'Plain text report' },
     { id: 'html', label: 'HTML', icon: FileText, description: 'Formatted web report' },
-    { id: 'xlsx', label: 'Excel', icon: FileSpreadsheet, description: 'Spreadsheet (XML)' },
+    { id: 'xlsx', label: 'Excel', icon: FileSpreadsheet, description: 'Spreadsheet (.xlsx)' },
   ]
 
   return (

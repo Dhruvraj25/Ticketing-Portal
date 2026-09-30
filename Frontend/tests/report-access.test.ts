@@ -111,15 +111,15 @@ test('the old inline ClientReportsSection is fully removed from the dashboard', 
   assert.ok(!DASHBOARD_SRC.includes("title: 'Pending for Approval (Client)'"), 'the 4-card block must not still be inlined into the dashboard')
 })
 
-test('the main dashboard KPI cards (Total Tickets/Open/In Progress/Resolved) are untouched', () => {
+// The merged Open / In Progress / Resolved buckets were replaced by one KPI per
+// ticket status for every role (tests/dashboard-status-kpis.test.ts).
+test('the main dashboard KPI section still exists: Total Tickets + one card per ticket status', () => {
   const start = DASHBOARD_SRC.indexOf('function StatsSection')
   assert.ok(start >= 0, 'StatsSection must still exist — it must NOT have been removed along with ClientReportsSection')
   const end = DASHBOARD_SRC.indexOf('\n}', DASHBOARD_SRC.indexOf('return (', start))
   const body = DASHBOARD_SRC.slice(start, end)
-  assert.match(body, /title: 'Total Tickets'/)
-  assert.match(body, /title: 'Open'/)
-  assert.match(body, /title: 'In Progress'/)
-  assert.match(body, /title: 'Resolved'/)
+  assert.match(body, /title=\{TOTAL_TICKETS_KPI\.label\}/)
+  assert.match(body, /\{perStatus\.map\(\(k\) => \(/)
 })
 
 test('the Client Dashboard has a "Reports" entry point to the dedicated Client Reports page', () => {
@@ -237,11 +237,9 @@ test('ReportCenterClient (admin/manager/developer) still has the full generic fi
 
 // ─── Admin/Manager Report Center routes are unaffected ─────────────────────
 
-test('Admin dashboard KPI report links are unchanged (unaffected by the client fix)', () => {
-  assert.match(DASHBOARD_SRC, /href: '\/dashboard\/reports\/view\?report=ticket_summary'/)
-  assert.match(DASHBOARD_SRC, /href: '\/dashboard\/reports\/view\?report=ticket_status&status=open'/)
-  assert.match(DASHBOARD_SRC, /href: '\/dashboard\/reports\/view\?report=ticket_status&status=in_progress'/)
-  assert.match(DASHBOARD_SRC, /href: '\/dashboard\/reports\/view\?report=ticket_resolution'/)
+test('Dashboard KPI links open the Tickets list (filtered to the card\'s status), for every role', () => {
+  assert.match(DASHBOARD_SRC, /href="\/dashboard\/tickets"/)
+  assert.match(DASHBOARD_SRC, /href=\{`\/dashboard\/tickets\?status=\$\{k\.status\}`\}/)
 })
 
 // ─── Report Center dropdown is role-aware (fixes "opens an Admin report") ──

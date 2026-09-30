@@ -34,7 +34,7 @@ test('Case 1: "created" is in CLIENT_VISIBLE_HISTORY_ACTIONS and formats as "New
 
 test('Case 2: approveEstimate writes newValue exactly "${hours}h estimate approved" â€” the dynamic detail line under "Estimate approved By [Client]"', () => {
   const fnStart = ESTIMATES_SRC.indexOf('export const approveEstimate')
-  const fnBlock = ESTIMATES_SRC.slice(fnStart, fnStart + 2500)
+  const fnBlock = ESTIMATES_SRC.slice(fnStart, fnStart + 6000)
   assert.match(fnBlock, /action:\s*'estimate_approved'/)
   assert.match(fnBlock, /newValue:\s*`\$\{t\.estimatedHours\}h estimate approved`/)
   const out = formatActivityEntry({ action: 'estimate_approved', userName: 'Suketu Bhatt', userRole: 'client' })
@@ -56,7 +56,7 @@ test('Case 3: estimate rejection never renders as "Revision requested by ..." â€
 
 test('Case 4: submitEstimate writes action "estimate_created" with newValue "${hours}h estimate submitted, deadline: ${date}"', () => {
   const fnStart = ESTIMATES_SRC.indexOf('export const submitEstimate')
-  const fnBlock = ESTIMATES_SRC.slice(fnStart, fnStart + 2500)
+  const fnBlock = ESTIMATES_SRC.slice(fnStart, fnStart + 6000)
   assert.match(fnBlock, /action:\s*'estimate_created'/)
   assert.match(fnBlock, /newValue:\s*`\$\{data\.estimatedHours\}h estimate submitted, deadline: \$\{approvalDeadline\.toISOString\(\)\.split\('T'\)\[0\]\}`/)
   const out = formatActivityEntry({ action: 'estimate_created', userName: '', userRole: 'project_manager' })
@@ -67,7 +67,7 @@ test('Case 4: submitEstimate writes action "estimate_created" with newValue "${h
 
 test('Case 5: updateEstimate writes action "estimate_modified" with newValue "${hours}h estimate updated"', () => {
   const fnStart = ESTIMATES_SRC.indexOf('export const updateEstimate')
-  const fnBlock = ESTIMATES_SRC.slice(fnStart, fnStart + 2500)
+  const fnBlock = ESTIMATES_SRC.slice(fnStart, fnStart + 6000)
   assert.match(fnBlock, /action:\s*'estimate_modified'/)
   assert.match(fnBlock, /newValue:\s*`\$\{data\.estimatedHours\}h estimate updated`/)
   const out = formatActivityEntry({ action: 'estimate_modified', userName: '', userRole: 'project_manager' })

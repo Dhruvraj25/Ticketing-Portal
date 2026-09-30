@@ -12,6 +12,8 @@ import { join } from 'node:path'
 const ROOT = join(import.meta.dirname, '..')
 const ESTIMATES_SRC = readFileSync(join(ROOT, 'app/actions/estimates.ts'), 'utf8')
 const SECTION_SRC = readFileSync(join(ROOT, 'components/dashboard/estimate-section.tsx'), 'utf8')
+// The project-scoped approver check lives in a shared module (also used by reviews).
+const PERMISSIONS_SRC = readFileSync(join(ROOT, 'lib/client-ticket-permissions.ts'), 'utf8')
 
 const APPROVER_ACTIONS = [
   'approveEstimate',
@@ -43,11 +45,11 @@ for (const name of APPROVER_ACTIONS) {
 }
 
 test('approverCanActOnTicket requires BOTH the approver and the ticket client to be clients of the ticket\'s own project', () => {
-  const start = ESTIMATES_SRC.indexOf('async function approverCanActOnTicket(')
+  const start = PERMISSIONS_SRC.indexOf('export async function approverCanActOnTicket(')
   assert.notEqual(start, -1)
-  const end = ESTIMATES_SRC.slice(start).search(/\r?\n\}\r?\n/)
+  const end = PERMISSIONS_SRC.slice(start).search(/\r?\n\}\r?\n/)
   assert.notEqual(end, -1)
-  const body = ESTIMATES_SRC.slice(start, start + end)
+  const body = PERMISSIONS_SRC.slice(start, start + end)
   assert.match(body, /if \(t\.clientId === approverId\) return true/)
   assert.match(body, /if \(!t\.clientId \|\| !t\.projectId\) return false/)
   assert.match(body, /eq\(project\.id, t\.projectId\)/)

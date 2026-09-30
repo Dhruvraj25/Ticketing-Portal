@@ -23,6 +23,8 @@ export interface ModuleListFilters {
   status?: string
   sortBy?: 'name' | 'created' | 'tickets'
   sortOrder?: 'asc' | 'desc'
+  /** Also return per-status counts for the KPI cards (scope + search only). */
+  includeStatusCounts?: boolean
 }
 
 export interface ModuleListItem {
@@ -38,12 +40,20 @@ export interface ModuleListItem {
   ticketCount: number
 }
 
+export interface ModuleStatusCounts {
+  total: number
+  active: number
+  completed: number
+}
+
 export interface ModuleListResult {
   modules: ModuleListItem[]
   total: number
   page: number
   limit: number
   totalPages: number
+  /** Present when requested (includeStatusCounts). */
+  statusCounts?: ModuleStatusCounts
 }
 
 export interface ModuleTicketStats {
@@ -67,24 +77,27 @@ async function _getModulesImpl(filters: ModuleListFilters | undefined, role: str
   const sortBy = filters?.sortBy || 'created'
   const sortOrder = filters?.sortOrder || 'desc'
 
-  // Build WHERE conditions
+  // Build WHERE conditions. `conditions` = role scope + search (also the
+  // scope of the KPI status counts); `listFilters` = project / status filters
+  // applied to the list only.
   const conditions: any[] = []
+  const listFilters: any[] = []
 
   // Filter by project
   if (filters?.projectId) {
-    conditions.push(eq(moduleTable.projectId, filters.projectId))
+    listFilters.push(eq(moduleTable.projectId, filters.projectId))
   }
 
   // Status filter
   if (filters?.status && filters.status !== 'all') {
-    conditions.push(eq(moduleTable.status, filters.status))
+    listFilters.push(eq(moduleTable.status, filters.status))
   }
 
   // Search filter — SQL LIKE on name, description, and project name
   if (filters?.search) {
     const q = `%${filters.search.toLowerCase()}%`
     conditions.push(
-      sql`(LOWER(${moduleTable.moduleName}) LIKE ${q} OR LOWER(COALESCE(${moduleTable.description}, '')) LIKE ${q})`,
+      sql`(LOWER(${moduleTable.moduleName}) LIKE ${q} OR LOWER(COALESCE(${moduleTable.description}, '')) LIKE ${q} OR LOWER(COALESCE(${project.projectName}, '')) LIKE ${q})`,
     )
   }
 
@@ -126,7 +139,8 @@ async function _getModulesImpl(filters: ModuleListFilters | undefined, role: str
     }
   }
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined
+  const scopeClause = conditions.length > 0 ? and(...conditions) : undefined
+  const whereClause = conditions.length + listFilters.length > 0 ? and(...conditions, ...listFilters) : undefined
 
   // Determine sort column
   let orderBy: any
@@ -134,6 +148,11 @@ async function _getModulesImpl(filters: ModuleListFilters | undefined, role: str
     case 'name':
       orderBy = sortOrder === 'asc' ? asc(moduleTable.moduleName) : desc(moduleTable.moduleName)
       break
+    case 'tickets': {
+      const ticketTotal = sql`(SELECT COUNT(*) FROM ${ticket} WHERE ${ticket.moduleId} = ${moduleTable.id})`
+      orderBy = sortOrder === 'asc' ? asc(ticketTotal) : desc(ticketTotal)
+      break
+    }
     case 'created':
     default:
       orderBy = sortOrder === 'asc' ? asc(moduleTable.createdAt) : desc(moduleTable.createdAt)
@@ -163,7 +182,7 @@ async function _getModulesImpl(filters: ModuleListFilters | undefined, role: str
     .from(moduleTable)
     .leftJoin(project, eq(moduleTable.projectId, project.id))
     .where(whereClause)
-    .orderBy(orderBy)
+    .orderBy(orderBy, desc(moduleTable.id))
     .limit(limit)
     .offset(offset)
 
@@ -199,7 +218,23 @@ async function _getModulesImpl(filters: ModuleListFilters | undefined, role: str
     ticketCount: ticketCountMap.get(r.id) || 0,
   }))
 
-  return { modules, total, page, limit, totalPages }
+  // KPI counts (role scope + search, not the project/status list filters),
+  // only when asked for — i.e. with the first batch, not on every scroll.
+  let statusCounts: ModuleStatusCounts | undefined
+  if (filters?.includeStatusCounts) {
+    const [c] = await db
+      .select({
+        total: sql<number>`COUNT(*)::int`,
+        active: sql<number>`COUNT(*) FILTER (WHERE ${moduleTable.status} = 'active')::int`,
+        completed: sql<number>`COUNT(*) FILTER (WHERE ${moduleTable.status} = 'completed')::int`,
+      })
+      .from(moduleTable)
+      .leftJoin(project, eq(moduleTable.projectId, project.id))
+      .where(scopeClause)
+    statusCounts = { total: Number(c?.total) || 0, active: Number(c?.active) || 0, completed: Number(c?.completed) || 0 }
+  }
+
+  return { modules, total, page, limit, totalPages, statusCounts }
 }
 
 const getCachedModules = unstable_cache(

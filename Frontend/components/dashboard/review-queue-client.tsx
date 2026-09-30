@@ -210,8 +210,8 @@ export function ReviewQueueClient({ resolvedTickets, developers }: ReviewQueueCl
         animate={{ opacity: 1 }}
         className="grid grid-cols-2 sm:grid-cols-4 gap-4"
       >
-        <StatCard title="Pending Requests" value={stats.pending} iconName="Clock" delay={0} />
-        <StatCard title="Total Requests" value={resolvedTickets.length} iconName="RefreshCw" delay={1} />
+        <StatCard title="Total Requests" value={resolvedTickets.length} iconName="RefreshCw" delay={0} />
+        <StatCard title="Pending Requests" value={stats.pending} iconName="Clock" delay={1} />
         <StatCard title="Approved Requests" value={stats.reviewedToday} iconName="CheckCircle2" delay={2} />
         <StatCard title="Rejected Requests" value={stats.overdue} iconName="XCircle" delay={3} />
       </motion.div>

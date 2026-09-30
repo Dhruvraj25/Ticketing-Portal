@@ -16,9 +16,19 @@ import {
 
 interface TicketRightPanelProps {
   userRole: 'client' | 'developer' | 'project_manager' | 'admin'
+  /**
+   * Role-scoped counts from getTicketInsights (server-side session scope:
+   * a developer only ever gets their OWN assigned tickets). null → unavailable.
+   */
+  insights?: { resolvedToday: number; awaitingClient: number; inProgress: number } | null
 }
 
-export const TicketRightPanel = memo(function TicketRightPanel({ userRole }: TicketRightPanelProps) {
+function ticketCount(n: number | undefined): string {
+  if (n === undefined) return '—'
+  return `${n} ticket${n === 1 ? '' : 's'}`
+}
+
+export const TicketRightPanel = memo(function TicketRightPanel({ userRole, insights }: TicketRightPanelProps) {
   return (
     <div className="space-y-4">
       {/* Quick Actions */}
@@ -90,13 +100,18 @@ export const TicketRightPanel = memo(function TicketRightPanel({ userRole }: Tic
             <span className="text-xs text-muted-foreground">Satisfaction</span>
             <span className="text-xs font-semibold text-foreground">4.8/5</span>
           </div>
-          <Link
-            href="/dashboard/analytics"
-            className="flex items-center justify-between pt-2 mt-1 border-t border-border/40 text-xs text-primary hover:text-primary/80 transition-colors"
-          >
-            <span className="font-medium">Full Analytics</span>
-            <ArrowRight className="h-3 w-3" />
-          </Link>
+          {/* The Analytics page is admin / project-manager only
+              (app/dashboard/analytics/page.tsx), so the link is not shown
+              to other roles (e.g. developers — it only redirected them). */}
+          {(userRole === 'admin' || userRole === 'project_manager') && (
+            <Link
+              href="/dashboard/analytics"
+              className="flex items-center justify-between pt-2 mt-1 border-t border-border/40 text-xs text-primary hover:text-primary/80 transition-colors"
+            >
+              <span className="font-medium">Full Analytics</span>
+              <ArrowRight className="h-3 w-3" />
+            </Link>
+          )}
         </div>
       </div>
 
@@ -114,8 +129,8 @@ export const TicketRightPanel = memo(function TicketRightPanel({ userRole }: Tic
               <div className="h-2 w-2 rounded-full bg-emerald-500" />
             </div>
             <div>
-              <p className="text-xs text-foreground font-medium">5 tickets resolved today</p>
-              <p className="text-[11px] text-muted-foreground">Above average performance</p>
+              <p className="text-xs text-foreground font-medium">{ticketCount(insights?.resolvedToday)} resolved today</p>
+              <p className="text-[11px] text-muted-foreground">Marked resolved since midnight</p>
             </div>
           </div>
           <div className="flex items-start gap-2">
@@ -123,7 +138,7 @@ export const TicketRightPanel = memo(function TicketRightPanel({ userRole }: Tic
               <div className="h-2 w-2 rounded-full bg-amber-500" />
             </div>
             <div>
-              <p className="text-xs text-foreground font-medium">2 tickets awaiting response</p>
+              <p className="text-xs text-foreground font-medium">{ticketCount(insights?.awaitingClient)} awaiting response</p>
               <p className="text-[11px] text-muted-foreground">Client feedback needed</p>
             </div>
           </div>
@@ -132,7 +147,7 @@ export const TicketRightPanel = memo(function TicketRightPanel({ userRole }: Tic
               <div className="h-2 w-2 rounded-full bg-blue-500" />
             </div>
             <div>
-              <p className="text-xs text-foreground font-medium">3 tickets in progress</p>
+              <p className="text-xs text-foreground font-medium">{ticketCount(insights?.inProgress)} in progress</p>
               <p className="text-[11px] text-muted-foreground">Being worked on now</p>
             </div>
           </div>

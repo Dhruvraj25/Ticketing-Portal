@@ -19,7 +19,6 @@ import { PROJECT_STATUS_CONFIG } from '@/lib/types'
 import { ModuleManager } from '@/components/dashboard/module-manager'
 import { ProjectStats } from '@/components/dashboard/project-stats'
 import { ProjectAssignmentPanel } from '@/components/dashboard/project-assignment-panel'
-import { DeveloperAssignment } from '@/components/dashboard/developer-assignment'
 import { ProjectUsersSection } from '@/components/dashboard/project-users-section'
 import { ProjectTeamsChannelSection } from '@/components/dashboard/project-teams-channel-section'
 import { ProjectAnalyticsSection } from '@/components/dashboard/project-analytics-section'
@@ -244,14 +243,10 @@ export default async function ProjectDetailPage({
                 </div>
                 {project.startDate && (
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground flex items-center gap-1.5 shrink-0"><Calendar className="h-3.5 w-3.5" /> Start</span>
+                    <span className="text-muted-foreground flex items-center gap-1.5 shrink-0"><Calendar className="h-3.5 w-3.5" /> Start date</span>
                     <span className="text-foreground shrink-0">{format(new Date(project.startDate), 'MMM d, yyyy')}</span>
                   </div>
                 )}
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground shrink-0">Created</span>
-                  <span className="text-foreground shrink-0">{format(new Date(project.createdAt), 'MMM d, yyyy')}</span>
-                </div>
               </div>
             </div>
 
@@ -263,8 +258,6 @@ export default async function ProjectDetailPage({
                 canAssignManager={user.role === 'admin'}
               />
             )}
-
-            {isManagerOrAdmin && <DeveloperAssignment projectId={projectId} />}
 
             <div data-tour="project-detail-actions" className="relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm p-5 min-w-0">
               <h3 className="font-semibold text-foreground mb-4">Quick Actions</h3>

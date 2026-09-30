@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dialog'
 import { Loader2, RefreshCw, Upload } from 'lucide-react'
 import { VALIDATION } from '@/lib/types'
+import { actionFailure } from '@/lib/client-ticket-rules'
 
 interface RevisionRequestActionProps {
   ticketId: number
@@ -48,12 +49,18 @@ export function RevisionRequestAction({ ticketId, ticketNumber, revisionCount = 
     setError(null)
     setLoading(true)
     try {
-      await requestRevision({
+      const res = await requestRevision({
         ticketId,
         revisionNotes: revisionNotes.trim(),
         priority: revisionPriority || null,
         attachmentIds: revisionAttachmentIds.length > 0 ? revisionAttachmentIds : null,
       })
+      // Client refusals are returned as a structured result (never thrown).
+      const failure = actionFailure(res)
+      if (failure) {
+        setError(failure)
+        return
+      }
       setRevisionDialogOpen(false)
       setRevisionNotes('')
       setRevisionPriority('')

@@ -2,7 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { startTimer, stopTimer, pauseTimer, resumeTimer } from '@/app/actions/tickets'
+import { startTimer, stopTimer, pauseTimer, resumeTimer, getMyTimerState, getMyTimeEntriesForExport } from '@/app/actions/tickets'
+import Link from 'next/link'
+import { buildXlsx, XLSX_MIME } from '@/lib/office-export'
+import { downloadFile } from '@/lib/download-file'
+import { TIME_ENTRY_EXPORT_HEADERS, timeEntryExportFilename, timeEntryExportRows } from '@/lib/time-entry-export'
+import { sessionElapsedSeconds, TIMER_STATE_LABEL, type MyTimerState, type TimerTicketOption } from '@/lib/timer-rules'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import {
@@ -21,6 +26,7 @@ import { Input } from '@/components/ui/input'
 import { StatCard } from '@/components/dashboard/stat-card'
 import { PageHeader } from '@/components/dashboard/page-header-server'
 import { stripHtml } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import {
   Select,
   SelectContent,
@@ -66,7 +72,10 @@ interface TicketSummary {
 
 interface TimeTrackingClientProps {
   tickets: TicketWithRelations[]
-  activeTimer: any | null
+  /** Timer dropdown options — server-filtered (getTimerTickets). */
+  timerTickets: TimerTicketOption[]
+  /** Current timer — server state (getMyTimerState). */
+  timer: MyTimerState
   allTimeLogs: TicketTimeLogs[]
   worklogData: {
     dailySummary: DaySummary[]
@@ -75,6 +84,11 @@ interface TimeTrackingClientProps {
     billableMinutes: number
   }
 }
+
+/** Entries shown in the (internally scrolling) Recent Entries list. */
+const RECENT_ENTRIES_LIMIT = 50
+/** Full list of this developer's entries: the Worklog report (server-scoped to them). */
+export const VIEW_ALL_ENTRIES_HREF = '/dashboard/reports/view?report=worklog'
 
 function fmtMins(minutes: number) {
   const h = Math.floor(minutes / 60)
@@ -100,29 +114,43 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export function TimeTrackingClient({
   tickets,
-  activeTimer: initialActiveTimer,
+  timerTickets,
+  timer: initialTimer,
   allTimeLogs,
   worklogData,
 }: TimeTrackingClientProps) {
   const router = useRouter()
+  // Timer ticket list comes from the server (getTimerTickets — assigned to
+  // this developer, workable status, not already running; lib/timer-rules.ts).
+  // `tickets` keeps every ticket for the log history and for resolving the
+  // active timer's ticket.
   const [selectedTicket, setSelectedTicket] = useState('')
+  const selectedOption = timerTickets.find((t) => String(t.id) === selectedTicket) ?? null
+  const isResume = selectedOption?.state === 'paused' && selectedOption.resumeLogId !== null
   const [description, setDescription] = useState('')
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [activeTimer, setActiveTimer] = useState(initialActiveTimer)
-  const [elapsedTime, setElapsedTime] = useState(0)
+  // Timer state comes ONLY from the server (getMyTimerState — the same
+  // derivation Ticket Detail uses): RUNNING / PAUSED / none. It is re-read
+  // after every action; the interval below only redraws the elapsed time.
+  const [timer, setTimer] = useState<MyTimerState>(initialTimer)
+  const [elapsedTime, setElapsedTime] = useState(() => sessionElapsedSeconds(initialTimer))
+  const isRunning = timer.state === 'running'
+  const isPaused = timer.state === 'paused'
 
   useEffect(() => {
-    if (activeTimer) {
-      const interval = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - new Date(activeTimer.startTime).getTime()) / 1000)
-        setElapsedTime(elapsed)
-      }, 1000)
-      return () => clearInterval(interval)
-    } else {
-      setElapsedTime(0)
-    }
-  }, [activeTimer])
+    setElapsedTime(sessionElapsedSeconds(timer))
+    if (timer.state !== 'running') return
+    const interval = setInterval(() => setElapsedTime(sessionElapsedSeconds(timer)), 1000)
+    return () => clearInterval(interval)
+  }, [timer])
+
+  const reloadTimer = async () => {
+    try {
+      setTimer(await getMyTimerState())
+    } catch {}
+    router.refresh()
+  }
 
   const formatElapsed = (seconds: number) => {
     const h = Math.floor(seconds / 3600)
@@ -131,68 +159,76 @@ export function TimeTrackingClient({
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
   }
 
-  const handleStart = async () => {
-    if (!selectedTicket) return
+  const runAction = async (name: string, fallback: string, fn: () => Promise<unknown>) => {
     setError(null)
-    setLoading('start')
+    setLoading(name)
     try {
-      const timer = await startTimer(parseInt(selectedTicket), description || undefined)
-      setActiveTimer(timer)
+      await fn()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : fallback)
+    } finally {
+      await reloadTimer()
+      setLoading(null)
+    }
+  }
+
+  const handleStart = () => {
+    if (!selectedOption) return
+    return runAction('start', 'Failed to start timer', async () => {
+      // Paused ticket → continue that paused entry (existing resumeTimer);
+      // new / previously stopped ticket → a new session (existing startTimer).
+      if (isResume) await resumeTimer(selectedOption.resumeLogId!, selectedOption.id, description || undefined)
+      else await startTimer(selectedOption.id, description || undefined)
+      setSelectedTicket('')
       setDescription('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start timer')
-    } finally {
-      setLoading(null)
-    }
+    })
   }
 
-  const handleStop = async () => {
-    if (!activeTimer) return
-    setError(null)
-    setLoading('stop')
-    try {
-      await stopTimer(activeTimer.id)
-      setActiveTimer(null)
-      router.refresh()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to stop timer')
-    } finally {
-      setLoading(null)
-    }
+  const handleStop = () => {
+    if (!timer.entryId) return
+    return runAction('stop', 'Failed to stop timer', () => stopTimer(timer.entryId!))
   }
 
-  const handlePause = async () => {
-    if (!activeTimer) return
-    setError(null)
-    setLoading('pause')
-    try {
-      await pauseTimer(activeTimer.id)
-      setActiveTimer(null)
-      router.refresh()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to pause timer')
-    } finally {
-      setLoading(null)
-    }
+  const handlePause = () => {
+    if (!timer.entryId || !isRunning) return
+    return runAction('pause', 'Failed to pause timer', () => pauseTimer(timer.entryId!))
   }
 
-  const handleResume = async () => {
-    if (!activeTimer) return
-    setError(null)
-    setLoading('resume')
-    try {
-      const newTimer = await resumeTimer(activeTimer.id, activeTimer.ticketId, description || undefined)
-      setActiveTimer(newTimer)
+  const handleResume = () => {
+    if (!timer.entryId || !timer.ticketId || !isPaused) return
+    return runAction('resume', 'Failed to resume timer', async () => {
+      await resumeTimer(timer.entryId!, timer.ticketId!, description || undefined)
       setDescription('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to resume timer')
+    })
+  }
+
+  // ── Export (developer's own entries; server-scoped, shared billing rule) ──
+  const [exporting, setExporting] = useState(false)
+  const [exportMessage, setExportMessage] = useState<{ kind: 'error' | 'info'; text: string } | null>(null)
+  const handleExport = async () => {
+    setExportMessage(null)
+    setExporting(true)
+    try {
+      const entries = await getMyTimeEntriesForExport()
+      if (entries.length === 0) {
+        setExportMessage({ kind: 'info', text: 'There are no time entries to export yet.' })
+        return
+      }
+      const xlsx = buildXlsx([{
+        name: 'Time Entries',
+        rows: [[...TIME_ENTRY_EXPORT_HEADERS], ...timeEntryExportRows(entries)],
+        boldRows: [0],
+      }])
+      downloadFile(xlsx, timeEntryExportFilename(), XLSX_MIME)
+    } catch {
+      setExportMessage({ kind: 'error', text: 'Export failed. Please try again.' })
     } finally {
-      setLoading(null)
+      setExporting(false)
     }
   }
 
-  const activeTicketInfo = activeTimer
-    ? tickets.find(t => t.id === activeTimer.ticketId)
+  const activeTicketInfo = timer.ticketId
+    ? { ticketNumber: timer.ticketNumber, title: timer.ticketTitle }
     : null
 
   const { dailySummary, byTicket, totalMinutes, billableMinutes } = worklogData
@@ -209,7 +245,7 @@ export function TimeTrackingClient({
     .flatMap(t => t.logs.map(log => ({ ...log, ticketNumber: t.ticketNumber, ticketTitle: t.ticketTitle })))
     .filter(log => log.endTime)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 10)
+    .slice(0, RECENT_ENTRIES_LIMIT)
 
   return (
     <div className="space-y-6">
@@ -265,18 +301,18 @@ export function TimeTrackingClient({
                 <div>
                   <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Timer</h3>
                   <p className="text-xs text-slate-500 mt-px">
-                    {activeTimer ? 'Timer is running' : 'Select a ticket and start tracking'}
+                    {isRunning ? 'Timer is running' : isPaused ? 'Timer is paused' : 'Select a ticket and start tracking'}
                   </p>
                 </div>
               </div>
             </div>
 
             <div className="p-6">
-              {activeTimer ? (
+              {isRunning || isPaused ? (
                 <div className="space-y-6">
                   {/* Active Timer Display */}
                   <div className="text-center py-4">
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Working on</p>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">{isPaused ? 'Paused' : 'Working on'}</p>
                     <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-6">
                       {activeTicketInfo?.ticketNumber}: {activeTicketInfo?.title}
                     </p>
@@ -289,13 +325,14 @@ export function TimeTrackingClient({
                     >
                       {formatElapsed(elapsedTime)}
                     </motion.div>
-                    {activeTimer.description && (
-                      <p className="text-sm text-slate-500 mt-4 max-w-md mx-auto">{activeTimer.description}</p>
+                    {timer.description && (
+                      <p className="text-sm text-slate-500 mt-4 max-w-md mx-auto">{timer.description}</p>
                     )}
                   </div>
 
                   {/* Timer Controls */}
                   <div className="flex items-center justify-center gap-3">
+                    {isRunning && (
                     <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
                       <Button
                         onClick={handlePause}
@@ -307,6 +344,7 @@ export function TimeTrackingClient({
                         <span className="ml-2 text-sm">Pause</span>
                       </Button>
                     </motion.div>
+                    )}
                     <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
                       <Button
                         onClick={handleStop}
@@ -318,6 +356,7 @@ export function TimeTrackingClient({
                         <span className="ml-2 text-sm">Stop</span>
                       </Button>
                     </motion.div>
+                    {isPaused && (
                     <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
                       <Button
                         onClick={handleResume}
@@ -328,6 +367,7 @@ export function TimeTrackingClient({
                         <span className="ml-2 text-sm">Resume</span>
                       </Button>
                     </motion.div>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -341,11 +381,15 @@ export function TimeTrackingClient({
                           <SelectValue placeholder="Select a ticket to work on..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {tickets.map((t) => (
+                          {timerTickets.length === 0 && (
+                            <SelectItem value="__none__" disabled>No tickets are currently available for time tracking.</SelectItem>
+                          )}
+                          {timerTickets.map((t) => (
                             <SelectItem key={t.id} value={t.id.toString()}>
                               <div className="flex items-center gap-2 min-w-0">
                                 <Ticket className="h-3.5 w-3.5 text-[#9CA3AF] shrink-0" />
                                 <span className="truncate text-sm">{t.ticketNumber}: {t.title}</span>
+                                <span className="shrink-0 text-[11px] text-muted-foreground">· {TIMER_STATE_LABEL[t.state]}</span>
                               </div>
                             </SelectItem>
                           ))}
@@ -369,15 +413,17 @@ export function TimeTrackingClient({
                   <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
                     <Button
                       onClick={handleStart}
-                      disabled={loading !== null || !selectedTicket}
+                      disabled={loading !== null || !selectedOption}
                       className="w-full rounded-lg h-11 bg-[#111827] hover:bg-[#1f2937] text-white shadow-sm text-sm font-medium"
                     >
                       {loading === 'start' ? (
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : isResume ? (
+                        <RefreshCw className="h-4 w-4 mr-2" />
                       ) : (
                         <Play className="h-4 w-4 mr-2" />
                       )}
-                      Start Timer
+                      {isResume ? 'Resume Timer' : 'Start Timer'}
                     </Button>
                   </motion.div>
                 </div>
@@ -388,69 +434,91 @@ export function TimeTrackingClient({
           </div>
         </div>
 
-        {/* ── Recent Entries Card (Right 1/3) ── */}
-        <div data-tour="time-tracker-entries" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-[0_1px_3px_0_rgba(0,0,0,0.04),0_1px_2px_-1px_rgba(0,0,0,0.06)]">
-          <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-slate-500" />
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Recent Entries</h3>
-              </div>
-              <Button variant="outline" size="sm" className="rounded-lg h-7 text-xs border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-[#F9FAFB]">
-                <Download className="h-3.5 w-3.5 mr-1" />
-                Export
-              </Button>
-            </div>
-          </div>
-
-          <div className="divide-y divide-[#E5E7EB]/60">
-            {recentEntries.length === 0 ? (
-              <div className="px-5 py-10 text-center">
-                <Clock className="h-8 w-8 text-[#D1D5DB] mx-auto mb-3" />
-                <p className="text-sm text-[#9CA3AF]">No time entries yet.</p>
-                <p className="text-xs text-[#D1D5DB] mt-1">Start the timer to begin tracking.</p>
-              </div>
-            ) : (
-              recentEntries.slice(0, 8).map((log, idx) => (
-                <motion.div
-                  key={log.id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: idx * 0.02 }}
-                  className="flex items-center justify-between px-5 py-3 hover:bg-[#F9FAFB] transition-colors"
+        {/* ── Recent Entries Card (Right 1/3) ──
+            On desktop the card is taken out of the row's height calculation
+            (absolute inset-0 inside a relative grid cell), so the row is as
+            tall as the Timer card and this card fills exactly that height; on
+            small screens it has a max height. Header (with Export) and footer
+            (View all) stay fixed — only the entries list scrolls. */}
+        <div className="relative min-h-0">
+          <div data-tour="time-tracker-entries" className="flex flex-col max-h-[28rem] lg:max-h-none lg:absolute lg:inset-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-[0_1px_3px_0_rgba(0,0,0,0.04),0_1px_2px_-1px_rgba(0,0,0,0.06)] overflow-hidden">
+            <div className="shrink-0 px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-slate-500" />
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Recent Entries</h3>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExport}
+                  disabled={exporting}
+                  aria-busy={exporting}
+                  className="rounded-lg h-7 text-xs border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-[#F9FAFB]"
                 >
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <div className="h-1.5 w-1.5 rounded-full bg-[#D1D5DB] shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate leading-snug">
-                        {log.ticketTitle}
-                      </p>
-                      <p className="text-xs text-[#9CA3AF] mt-0.5 font-mono">
-                        {log.ticketNumber}
-                      </p>
-                      {log.description && (
-                        <p className="text-xs text-[#9CA3AF] truncate mt-0.5">{stripHtml(log.description)}</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0 ml-3">
-                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 tabular-nums">
-                      {Math.floor((log.durationMinutes || 0) / 60)}h {(log.durationMinutes || 0) % 60}m
-                    </p>
-                    <p className="text-xs text-[#9CA3AF] mt-0.5">
-                      {format(new Date(log.startTime), 'MMM d')}
-                    </p>
-                  </div>
-                </motion.div>
-              ))
-            )}
-            {recentEntries.length > 8 && (
-              <div className="px-5 py-2.5 text-center border-t border-slate-200/40 dark:border-slate-800">
-                <button className="text-xs font-medium text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 transition-colors">
-                  View all entries
-                </button>
+                  {exporting ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1" />}
+                  {exporting ? 'Exporting…' : 'Export'}
+                </Button>
               </div>
-            )}
+              {exportMessage && (
+                <p className={cn('mt-2 text-xs', exportMessage.kind === 'error' ? 'text-destructive' : 'text-slate-500')} role="status">
+                  {exportMessage.text}
+                </p>
+              )}
+            </div>
+
+            <div data-testid="recent-entries-scroll" className="flex-1 min-h-0 overflow-y-auto divide-y divide-[#E5E7EB]/60">
+              {recentEntries.length === 0 ? (
+                <div className="px-5 py-10 text-center">
+                  <Clock className="h-8 w-8 text-[#D1D5DB] mx-auto mb-3" />
+                  <p className="text-sm text-[#9CA3AF]">No time entries yet.</p>
+                  <p className="text-xs text-[#D1D5DB] mt-1">Start the timer to begin tracking.</p>
+                </div>
+              ) : (
+                recentEntries.map((log, idx) => (
+                  <motion.div
+                    key={log.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: Math.min(idx * 0.02, 0.3) }}
+                    className="flex items-center justify-between px-5 py-3 hover:bg-[#F9FAFB] transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div className="h-1.5 w-1.5 rounded-full bg-[#D1D5DB] shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate leading-snug">
+                          {log.ticketTitle}
+                        </p>
+                        <p className="text-xs text-[#9CA3AF] mt-0.5 font-mono">
+                          {log.ticketNumber}
+                        </p>
+                        {log.description && (
+                          <p className="text-xs text-[#9CA3AF] truncate mt-0.5">{stripHtml(log.description)}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0 ml-3">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 tabular-nums">
+                        {Math.floor((log.durationMinutes || 0) / 60)}h {(log.durationMinutes || 0) % 60}m
+                      </p>
+                      <p className="text-xs text-[#9CA3AF] mt-0.5">
+                        {format(new Date(log.startTime), 'MMM d')}
+                      </p>
+                    </div>
+                  </motion.div>
+                ))
+              )}
+            </div>
+
+            <div className="shrink-0 px-5 py-2.5 text-center border-t border-slate-200 dark:border-slate-800">
+              {/* Full list: the Worklog report, scoped server-side to this developer's own entries. */}
+              <Link
+                href={VIEW_ALL_ENTRIES_HREF}
+                className="text-xs font-medium text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+              >
+                View all entries
+              </Link>
+            </div>
           </div>
         </div>
       </div>

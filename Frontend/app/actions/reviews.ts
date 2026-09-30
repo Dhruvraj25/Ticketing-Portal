@@ -8,6 +8,8 @@ import { eq, and, count, sql, desc, asc, avg, gte, lte } from 'drizzle-orm'
 import { revalidatePath, revalidateTag, unstable_cache } from 'next/cache'
 import { dispatchNotification } from '@/lib/notify-all'
 import { wrapServerAction } from '@/lib/performance-profiler'
+import { isTicketRaiser, REVIEW_NOT_ALLOWED_MESSAGE } from '@/lib/client-ticket-rules'
+import { approverCanActOnTicket } from '@/lib/client-ticket-permissions'
 
 // ── Cache config: 120s TTL — reviews change only on user actions, not time.
 // Using unstable_cache instead of in-memory Map for cross-instance dedup.
@@ -106,11 +108,8 @@ export const submitReview = wrapServerAction('submitReview', async function subm
   if (currentUser.role !== 'client') {
     throw new Error('Only clients can submit reviews')
   }
-  if (currentUser.userType !== 'approver') {
-    throw new Error('Only Approver-type users can submit reviews. Contact your administrator to change your user type.')
-  }
 
-  // Validate ticket is closed and owned by client
+  // Validate ticket is closed and the caller may review it
   const [t] = await db
     .select({
       status: ticket.status,
@@ -124,7 +123,13 @@ export const submitReview = wrapServerAction('submitReview', async function subm
     .limit(1)
 
   if (!t) throw new Error('Ticket not found')
-  if (t.clientId !== currentUser.id) throw new Error('You can only review your own tickets')
+  // The client account that RAISED the ticket, or an approver account of the
+  // ticket's own project (lib/client-ticket-rules.ts — project-scoped, so an
+  // approver can never review another company's/project's ticket).
+  const mayReview =
+    isTicketRaiser(currentUser, t.clientId) ||
+    (currentUser.userType === 'approver' && (await approverCanActOnTicket(currentUser.id, t)))
+  if (!mayReview) throw new Error(REVIEW_NOT_ALLOWED_MESSAGE)
   if (t.status !== 'closed') throw new Error('Only closed tickets can be reviewed')
 
   // Check for existing review (one per ticket)

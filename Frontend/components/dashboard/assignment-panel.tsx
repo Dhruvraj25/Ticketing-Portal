@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
+import { assignableResourcesFor, isReadyForResourceAssignment, resourceLabel } from '@/lib/ticket-assignment'
 import { motion } from 'framer-motion'
 import { format, formatDistanceToNow } from 'date-fns'
 import { cn } from '@/lib/utils'
@@ -8,7 +9,6 @@ import {
   Plus,
   Search,
   Calendar,
-  ListChecks,
   Users,
   Ticket,
   Clock,
@@ -41,6 +41,8 @@ interface Developer {
   name: string
   email: string
   activeTickets: number
+  role?: 'developer' | 'project_manager'
+  managedProjectIds?: number[]
 }
 
 interface AssignmentPanelProps {
@@ -48,7 +50,10 @@ interface AssignmentPanelProps {
   developers: Developer[]
 }
 
-export function AssignmentPanel({ unassignedTickets, developers }: AssignmentPanelProps) {
+export function AssignmentPanel({ unassignedTickets, developers: resources }: AssignmentPanelProps) {
+  // `resources` = developers + managers (managers only for their own projects);
+  // counts / workload / suggestions stay developers-only.
+  const developers = useMemo(() => resources.filter((r) => (r.role ?? 'developer') === 'developer'), [resources])
   const [selectedDeveloper, setSelectedDeveloper] = useState<Record<number, string>>({})
   const [loading, setLoading] = useState<Record<number, boolean>>({})
   const [assigned, setAssigned] = useState<Set<number>>(new Set())
@@ -151,12 +156,11 @@ export function AssignmentPanel({ unassignedTickets, developers }: AssignmentPan
         data-tour="assignments-kpis"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="grid grid-cols-2 sm:grid-cols-4 gap-4"
+        className="grid grid-cols-2 sm:grid-cols-3 gap-4"
       >
-        <StatCard title="Total Tickets" value={summary.total} iconName="Ticket" delay={0} />
-        <StatCard title="Unassigned" value={summary.unassigned} iconName="AlertCircle" delay={1} />
-        <StatCard title="Assigned" value={summary.assigned} iconName="CheckCircle2" delay={2} />
-        <StatCard title="Developers" value={summary.developers} iconName="Users" delay={3} />
+        <StatCard title="Total Unassign" value={summary.unassigned} iconName="AlertCircle" delay={0} />
+        <StatCard title="Total Assign" value={summary.assigned} iconName="CheckCircle2" delay={1} />
+        <StatCard title="Developers" value={summary.developers} iconName="Users" delay={2} />
       </motion.div>
 
       {/* Filters */}
@@ -276,20 +280,26 @@ export function AssignmentPanel({ unassignedTickets, developers }: AssignmentPan
                     </div>
                   </div>
 
-                  {/* Assignment Controls */}
+                  {/* Assignment Controls — only once the client has approved the
+                      estimate (lib/ticket-assignment.ts; enforced server-side too). */}
+                  {!isReadyForResourceAssignment(ticket) ? (
+                    <p className="mt-4 pt-4 border-t border-border/50 text-xs text-muted-foreground">
+                      A resource can be assigned after the client approves the estimate.
+                    </p>
+                  ) : (
                   <div className="flex items-center gap-3 mt-4 pt-4 border-t border-border/50">
                     <Select
                       value={selectedDeveloper[ticket.id] || ''}
                       onValueChange={(v) => setSelectedDeveloper(prev => ({ ...prev, [ticket.id]: v }))}
                     >
                       <SelectTrigger className="flex-1 bg-input/50 h-9 rounded-xl">
-                        <SelectValue placeholder="Select developer..." />
+                        <SelectValue placeholder="Select resource..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {developers.map((dev) => (
+                        {assignableResourcesFor(resources, ticket.projectId).map((dev) => (
                           <SelectItem key={dev.id} value={dev.id}>
                             <div className="flex items-center justify-between w-full gap-3">
-                              <span>{dev.name}</span>
+                              <span>{resourceLabel(dev)}</span>
                               <span className="text-xs text-muted-foreground">({dev.activeTickets} active)</span>
                             </div>
                           </SelectItem>
@@ -309,6 +319,7 @@ export function AssignmentPanel({ unassignedTickets, developers }: AssignmentPan
                       )}
                     </Button>
                   </div>
+                  )}
 
                   {error[ticket.id] && (
                     <p className="text-sm text-destructive mt-2">{error[ticket.id]}</p>
@@ -334,7 +345,9 @@ export function AssignmentPanel({ unassignedTickets, developers }: AssignmentPan
               <p className="text-sm text-muted-foreground">No developers available</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            // Scrolls inside the section (Ticket List pattern) so any number of
+            // developer cards stays within it instead of stretching the page.
+            <div className="space-y-3 max-h-[640px] overflow-y-auto overscroll-contain pr-1">
               {developers
                 .sort((a, b) => b.activeTickets - a.activeTickets)
                 .map((dev, i) => {
@@ -389,41 +402,6 @@ export function AssignmentPanel({ unassignedTickets, developers }: AssignmentPan
           )}
         </div>
 
-        {/* Assignment Summary */}
-        <motion.div
-          data-tour="assignments-summary"
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
-          className="relative rounded-2xl bg-white dark:bg-slate-900 border border-border/60 p-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.04)] transition-all duration-200"
-        >
-          <div className="absolute top-0 left-4 right-4 h-0.5 rounded-full bg-slate-200" />
-          <div className="flex items-center gap-2 mb-4">
-            <div className="flex items-center justify-center h-8 w-8 rounded-xl bg-accent">
-              <ListChecks className="h-4 w-4 text-foreground/70" />
-            </div>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Assignment Summary</p>
-          </div>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Total Tickets</span>
-              <span className="text-lg font-bold text-foreground">{summary.total}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Unassigned</span>
-              <span className="text-lg font-bold text-amber-600 dark:text-amber-400">{summary.unassigned}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Assigned</span>
-              <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{summary.assigned}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Developers</span>
-              <span className="text-lg font-bold text-foreground">{summary.developers}</span>
-            </div>
-          </div>
-        </motion.div>
-
         {/* Quick Actions */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}
@@ -444,7 +422,8 @@ export function AssignmentPanel({ unassignedTickets, developers }: AssignmentPan
               className="w-full h-12 rounded-xl gap-2 justify-start font-medium"
               onClick={async () => {
                 const devs = [...developers].sort((a, b) => a.activeTickets - b.activeTickets)
-                for (const ticket of visibleTickets.slice(0, 10)) {
+                // Only tickets that are ready (estimate approved) — the server rejects the rest.
+                for (const ticket of visibleTickets.filter(isReadyForResourceAssignment).slice(0, 10)) {
                   if (devs.length > 0) {
                     const dev = devs[0]
                     setSelectedDeveloper(prev => ({ ...prev, [ticket.id]: dev.id }))
@@ -453,7 +432,7 @@ export function AssignmentPanel({ unassignedTickets, developers }: AssignmentPan
                   }
                 }
               }}
-              disabled={visibleTickets.length === 0}
+              disabled={!visibleTickets.some(isReadyForResourceAssignment)}
             >
               <Shuffle className="h-5 w-5 text-primary" />
               Auto Assign Tickets

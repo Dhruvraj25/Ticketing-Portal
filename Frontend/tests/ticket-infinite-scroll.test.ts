@@ -135,7 +135,7 @@ test('the Tickets page infinite-scroll reset key is built from the filter params
 })
 
 test('the Tickets page "load more" reuses the existing getTicketsList action — no duplicate ticket API was created', () => {
-  assert.match(TICKETS_PAGE_CLIENT_SRC, /import \{ getTicketsList, type TicketListItem \} from '@\/app\/actions\/tickets'/)
+  assert.match(TICKETS_PAGE_CLIENT_SRC, /import \{ getTicketsList, type TicketListItem(, type TicketInsights)? \} from '@\/app\/actions\/tickets'/)
   const idx = TICKETS_PAGE_CLIENT_SRC.indexOf('const fetchTicketsPage')
   const body = TICKETS_PAGE_CLIENT_SRC.slice(idx, idx + 500)
   assert.match(body, /getTicketsList\(\{/)

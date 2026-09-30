@@ -11,6 +11,7 @@ import type { UserRole } from '@/lib/types'
 import { wrapServerAction } from '@/lib/performance-profiler'
 import { dispatchNotification } from '@/lib/notify-all'
 import { logPasswordAudit } from '@/lib/password-audit'
+import { currentRequestSessionToken, revokeUserSessions } from '@/lib/session-revocation'
 
 // ============================================================================
 // USER MANAGEMENT (Admin only)
@@ -597,6 +598,13 @@ export const resetUserPassword = wrapServerAction('resetUserPassword', async fun
   // Use Better Auth's internal adapter to update the password
   await ctx.internalAdapter.updatePassword(userId, hashedPassword)
 
+  // Sign the account out everywhere: delete its existing sessions so the old
+  // session cookie stops working immediately and it must sign in again with
+  // the new password. Resetting your OWN password keeps only this session.
+  const revokedSessions = await revokeUserSessions(userId, {
+    keepToken: userId === currentUser.id ? await currentRequestSessionToken() : null,
+  })
+
   // ── Audit + notify ────────────────────────────────────────────────────
   const actorLabel = isAdmin ? 'an administrator' : 'a project manager'
   await logPasswordAudit({
@@ -607,7 +615,7 @@ export const resetUserPassword = wrapServerAction('resetUserPassword', async fun
     targetEmail: target.email,
     action: isAdmin ? 'reset_password_by_admin' : 'reset_password_by_manager',
     result: 'success',
-    detail: `target=${target.name || target.email}`,
+    detail: `target=${target.name || target.email}; sessions_revoked=${revokedSessions}`,
   })
 
   dispatchNotification({

@@ -1,11 +1,11 @@
 import { getCurrentUser } from '@/app/actions/tickets'
-import { getModulesByProjectIds, getModulesTicketStats } from '@/app/actions/modules'
+import { getModules } from '@/app/actions/modules'
 import { getProjectNames } from '@/app/actions/projects'
 import { redirect } from 'next/navigation'
 import { ModulesPageClient } from './modules-page-client'
 import { mark, summary } from '@/lib/request-timing'
 import { PageTimer } from '@/lib/performance-profiler'
-import type { UserRole } from '@/lib/types'
+import { moduleBatchFilters } from '@/lib/module-list-batches'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,26 +18,17 @@ export default async function ModulesPage() {
     redirect('/dashboard')
   }
 
-  // Lightweight: only need project IDs/names for module lookup
-  const projects = await getProjectNames()
-  const projectIds = projects.map((p) => p.id)
-  const allModules = projectIds.length > 0 ? await getModulesByProjectIds(projectIds) : []
-
-  mark('Modules - getModulesTicketStats')
-  const moduleIds = allModules.map((m) => m.id)
-  const ticketStats = await getModulesTicketStats(moduleIds)
-  const statsMap = new Map(ticketStats.map((s) => [s.moduleId, s]))
+  // Only the FIRST batch (20) is fetched for the first paint — further batches
+  // load as the user scrolls (infinite scroll). Projects feed the filter.
+  mark('Modules - first batch')
+  const [projects, initialPage] = await Promise.all([
+    getProjectNames(),
+    getModules(moduleBatchFilters({ sortBy: 'created', page: 1 })),
+  ])
 
   mark('Modules - Render')
   pageTimer.finish()
   summary('Modules Page')
 
-  return (
-    <ModulesPageClient
-      user={user}
-      projects={projects}
-      modules={allModules}
-      statsMap={Object.fromEntries(statsMap)}
-    />
-  )
+  return <ModulesPageClient user={user} projects={projects} initialPage={initialPage} />
 }

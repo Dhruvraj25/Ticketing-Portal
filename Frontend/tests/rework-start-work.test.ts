@@ -133,10 +133,13 @@ test('F: updateTicketStatus rejects a developer who is not the assigned develope
 // ─── G & H. Work can be completed and resubmitted for Manager Review ──────
 
 test('G: "Mark Completed" becomes available once IN_PROGRESS, regardless of whether that state was reached from ASSIGNED or REWORK', () => {
-  // isInProgress is purely state-based — it does not distinguish how the
-  // ticket arrived at IN_PROGRESS, so the Rework path is never a special case.
-  assert.match(STATUS_ACTIONS_SRC, /const isInProgress = status === TicketStatus\.IN_PROGRESS/)
-  assert.match(STATUS_ACTIONS_SRC, /\{\(isInProgress \|\| timerState !== 'idle'\) && \(/)
+  // Completion is purely state-based (lib/ticket-work-flow.ts canCompleteWork:
+  // status === in_progress) — it does not distinguish how the ticket arrived
+  // at IN_PROGRESS, so the Rework (and Reopen) path is never a special case.
+  assert.match(STATUS_ACTIONS_SRC, /\{canCompleteWork\(status\) && \(/)
+  const flow = readFileSync(join(import.meta.dirname, '..', 'lib', 'ticket-work-flow.ts'), 'utf8')
+  assert.match(flow, /return status === WORKING_STATUS/)
+  assert.match(flow, /export const WORKING_STATUS = 'in_progress'/)
 })
 
 test('H: completing work (RESOLVED) still dispatches manager_review, cycle-scoped so a second Rework cycle notifies again', () => {

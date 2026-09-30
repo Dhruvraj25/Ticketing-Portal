@@ -1,12 +1,11 @@
 'use client'
 
-import { useState, useMemo, useEffect, useCallback, memo } from 'react'
+import { useState, useMemo, useCallback, useRef, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format } from 'date-fns'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { PageHeaderIcon } from '@/components/dashboard/page-header-icon'
-import { stripHtml } from '@/lib/format'
 import { useDebounce } from '@/hooks/use-debounce'
 import { getModules, deleteModule } from '@/app/actions/modules'
 import {
@@ -16,8 +15,6 @@ import {
   SlidersHorizontal,
   X,
   ArrowUpDown,
-  ChevronLeft,
-  ChevronRight,
   FolderKanban,
   Eye,  
   Edit3,
@@ -38,7 +35,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -56,137 +52,106 @@ import { MODULE_STATUS_CONFIG } from '@/lib/types'
 import { StatCard } from '@/components/dashboard/stat-card'
 import { CurrentDate } from '@/components/dashboard/page-header'
 import type { ModuleWithRelations, UserRole } from '@/lib/types'
-import type { ModuleTicketStats } from '@/app/actions/modules'
+import type { ModuleListResult, ModuleStatusCounts } from '@/app/actions/modules'
+import { useInfiniteTicketList, useLoadMoreSentinel } from '@/lib/use-infinite-ticket-list'
+import { INITIAL_FILTER_KEY, moduleBatchFilters } from '@/lib/module-list-batches'
 
 interface ModulesPageClientProps {
   user: { id: string; name: string; role: UserRole }
   projects: { id: number; projectName: string; projectCode: string }[]
-  modules: ModuleWithRelations[]
-  statsMap: Record<string, ModuleTicketStats>
+  /** First batch (default filters), fetched server-side for the first paint. */
+  initialPage: ModuleListResult
 }
 
-const ITEMS_PER_PAGE = 10
+type ModuleSort = 'name' | 'created' | 'tickets'
 
-export function ModulesPageClient({ user, projects, modules, statsMap }: ModulesPageClientProps) {
+export function ModulesPageClient({ user, projects, initialPage }: ModulesPageClientProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedProject, setSelectedProject] = useState('all')
   const [selectedStatus, setSelectedStatus] = useState('all')
   const [showFilters, setShowFilters] = useState(false)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [sortBy, setSortBy] = useState<'name' | 'created' | 'tickets'>('created')
-  // Server-side search state
-  const [serverSearchModules, setServerSearchModules] = useState<ModuleWithRelations[] | null>(null)
-  const [searchLoading, setSearchLoading] = useState(false)
-  // Local modules state for optimistic CRUD updates (avoids router.refresh())
-  const [localModules, setLocalModules] = useState<ModuleWithRelations[] | null>(null)
+  const [sortBy, setSortBy] = useState<ModuleSort>('created')
 
   const debouncedSearch = useDebounce(searchQuery, 350)
 
-  // Debounced server-side search
-  useEffect(() => {
-    if (!debouncedSearch) {
-      setServerSearchModules(null)
-      setSearchLoading(false)
-      return
+  // ── Infinite scroll (shared hook, same as the Ticket List) ──────────────
+  // Batches of MODULES_BATCH_SIZE from getModules (server-side search /
+  // filter / sort, LIMIT/OFFSET). Any search/filter/sort change is a new
+  // result set: the list is cleared and loading restarts from batch 1.
+  const filterKey = `${debouncedSearch}|${selectedProject}|${selectedStatus}|${sortBy}`
+  const isInitialFilters = filterKey === INITIAL_FILTER_KEY
+  const [meta, setMeta] = useState<{ total: number; statusCounts: ModuleStatusCounts | undefined }>({
+    total: initialPage.total,
+    statusCounts: initialPage.statusCounts,
+  })
+  const filterKeyRef = useRef(filterKey)
+  filterKeyRef.current = filterKey
+
+  const fetchModulesPage = useCallback(async (page: number) => {
+    const key = filterKey
+    const result = await getModules(moduleBatchFilters({
+      search: debouncedSearch, projectId: selectedProject, status: selectedStatus, sortBy, page,
+    }))
+    // Count / KPI metadata from the current result set only (a stale
+    // response for an older filter set never updates it).
+    if (key === filterKeyRef.current) {
+      setMeta((prev) => ({ total: result.total, statusCounts: result.statusCounts ?? prev.statusCounts }))
     }
+    return { tickets: result.modules as unknown as ModuleWithRelations[], hasMore: page < result.totalPages }
+  }, [filterKey, debouncedSearch, selectedProject, selectedStatus, sortBy])
 
-    let cancelled = false
-    setSearchLoading(true)
+  const {
+    tickets: loadedModules,
+    hasMore,
+    loadingMore,
+    error: loadError,
+    loadMore,
+  } = useInfiniteTicketList<ModuleWithRelations>({
+    // Default filters → the server-rendered first batch. Any other filter set
+    // starts EMPTY at page 0, so the sentinel immediately loads its batch 1.
+    initialTickets: isInitialFilters ? (initialPage.modules as unknown as ModuleWithRelations[]) : [],
+    initialHasMore: isInitialFilters ? initialPage.page < initialPage.totalPages : true,
+    startPage: isInitialFilters ? 1 : 0,
+    fetchPage: fetchModulesPage,
+    resetKey: filterKey,
+  })
 
-    getModules({ search: debouncedSearch, limit: 100 })
-      .then((results) => {
-        if (!cancelled) {
-          setServerSearchModules(results as unknown as ModuleWithRelations[])
-          setSearchLoading(false)
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setSearchLoading(false)
-      })
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const loadMoreRef = useRef<HTMLDivElement>(null)
+  useLoadMoreSentinel(scrollContainerRef, loadMoreRef, loadMore, hasMore)
 
-    return () => { cancelled = true }
-  }, [debouncedSearch])
+  // Deleted rows are hidden optimistically (the list itself belongs to the hook).
+  const [removedIds, setRemovedIds] = useState<Set<number>>(() => new Set())
+  const visibleModules = useMemo(() => loadedModules.filter((m) => !removedIds.has(m.id)), [loadedModules, removedIds])
+  const totalCount = Math.max(0, meta.total - loadedModules.filter((m) => removedIds.has(m.id)).length)
 
-  // Use server results when searching, otherwise the initial/local modules
-  const baseModules = localModules ?? modules
-  const effectiveModules = serverSearchModules ?? baseModules
+  // KPI cards: role scope + search (server-side counts, not just the loaded rows).
+  const stats = meta.statusCounts ?? { total: 0, active: 0, completed: 0 }
 
-  // Stats
-  const stats = useMemo(() => {
-    const total = effectiveModules.length
-    const active = effectiveModules.filter((m) => m.status === 'active').length
-    const completed = effectiveModules.filter((m) => m.status === 'completed').length
-    const archived = effectiveModules.filter((m) => m.status === 'archived').length
-    return { total, active, completed, archived }
-  }, [effectiveModules])
-
-  // Project options for filter
-  const projectOptions = useMemo(() => {
-    const seen = new Set<number>()
-    return effectiveModules
-      .filter((m) => {
-        if (seen.has(m.projectId)) return false
-        seen.add(m.projectId)
-        return true
-      })
-      .map((m) => ({
-        id: m.projectId,
-        name: m.projectName || `Project #${m.projectId}`,
-        code: m.projectCode,
-      }))
-  }, [effectiveModules])
-
-  // Filtered modules — server-side search already applied, just status/project filters client-side
-  const filteredModules = useMemo(() => {
-    let result = effectiveModules.filter((m) => {
-      if (selectedProject !== 'all' && m.projectId !== Number(selectedProject)) return false
-      if (selectedStatus !== 'all' && m.status !== selectedStatus) return false
-      return true
-    })
-
-    result.sort((a, b) => {
-      if (sortBy === 'name') return a.moduleName.localeCompare(b.moduleName)
-      if (sortBy === 'tickets') return (b.ticketCount || 0) - (a.ticketCount || 0)
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    })
-
-    return result
-  }, [effectiveModules, selectedProject, selectedStatus, sortBy])
-
-  const totalPages = Math.max(1, Math.ceil(filteredModules.length / ITEMS_PER_PAGE))
-  const paginatedModules = filteredModules.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE,
+  // Project options for the filter: the projects this user can see.
+  const projectOptions = useMemo(
+    () => projects.map((p) => ({ id: p.id, name: p.projectName, code: p.projectCode })),
+    [projects],
   )
 
   const hasFilters = searchQuery || selectedProject !== 'all' || selectedStatus !== 'all'
-
-  useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(1)
-  }, [filteredModules.length, totalPages])
+  const searchLoading = searchQuery !== debouncedSearch || (loadingMore && visibleModules.length === 0)
+  const nothingFound = visibleModules.length === 0 && !hasMore && !loadingMore
 
   const handleDeleteModule = useCallback(async (moduleId: number) => {
     if (!confirm('Are you sure you want to delete this module? Tickets linked to it will have their module reference removed.')) return
     try {
       await deleteModule(moduleId)
-      // Optimistic local state update — no router.refresh() needed
-      setLocalModules((prev) => {
-        const current = prev ?? modules
-        return current.filter((m) => m.id !== moduleId)
-      })
+      // Optimistic local update — no router.refresh() needed
+      setRemovedIds((prev) => new Set(prev).add(moduleId))
     } catch {}
-  }, [modules])
+  }, [])
 
   const clearFilters = useCallback(() => {
     setSearchQuery('')
     setSelectedProject('all')
     setSelectedStatus('all')
-    setCurrentPage(1)
   }, [])
-
-  const goToPrevPage = useCallback(() => setCurrentPage((p) => Math.max(1, p - 1)), [])
-  const goToNextPage = useCallback(() => setCurrentPage((p) => Math.min(totalPages, p + 1)), [totalPages])
-  const goToPage = useCallback((p: number) => setCurrentPage(p), [])
 
   return (
     <div className="space-y-6" data-tour="modules-list">
@@ -228,12 +193,11 @@ export function ModulesPageClient({ user, projects, modules, statsMap }: Modules
         data-tour="modules-kpis"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="grid grid-cols-2 sm:grid-cols-4 gap-4"
+        className="grid grid-cols-1 sm:grid-cols-3 gap-4"
       >
         <StatCard title="Total Modules / Service Areas" value={stats.total} iconName="Layers" delay={0} />
         <StatCard title="Active Modules / Service Areas" value={stats.active} iconName="Briefcase" delay={1} />
         <StatCard title="Completed" value={stats.completed} iconName="CheckCircle2" delay={2} />
-        <StatCard title="Archived" value={stats.archived} iconName="Layers" delay={3} />
       </motion.div>
 
       {/* Search & Filters */}
@@ -249,13 +213,13 @@ export function ModulesPageClient({ user, projects, modules, statsMap }: Modules
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 value={searchQuery}
-                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1) }}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search modules by name, description, or project..."
                 className="pl-9 h-10 rounded-xl bg-muted/30 border-border/50 text-sm"
               />
             </div>
 
-            <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
+            <Select value={sortBy} onValueChange={(v) => setSortBy(v as ModuleSort)}>
               <SelectTrigger className="w-[140px] h-10 rounded-xl bg-muted/20 border-border/50 text-sm">
                 <ArrowUpDown className="h-3.5 w-3.5 mr-1.5" />
                 <SelectValue />
@@ -303,7 +267,7 @@ export function ModulesPageClient({ user, projects, modules, statsMap }: Modules
                     <span className="text-xs text-muted-foreground font-medium">Filter by:</span>
                   </div>
 
-                  <Select value={selectedProject} onValueChange={(v) => { setSelectedProject(v); setCurrentPage(1) }}>
+                  <Select value={selectedProject} onValueChange={setSelectedProject}>
                     <SelectTrigger className="w-[180px] h-9 rounded-xl bg-muted/20 border-border/50 text-sm">
                       <SelectValue placeholder="Project" />
                     </SelectTrigger>
@@ -317,7 +281,7 @@ export function ModulesPageClient({ user, projects, modules, statsMap }: Modules
                     </SelectContent>
                   </Select>
 
-                  <Select value={selectedStatus} onValueChange={(v) => { setSelectedStatus(v); setCurrentPage(1) }}>
+                  <Select value={selectedStatus} onValueChange={setSelectedStatus}>
                     <SelectTrigger className="w-[140px] h-9 rounded-xl bg-muted/20 border-border/50 text-sm">
                       <SelectValue placeholder="Status" />
                     </SelectTrigger>
@@ -339,14 +303,17 @@ export function ModulesPageClient({ user, projects, modules, statsMap }: Modules
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground flex items-center gap-2">
           {searchLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Showing <span className="font-medium text-foreground">{filteredModules.length}</span>{' '}
-          {filteredModules.length === 1 ? 'module / service area' : 'modules / service areas'}
+          Showing <span className="font-medium text-foreground">{totalCount}</span>{' '}
+          {totalCount === 1 ? 'module / service area' : 'modules / service areas'}
           {hasFilters && ' (filtered)'}
+          {visibleModules.length < totalCount && (
+            <span className="text-xs">· {visibleModules.length} loaded</span>
+          )}
         </p>
       </div>
 
       {/* Modules Table */}
-      {filteredModules.length === 0 ? (
+      {nothingFound ? (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -357,7 +324,7 @@ export function ModulesPageClient({ user, projects, modules, statsMap }: Modules
               <Layers className="h-10 w-10 text-muted-foreground/50" />
             </div>
             <p className="font-semibold text-foreground text-lg">
-              {hasFilters ? 'No modules / service areas match your filters' : 'No modules / service areas yet'}
+              {hasFilters ? 'No modules / service areas found' : 'No modules / service areas yet'}
             </p>
             <p className="text-sm text-muted-foreground">
               {hasFilters
@@ -376,11 +343,13 @@ export function ModulesPageClient({ user, projects, modules, statsMap }: Modules
         </motion.div>
       ) : (
         <div data-tour="modules-table" className="rounded-xl bg-white dark:bg-slate-900 border border-border overflow-hidden shadow-sm">
-          <Table>
-            <TableHeader>
+          {/* The list scrolls inside this container (like the Ticket List) instead
+              of growing the page; the header row stays visible while scrolling. */}
+          <div ref={scrollContainerRef} data-testid="modules-table-scroll" className="max-h-[640px] overflow-auto overscroll-behavior-contain">
+          <table data-slot="table" className="w-full caption-bottom font-mono text-xs">
+            <TableHeader className="sticky top-0 z-10 bg-white dark:bg-slate-900">
               <TableRow className="bg-muted/30">
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Module / Service Area Name</TableHead>
-                <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Description</TableHead>
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Project</TableHead>
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</TableHead>
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider text-center">Tickets</TableHead>
@@ -390,86 +359,60 @@ export function ModulesPageClient({ user, projects, modules, statsMap }: Modules
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedModules.map((mod, i) => (
+              {visibleModules.map((mod) => (
                 <ModuleTableRow
                   key={mod.id}
                   mod={mod}
-                  statsMap={statsMap}
                   onDelete={handleDeleteModule}
                 />
               ))}
             </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div data-tour="modules-pagination" className="flex items-center justify-between pt-2">
-          <p className="text-sm text-muted-foreground">
-            Page {currentPage} of {totalPages}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={goToPrevPage} disabled={currentPage === 1} className="rounded-lg">
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              Previous
-            </Button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
-              .map((p, idx, arr) => {
-                const showEllipsis = idx > 0 && p - arr[idx - 1] > 1
-                return (
-                  <span key={p} className="flex items-center">
-                    {showEllipsis && <span className="px-1 text-muted-foreground">...</span>}
-                    <button
-                      onClick={() => goToPage(p)}
-                      className={`h-8 w-8 rounded-lg text-sm font-medium transition-colors ${
-                        currentPage === p ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  </span>
-                )
-              })}
-            <Button variant="outline" size="sm" onClick={goToNextPage} disabled={currentPage === totalPages} className="rounded-lg">
-              Next
-              <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
+          </table>
+          {/* Sentinel: next batch loads shortly before the bottom is reached
+              (IntersectionObserver rootMargin — works with touch scrolling). */}
+          <div ref={loadMoreRef} aria-hidden="true" />
+          <div className="px-4 py-3 text-center text-xs text-muted-foreground" role="status">
+            {loadingMore ? (
+              <span className="inline-flex items-center gap-1.5"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading more modules...</span>
+            ) : loadError ? (
+              <span className="text-destructive">Couldn't load more modules. Scroll to retry.</span>
+            ) : !hasMore && visibleModules.length > 0 ? (
+              'All modules / service areas loaded'
+            ) : null}
+          </div>
           </div>
         </div>
       )}
+
     </div>
   )
+}
+
+/** Module Detail page — used by both the module name and "View Module". */
+export function moduleDetailHref(moduleId: number): string {
+  return `/dashboard/modules/${moduleId}`
 }
 
 // ─── Memoized Module Table Row ────────────────────────────────────────
 const ModuleTableRow = memo(function ModuleTableRow({
   mod,
-  statsMap,
   onDelete,
 }: {
   mod: ModuleWithRelations
-  statsMap: Record<string, ModuleTicketStats>
   onDelete: (id: number) => void
 }) {
   const statusConfig = MODULE_STATUS_CONFIG[mod.status]
-  const stats = statsMap[mod.id]
-  const totalTickets = stats?.total ?? 0
+  const totalTickets = mod.ticketCount ?? 0
 
   return (
     <TableRow className="group hover:bg-muted/20 transition-colors">
       <TableCell>
-        <Link href={`/dashboard/tickets?moduleId=${mod.id}`} className="block group/cell">
+        {/* Same destination as the "View Module" menu item. */}
+        <Link href={moduleDetailHref(mod.id)} className="block group/cell">
           <p className="font-medium text-foreground text-sm group-hover/cell:text-primary transition-colors truncate max-w-[180px]">
             {mod.moduleName}
           </p>
         </Link>
-      </TableCell>
-      <TableCell>
-        <p className="text-xs text-muted-foreground truncate max-w-[200px]">
-          {stripHtml(mod.description) || '—'}
-        </p>
       </TableCell>
       <TableCell>
         <Link href={`/dashboard/projects/${mod.projectId}`} className="flex items-center gap-1.5 text-sm text-foreground hover:text-primary transition-colors">
@@ -508,7 +451,7 @@ const ModuleTableRow = memo(function ModuleTableRow({
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem asChild>
               {/* View Module → dedicated module detail page (not the generic tickets list) */}
-              <Link href={`/dashboard/modules/${mod.id}`} className="cursor-pointer flex items-center">
+              <Link href={moduleDetailHref(mod.id)} className="cursor-pointer flex items-center">
                 <Eye className="mr-2 h-4 w-4" />
                 View Module / Service Area
               </Link>

@@ -23,6 +23,7 @@ import {
 import { validateModuleSelection } from '@/lib/module-selection'
 import { isAtOrBelowCreateThreshold, buildWalletThresholdError, buildWalletInsufficientError } from '@/lib/wallet-validation'
 import { createAppError } from '@/lib/error-utils'
+import { findTicketWallet } from '@/lib/ticket-wallet'
 
 function generateTicketNumber() {
   const prefix = 'TKT'
@@ -96,7 +97,10 @@ export const createTicket = wrapServerAction('createTicket', async function crea
   // against the exact Support Hour Consumed amount (see the historical block
   // further down, which already correctly hard-rejects with no role bypass).
   if (data.ticketType !== 'historical') {
-    const [wallet] = await db.select().from(supportWallet).where(eq(supportWallet.clientId, actualClientId)).limit(1)
+    // The ticket's wallet (the client's own, else the project owner's — see
+    // lib/ticket-wallet.ts). remainingHours is the AVAILABLE balance: hours
+    // reserved by approved estimates on other tickets are already excluded.
+    const wallet = await findTicketWallet(db, { clientId: actualClientId, projectId: data.projectId ?? null })
     if (wallet) {
       // Section 1/2: the 10% remaining-balance threshold blocks a CLIENT
       // creating their own ticket only — admin/project_manager are an
@@ -141,7 +145,7 @@ export const createTicket = wrapServerAction('createTicket', async function crea
     const datesCheck = validateHistoricalDates(parsedCreatedAt, parsedClosedAt)
     if (!datesCheck.valid) throw new Error(datesCheck.error)
 
-    const [wallet] = await db.select().from(supportWallet).where(eq(supportWallet.clientId, actualClientId)).limit(1)
+    const wallet = await findTicketWallet(db, { clientId: actualClientId, projectId: data.projectId ?? null })
     if (!wallet) throw new Error('This client has no Support Wallet — a historical ticket requires an existing wallet to deduct hours from.')
 
     const sufficiencyCheck = checkWalletSufficiency(hoursCheck.hours, wallet.remainingHours)

@@ -349,6 +349,13 @@ export async function invalidateWalletCaches(walletId?: number) {
     revalidateTag(WALLET_CACHE_TAGS.WALLET_DETAIL(walletId))
     revalidateTag(WALLET_CACHE_TAGS.TRANSACTIONS(walletId))
   }
+  // The cached wallet queries are tagged with these shared tags (not the
+  // per-wallet ones above) — without them the wallet detail KPIs, history and
+  // per-project wallet stayed stale until their TTL expired.
+  revalidateTag('wallet-detail')
+  revalidateTag('wallet-project')
+  revalidateTag('wallet-transactions')
+  revalidateTag('wallet-consumption')
   // Invalidate dashboard renewal banner cache — hours/contract changes affect it
   revalidateTag('renewal-status')
 }

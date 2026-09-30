@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { resourceLabel } from '@/lib/ticket-assignment'
 import { motion, AnimatePresence } from 'framer-motion'
 import { submitEstimate, updateEstimate, approveEstimate, declineAdditionalHours } from '@/app/actions/estimates'
 import { assignTicket } from '@/app/actions/tickets'
@@ -36,6 +37,7 @@ import { TicketStatus, VALIDATION } from '@/lib/types'
 
 interface Developer {
   id: string
+  role?: 'developer' | 'project_manager'
   name: string
   email: string
   activeTickets: number
@@ -352,7 +354,7 @@ export function EstimateSection({
                   {developers.map((dev) => (
                     <SelectItem key={dev.id} value={dev.id}>
                       <div className="flex items-center justify-between gap-4 w-full">
-                        <span>{dev.name}</span>
+                        <span>{resourceLabel(dev)}</span>
                         <span className="text-xs text-muted-foreground">
                           {dev.activeTickets} active tickets
                         </span>
@@ -569,7 +571,7 @@ export function EstimateSection({
                     {developers.map((dev) => (
                       <SelectItem key={dev.id} value={dev.id}>
                         <div className="flex items-center justify-between gap-4 w-full">
-                          <span>{dev.name}</span>
+                          <span>{resourceLabel(dev)}</span>
                           <span className="text-xs text-muted-foreground">
                             {dev.activeTickets} active tickets
                           </span>

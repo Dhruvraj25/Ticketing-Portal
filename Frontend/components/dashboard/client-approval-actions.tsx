@@ -25,15 +25,22 @@ import {
 } from '@/components/ui/dialog'
 import { Loader2, CheckCircle2, XCircle, RotateCcw, ClipboardCheck, RefreshCw, Upload } from 'lucide-react'
 import { TicketStatus } from '@/lib/types'
+import { actionFailure, canCloseTicket, closeTicketDeniedMessage, revisionDeniedMessage } from '@/lib/client-ticket-rules'
 
 interface ClientApprovalActionsProps {
   ticketId: number
   currentStatus: TicketStatus
   revisionCount?: number
   closedAt?: Date | string | null
+  /** Signed-in user — only the account that RAISED the ticket may close it. */
+  currentUserId?: string
+  ticketClientId?: string | null
+  raisedByName?: string | null
 }
 
-export function ClientApprovalActions({ ticketId, currentStatus, revisionCount = 0, closedAt }: ClientApprovalActionsProps) {
+export function ClientApprovalActions({ ticketId, currentStatus, revisionCount = 0, closedAt, currentUserId, ticketClientId, raisedByName }: ClientApprovalActionsProps) {
+  // Mirrors the server rule (clientApproveTicket): only the raiser can close.
+  const mayClose = currentUserId ? canCloseTicket({ id: currentUserId }, ticketClientId) : true
   const router = useRouter()
   const [loading, setLoading] = useState<'approve' | 'reject' | 'reopen' | 'revision' | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -55,7 +62,13 @@ export function ClientApprovalActions({ ticketId, currentStatus, revisionCount =
     setError(null)
     setLoading('approve')
     try {
-      await clientApproveTicket(ticketId)
+      const res = await clientApproveTicket(ticketId)
+      // Refusals come back as a structured result (never thrown into React).
+      const failure = actionFailure(res)
+      if (failure) {
+        setError(failure)
+        return
+      }
       router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to approve ticket')
@@ -85,12 +98,18 @@ export function ClientApprovalActions({ ticketId, currentStatus, revisionCount =
     setError(null)
     setLoading('revision')
     try {
-      await requestRevision({
+      const res = await requestRevision({
         ticketId,
         revisionNotes: revisionNotes.trim(),
         priority: revisionPriority || null,
         attachmentIds: revisionAttachmentIds.length > 0 ? revisionAttachmentIds : null,
       })
+      const failure = actionFailure(res)
+      if (failure) {
+        setError(failure)
+        setRevisionDialogOpen(false)
+        return
+      }
       setRevisionDialogOpen(false)
       setRevisionNotes('')
       setRevisionPriority('')
@@ -110,16 +129,26 @@ export function ClientApprovalActions({ ticketId, currentStatus, revisionCount =
         <Card data-tour="ticket-client-approval" className="p-5 bg-white dark:bg-slate-900 border-sky-500/30">
           <div className="flex items-center gap-2 mb-1">
             <ClipboardCheck className="h-4 w-4 text-sky-400" />
-            <h3 className="font-semibold text-foreground">Your Approval Required</h3>
+            <h3 className="font-semibold text-foreground">{mayClose ? 'Your Approval Required' : 'Approval unavailable'}</h3>
           </div>
           <p className="text-xs text-muted-foreground mb-4">
-            The team has resolved this ticket. Please review the result and choose an action below.
+            {mayClose
+              ? 'The team has resolved this ticket. Please review the result and choose an action below.'
+              : 'The team has resolved this ticket. Only the client account that created it can complete it or request a revision.'}
           </p>
           {revisionCount > 0 && (
             <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 rounded-lg px-3 py-2 mb-4">
               This ticket has {revisionCount} Revision request{revisionCount !== 1 ? 's' : ''}.
             </p>
           )}
+          {!mayClose && (
+            // Same rule the server enforces (clientApproveTicket / requestRevision).
+            <div className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 rounded-lg px-3 py-2 mb-4 space-y-1">
+              <p>{closeTicketDeniedMessage(raisedByName)}</p>
+              <p>{revisionDeniedMessage(raisedByName)}</p>
+            </div>
+          )}
+          {mayClose && (
           <div className="flex flex-wrap gap-2">
             <Button
               onClick={handleApprove}
@@ -142,6 +171,7 @@ export function ClientApprovalActions({ ticketId, currentStatus, revisionCount =
               <RefreshCw className="h-4 w-4" />Request For Revision</Button>
 
           </div>
+          )}
           {error && <p className="text-sm text-destructive mt-3">{error}</p>}
         </Card>
 

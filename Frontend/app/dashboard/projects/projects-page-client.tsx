@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { format } from 'date-fns'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { projectCompletionPercent, projectTicketSummary } from '@/lib/project-progress'
 import { PageHeaderIcon } from '@/components/dashboard/page-header-icon'
 import { stripHtml } from '@/lib/format'
 import { useDebounce } from '@/hooks/use-debounce'
@@ -507,7 +508,9 @@ export function ProjectsPageClient({ user, projects, isManagerOrAdmin }: Project
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Key</TableHead>
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</TableHead>
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Support Manager</TableHead>
-                <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider text-center">Team Size</TableHead>
+                {user.role !== 'client' && (
+                  <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider text-center">Team Size</TableHead>
+                )}
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider text-center">Modules / Service Areas</TableHead>
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider text-center">Tickets</TableHead>
                 <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Progress</TableHead>
@@ -546,9 +549,11 @@ export function ProjectsPageClient({ user, projects, isManagerOrAdmin }: Project
                       </span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-center">
-                    <span className="text-sm font-medium text-foreground">—</span>
-                  </TableCell>
+                  {user.role !== 'client' && (
+                    <TableCell className="text-center">
+                      <span className="text-sm font-medium text-foreground">—</span>
+                    </TableCell>
+                  )}
                   <TableCell className="text-center">
                     <span className="text-sm font-medium text-foreground">{project.moduleCount ?? 0}</span>
                   </TableCell>
@@ -1016,27 +1021,14 @@ const ProjectCardList = memo(function ProjectCardList({
 });
 
 // ─── Helpers ────────────────────────────────────────────────────────────
+// Completion = closed tickets / all tickets (lib/project-progress.ts — same
+// rule as the Project Progress report). Previously this was derived from the
+// ticket COUNT alone (total / (total + 5), capped at 95%) and the open/resolved
+// split was a fixed 40/60 guess, so neither reflected actual ticket statuses.
 function getProgressValue(project: ProjectWithRelations): number {
-  if (project.status === 'completed' || project.status === 'archived') return 100
-  const total = project.ticketCount || 0
-  if (total === 0) return 0
-  return Math.min(Math.round((total / Math.max(total + 5, 1)) * 100), 95)
+  return projectCompletionPercent(project)
 }
 
-function getTicketSummary(project: ProjectWithRelations): {
-  open: number
-  resolved: number
-  openPct: number
-  resolvedPct: number
-} {
-  const total = project.ticketCount || 0
-  if (total === 0) return { open: 0, resolved: 0, openPct: 0, resolvedPct: 100 }
-  const open = Math.round(total * 0.4)
-  const resolved = total - open
-  return {
-    open,
-    resolved,
-    openPct: (open / total) * 100,
-    resolvedPct: (resolved / total) * 100,
-  }
+function getTicketSummary(project: ProjectWithRelations) {
+  return projectTicketSummary(project)
 }

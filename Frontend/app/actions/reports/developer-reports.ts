@@ -2,8 +2,9 @@
 'use server'
 
 import { db } from '@/lib/db'
+import { timeLogIsBillable } from '@/lib/billing-sql'
 import { timeLog, ticket, user } from '@/lib/db/schema'
-import { and, eq, desc, count, inArray, gte, lte, sum, isNotNull, ne } from 'drizzle-orm'
+import { and, eq, desc, count, inArray, gte, lte, sum, isNotNull, ne, sql } from 'drizzle-orm'
 import { TicketStatus } from '@/lib/types'
 import type { ReportFilters, ReportResult } from './types'
 import { getDateRange } from './types'
@@ -148,7 +149,10 @@ export async function getDeveloperWorkloadReport(filters: ReportFilters, current
 export async function getWorklogReport(filters: ReportFilters, currentUser: CurrentUser): Promise<ReportResult> {
   const { since, until } = getDateRange(filters.dateFrom, filters.dateTo)
   const conditions: any[] = [gte(timeLog.startTime, since), lte(timeLog.startTime, until), isNotNull(timeLog.endTime)]
-  if (filters.developerId) conditions.push(eq(timeLog.userId, filters.developerId))
+  // A developer only ever sees their OWN time entries (the Time Tracking
+  // page links here); admin / project manager may filter by developer.
+  if (currentUser.role === 'developer') conditions.push(eq(timeLog.userId, currentUser.id))
+  else if (filters.developerId) conditions.push(eq(timeLog.userId, filters.developerId))
 
   // OPTIMIZATION: Use LEFT JOINs instead of 3 separate queries (timeLog + user + ticket).
   // Before: 1 x timeLog query + 1 x user query + 1 x ticket query = 3 queries + JS enrichment
@@ -158,7 +162,7 @@ export async function getWorklogReport(filters: ReportFilters, currentUser: Curr
       id: timeLog.id, userId: timeLog.userId, ticketId: timeLog.ticketId,
       description: timeLog.description, startTime: timeLog.startTime,
       endTime: timeLog.endTime, durationMinutes: timeLog.durationMinutes,
-      isBillable: timeLog.isBillable,
+      isBillable: timeLogIsBillable,
       userName: user.name,
       ticketNumber: ticket.ticketNumber,
     })
@@ -216,8 +220,11 @@ export async function getWorklogReport(filters: ReportFilters, currentUser: Curr
 // ─── Report: Billable Hours ──────────────────────────────────────────────
 export async function getBillableHoursReport(filters: ReportFilters, currentUser: CurrentUser): Promise<ReportResult> {
   const { since, until } = getDateRange(filters.dateFrom, filters.dateTo)
-  const conditions: any[] = [eq(timeLog.isBillable, true), gte(timeLog.startTime, since), lte(timeLog.startTime, until), isNotNull(timeLog.endTime)]
-  if (filters.developerId) conditions.push(eq(timeLog.userId, filters.developerId))
+  const conditions: any[] = [timeLogIsBillable, gte(timeLog.startTime, since), lte(timeLog.startTime, until), isNotNull(timeLog.endTime)]
+  // A developer only ever sees their OWN time entries (the Time Tracking
+  // page links here); admin / project manager may filter by developer.
+  if (currentUser.role === 'developer') conditions.push(eq(timeLog.userId, currentUser.id))
+  else if (filters.developerId) conditions.push(eq(timeLog.userId, filters.developerId))
 
   const logs = await db
     .select({
@@ -241,8 +248,11 @@ export async function getBillableHoursReport(filters: ReportFilters, currentUser
 // ─── Report: Non-Billable Hours ──────────────────────────────────────────
 export async function getNonBillableHoursReport(filters: ReportFilters, currentUser: CurrentUser): Promise<ReportResult> {
   const { since, until } = getDateRange(filters.dateFrom, filters.dateTo)
-  const conditions: any[] = [eq(timeLog.isBillable, false), gte(timeLog.startTime, since), lte(timeLog.startTime, until), isNotNull(timeLog.endTime)]
-  if (filters.developerId) conditions.push(eq(timeLog.userId, filters.developerId))
+  const conditions: any[] = [sql`NOT ${timeLogIsBillable}`, gte(timeLog.startTime, since), lte(timeLog.startTime, until), isNotNull(timeLog.endTime)]
+  // A developer only ever sees their OWN time entries (the Time Tracking
+  // page links here); admin / project manager may filter by developer.
+  if (currentUser.role === 'developer') conditions.push(eq(timeLog.userId, currentUser.id))
+  else if (filters.developerId) conditions.push(eq(timeLog.userId, filters.developerId))
 
   const logs = await db
     .select({

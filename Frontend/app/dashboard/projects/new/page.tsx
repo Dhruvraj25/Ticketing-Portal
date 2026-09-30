@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { createProject } from '@/app/actions/projects'
+import { createProject, getProjectCompanies } from '@/app/actions/projects'
 import { WorkspaceContainer } from '@/components/dashboard/workspace-container'
 import { PageHeaderIcon } from '@/components/dashboard/page-header-icon'
 import { PageTimer } from '@/lib/performance-profiler'
@@ -28,26 +28,43 @@ interface UserOption {
   role: string
 }
 
+interface CompanyOption {
+  /** Company identifier — the server resolves it to ALL of the company's client users. */
+  key: string
+  companyName: string
+  companyCode: string | null
+  clientCount: number
+}
+
+// Grid children and triggers must be allowed to shrink (min-w-0 / w-full) and
+// the selected value must truncate — otherwise a long value widens its trigger
+// past the column and overlaps the neighbouring field.
+const FORM_SELECT_TRIGGER = 'bg-input/50 w-full min-w-0 [&>[data-slot=select-value]]:min-w-0'
+
 export default function NewProjectPage() {
   const router = useRouter()
   const pageTimer = new PageTimer('New Project Page')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [projectName, setProjectName] = useState('')
-  const [clientId, setClientId] = useState('')
+  const [companyKey, setCompanyKey] = useState('')
   const [managerId, setManagerId] = useState('')
   const [description, setDescription] = useState('')
   const [startDate, setStartDate] = useState('')
 
-  const [clients, setClients] = useState<UserOption[]>([])
+  const [companies, setCompanies] = useState<CompanyOption[]>([])
   const [managers, setManagers] = useState<UserOption[]>([])
+  const selectedCompany = companies.find((c) => c.key === companyKey)
+  const selectedManager = managers.find((m) => m.id === managerId)
 
   useEffect(() => {
     async function loadUsers() {
       try {
         const { getUserList } = await import('@/app/actions/users')
-        const allUsers = await getUserList()
-        setClients(allUsers.filter((u: UserOption) => u.role === 'client'))
+        // Companies (never individual users) for the Company field; users only
+        // for the Support Manager field.
+        const [allUsers, companyList] = await Promise.all([getUserList(), getProjectCompanies()])
+        setCompanies(companyList)
         setManagers(
           allUsers.filter(
             (u: UserOption) => u.role === 'project_manager',
@@ -64,8 +81,8 @@ export default function NewProjectPage() {
     e.preventDefault()
     setError(null)
 
-    if (!clientId) {
-      setError('Please select a client')
+    if (!companyKey) {
+      setError('Please select a company')
       return
     }
 
@@ -79,7 +96,7 @@ export default function NewProjectPage() {
     try {
       const project = await createProject({
         projectName,
-        clientId,
+        companyKey,
         managerId,
         description: description || undefined,
         startDate: startDate || undefined,
@@ -131,21 +148,29 @@ export default function NewProjectPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2" data-tour="new-project-client">
-                <Label htmlFor="client">Client</Label>
-                <Select value={clientId} onValueChange={setClientId}>
-                  <SelectTrigger className="bg-input/50">
-                    <SelectValue placeholder="Select client" />
+              <div className="space-y-2 min-w-0" data-tour="new-project-client">
+                <Label htmlFor="company">Company</Label>
+                <Select value={companyKey} onValueChange={setCompanyKey}>
+                  <SelectTrigger id="company" className={FORM_SELECT_TRIGGER}>
+                    {/* Trigger shows only the company name, truncated to the field width. */}
+                    <SelectValue placeholder="Select company">
+                      {selectedCompany && <span className="block truncate">{selectedCompany.companyName}</span>}
+                    </SelectValue>
                   </SelectTrigger>
-                  <SelectContent>
-                    {clients.length === 0 ? (
-                      <SelectItem value="no-clients" disabled>
-                        No clients available
+                  <SelectContent position="popper" className="max-w-[min(28rem,calc(100vw-2rem))]">
+                    {companies.length === 0 ? (
+                      <SelectItem value="no-companies" disabled>
+                        No companies available
                       </SelectItem>
                     ) : (
-                      clients.map((c) => (
-                        <SelectItem key={c.id} value={c.id} className="truncate">
-                          <span className="truncate">{c.name} ({c.email})</span>
+                      companies.map((c) => (
+                        <SelectItem key={c.key} value={c.key}>
+                          <span className="flex min-w-0 flex-col">
+                            <span className="truncate font-medium">{c.companyName}</span>
+                            <span className="truncate text-xs text-muted-foreground">
+                              {[c.companyCode, ` client user`].filter(Boolean).join(' · ')}
+                            </span>
+                          </span>
                         </SelectItem>
                       ))
                     )}
@@ -153,13 +178,15 @@ export default function NewProjectPage() {
                 </Select>
               </div>
 
-              <div className="space-y-2" data-tour="new-project-manager">
+              <div className="space-y-2 min-w-0" data-tour="new-project-manager">
                 <Label htmlFor="manager">Support Manager</Label>
                 <Select value={managerId} onValueChange={setManagerId}>
-                  <SelectTrigger className="bg-input/50">
-                    <SelectValue placeholder="Select support manager" />
+                  <SelectTrigger id="manager" className={FORM_SELECT_TRIGGER}>
+                    <SelectValue placeholder="Select support manager">
+                      {selectedManager && <span className="block truncate">{selectedManager.name} ({selectedManager.email})</span>}
+                    </SelectValue>
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" className="max-w-[min(28rem,calc(100vw-2rem))]">
                     {managers.length === 0 ? (
                       <SelectItem value="no-managers" disabled>
                         No support managers available

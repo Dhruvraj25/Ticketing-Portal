@@ -1,5 +1,7 @@
 import { PageTimer } from '@/lib/performance-profiler'
-import { getCurrentUser, getEmployeeProductivity, getCachedWorklogs, getPaginatedWorklogs } from '@/app/actions/tickets'
+import { timeLogIsBillable } from '@/lib/billing-sql'
+import { getCurrentUser, getEmployeeProductivity, getCachedWorklogs, getPaginatedWorklogs, getTicketWorkActivity } from '@/app/actions/tickets'
+import { WORK_ACTIVITY_BATCH } from '@/lib/work-activity'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { timeLog, ticket, user } from '@/lib/db/schema'
@@ -58,7 +60,8 @@ async function getAllWorklogs(): Promise<WorklogEntry[]> {
         startTime: timeLog.startTime,
         durationMinutes: timeLog.durationMinutes,
         endTime: timeLog.endTime,
-        isBillable: timeLog.isBillable,
+        // Billable from the ticket's workflow (lib/billing-sql.ts)
+        isBillable: timeLogIsBillable,
         // JOIN enrichment directly in SQL
         userName: user.name,
         userRole: user.role,
@@ -106,10 +109,13 @@ export default async function WorklogsPage() {
     redirect('/dashboard')
   }
 
-  const [worklogs, productivity, initialActivity] = await Promise.all([
+  const [worklogs, productivity, initialActivity, initialTicketActivity] = await Promise.all([
     worklogsPromise,
     productivityPromise,
     initialActivityPromise,
+    // Ticket-wise work events (existing ticket history) — started after the
+    // role check above, first batch only; more load on scroll.
+    getTicketWorkActivity(WORK_ACTIVITY_BATCH, 0),
   ])
 
   const totalMinutes = worklogs.reduce((s: number, l) => s + (l.durationMinutes || 0), 0)
@@ -254,7 +260,11 @@ export default async function WorklogsPage() {
           </div>
 
           {/* Activity Log Panel — sticky, paginated, infinite scroll */}
-          <ActivityLogPanel initialLogs={initialActivity.logs} initialHasMore={initialActivity.hasMore} />
+          <ActivityLogPanel
+            initialLogs={initialActivity.logs}
+            initialHasMore={initialActivity.hasMore}
+            initialTicketActivity={initialTicketActivity}
+          />
         </div>
     </div>
   )

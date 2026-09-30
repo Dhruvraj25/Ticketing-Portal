@@ -12,7 +12,9 @@ import type { UserRole } from '@/lib/types'
 import { dispatchNotification } from '@/lib/notify-all'
 import { VALIDATION, validateField } from '@/lib/types'
 import type { RevisionHistory, RevisionHistoryWithAttachments, TicketStatus, TicketPriority, TicketCategory } from '@/lib/types'
-import { wrapServerAction } from '@/lib/performance-profiler'
+import { wrapServerAction } from '@/lib/performance-profiler'
+import { clientTicketActionDenial, NO_TICKET_ACCESS_MESSAGE } from '@/lib/client-ticket-rules'
+import { isClientOfTicketProject, ticketRaiserName } from '@/lib/client-ticket-permissions'
 
 // ============================================================================
 // REVISION ACTIONS
@@ -245,16 +247,30 @@ export const requestRevision = wrapServerAction('requestRevision', async functio
   if (notesErr) throw new Error(notesErr)
 
   const [t] = await db.select().from(ticket).where(eq(ticket.id, data.ticketId)).limit(1)
-  if (!t) throw new Error('Ticket not found')
+  if (!t) {
+    if (currentUser.role === 'client') return { success: false as const, error: 'Ticket not found.' }
+    throw new Error('Ticket not found')
+  }
 
   // Managers and admins can request revision on any ticket — no status restrictions
-  // Clients can only request revision when the ticket is in client_review status
+  // Clients can only request revision when the ticket is in client_review status,
+  // and only the client account that CREATED the ticket. Client refusals are
+  // RETURNED (never thrown): production Next.js strips thrown server-action
+  // messages, which surfaced as a generic / minified React error.
   if (currentUser.role === 'client') {
-    if (t.status !== 'client_review') {
-      throw new Error('Client can only request revision when ticket is awaiting your approval')
-    }
     if (t.clientId !== currentUser.id) {
-      throw new Error('Access denied')
+      const actorOnProject = await isClientOfTicketProject(currentUser.id, t)
+      const error = clientTicketActionDenial({
+        actorId: currentUser.id,
+        ticketClientId: t.clientId,
+        raiserName: actorOnProject ? await ticketRaiserName(t.clientId) : null,
+        actorOnProject,
+        action: 'revision',
+      })
+      return { success: false as const, error: error ?? NO_TICKET_ACCESS_MESSAGE }
+    }
+    if (t.status !== 'client_review') {
+      return { success: false as const, error: 'You can only request a revision while the ticket is awaiting your approval.' }
     }
   }
 
