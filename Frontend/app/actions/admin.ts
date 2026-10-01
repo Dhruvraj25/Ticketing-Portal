@@ -345,7 +345,8 @@ export const createUser = wrapServerAction('createUser', async function createUs
     throw new Error('The user profile was created, but the login account could not be created. Please try again or contact an administrator.')
   }
 
-  // Auto-create support wallet for client users
+  // Client users created here have no company yet: they become a company of
+  // their own with one (empty) company wallet — see autoCreateWalletForClient.
   if (data.role === 'client') {
     try {
       const { autoCreateWalletForClient } = await import('@/app/actions/wallets')

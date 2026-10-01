@@ -235,7 +235,7 @@ export function WalletDetailClient({
               </span>
             </div>
             <h1 className="text-2xl font-bold text-foreground tracking-tight">
-              {wallet.clientName} — Support Wallet
+              {wallet.companyName || wallet.clientName} — Support Wallet
             </h1>
           </div>
           <div className="flex items-center gap-3">
@@ -318,21 +318,25 @@ export function WalletDetailClient({
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Client Information */}
             <div className="rounded-xl bg-white dark:bg-slate-900 border border-border p-5">
-              <h3 className="text-sm font-semibold text-foreground mb-4">Client Information</h3>
+              <h3 className="text-sm font-semibold text-foreground mb-4">Company Information</h3>
               <div className="space-y-3">
                 <div className="flex items-center justify-between py-2 border-b border-border/50">
                   <span className="text-xs text-muted-foreground flex items-center gap-1.5">
                     <User className="h-3.5 w-3.5" />
-                    Client Name
+                    Company
                   </span>
-                  <span className="text-sm font-medium text-foreground">{wallet.clientName}</span>
+                  <span className="text-sm font-medium text-foreground">
+                    {wallet.companyName || wallet.clientName}{wallet.companyCode ? ` (${wallet.companyCode})` : ''}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between py-2 border-b border-border/50">
                   <span className="text-xs text-muted-foreground flex items-center gap-1.5">
                     <User className="h-3.5 w-3.5" />
-                    Client Email
+                    Primary Contact
                   </span>
-                  <span className="text-sm font-medium text-foreground">{wallet.clientEmail}</span>
+                  <span className="text-sm font-medium text-foreground">
+                    {wallet.contactName || '—'}{wallet.clientEmail ? ` · ${wallet.clientEmail}` : ''}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between py-2 border-b border-border/50">
                   <span className="text-xs text-muted-foreground flex items-center gap-1.5">

@@ -8,6 +8,8 @@ import { revalidateTag } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth-utils'
 import type { WalletAlertType } from '@/lib/types'
 import { WALLET_CACHE_TAGS } from './constants'
+import { assertClientWalletAccess, companiesByIds, visibleCompanyIds } from '@/lib/company-wallet'
+import { walletOwnerLabel } from '@/lib/company-wallet-rules'
 
 // ─── Generate alerts based on balance ──────────────────────────────────
 export async function generateAlertsForWallet(walletId: number, remainingHours: number) {
@@ -142,9 +144,7 @@ export const getWalletAlerts = async function getWalletAlerts(walletId: number) 
     .limit(1)
 
   if (!w) throw new Error('Wallet not found')
-  if (currentUser.role === 'client' && w.clientId !== currentUser.id) {
-    throw new Error('Access denied')
-  }
+  await assertClientWalletAccess(db, currentUser, w)
 
   const alerts = await db
     .select()
@@ -183,27 +183,15 @@ export const getActiveWalletAlerts = async function getActiveWalletAlerts() {
   const conditions = [isNull(walletAlert.resolvedAt)]
   let walletIdFilter: number[] | null = null
 
-  if (currentUser.role === 'client') {
-    const clientWallets = await db
+  // Company wallets: client → own company; manager → managed projects' companies.
+  if (currentUser.role === 'client' || currentUser.role === 'project_manager') {
+    const companyIds = await visibleCompanyIds(db, currentUser)
+    if (!companyIds || companyIds.length === 0) return []
+    const walletRows = await db
       .select({ id: supportWallet.id })
       .from(supportWallet)
-      .where(eq(supportWallet.clientId, currentUser.id))
-    walletIdFilter = clientWallets.map(w => w.id)
-  } else if (currentUser.role === 'project_manager') {
-    const projectRows = await db
-      .select({ id: project.id, clientId: project.clientId })
-      .from(project)
-      .where(eq(project.managerId, currentUser.id))
-    const managedClientIds = [...new Set(projectRows.map(p => p.clientId))]
-    if (managedClientIds.length > 0) {
-      const walletRows = await db
-        .select({ id: supportWallet.id })
-        .from(supportWallet)
-        .where(inArray(supportWallet.clientId, managedClientIds))
-      walletIdFilter = walletRows.map(w => w.id)
-    } else {
-      return []
-    }
+      .where(inArray(supportWallet.companyId, companyIds))
+    walletIdFilter = walletRows.map(w => w.id)
   }
 
   if (walletIdFilter !== null) {
@@ -232,25 +220,26 @@ export const getActiveWalletAlerts = async function getActiveWalletAlerts() {
   const userIds = [...new Set(walletRows.map(w => w.clientId))]
   const projectIds = [...new Set(walletRows.map(w => w.projectId).filter((id): id is number => id !== null))]
 
-  const [users, projects] = await Promise.all([
+  const [users, projects, companies] = await Promise.all([
     userIds.length > 0
       ? db.select({ id: user.id, name: user.name }).from(user).where(inArray(user.id, userIds))
       : Promise.resolve([]),
     projectIds.length > 0
       ? db.select({ id: project.id, projectName: project.projectName }).from(project).where(inArray(project.id, projectIds))
       : Promise.resolve([]),
+    companiesByIds(db, walletRows.map(w => w.companyId)),
   ])
 
   const userMap = new Map(users.map(u => [u.id, u]))
   const projectMap = new Map(projects.map(p => [p.id, p.projectName]))
-  const walletMap = new Map(walletRows.map(w => [w.id, { clientId: w.clientId, projectId: w.projectId }]))
+  const walletMap = new Map(walletRows.map(w => [w.id, { clientId: w.clientId, companyId: w.companyId, projectId: w.projectId }]))
 
   return alerts.map(a => {
     const w = walletMap.get(a.walletId)
     return {
       ...a,
       alertType: a.alertType as WalletAlertType,
-      clientName: w ? userMap.get(w.clientId)?.name ?? undefined : undefined,
+      clientName: w ? walletOwnerLabel(w.companyId != null ? companies.get(w.companyId)?.name : null, userMap.get(w.clientId)?.name) : undefined,
       projectName: w ? projectMap.get(w.projectId!) ?? undefined : undefined,
     }
   })

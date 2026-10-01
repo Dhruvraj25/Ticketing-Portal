@@ -63,10 +63,10 @@ const WalletTableRow = memo(function WalletTableRow({
         <Link href={`/dashboard/wallets/${wallet.id}`} className="block group/cell">
           <p className="text-sm font-medium text-foreground group-hover/cell:text-primary transition-colors truncate max-w-[150px]">
             {wallet.clientEmail || (
-              <span className="text-muted-foreground italic">Client Wallet</span>
+              <span className="text-muted-foreground italic">Company Wallet</span>
             )}
           </p>
-          <span className="text-xs text-muted-foreground">Client Wallet</span>
+          <span className="text-xs text-muted-foreground">Company Wallet{wallet.contactName ? ` · ${wallet.contactName}` : ''}</span>
         </Link>
       </TableCell>
       <TableCell className="text-center">
@@ -186,7 +186,7 @@ export const WalletTable = memo(function WalletTable({
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/30">
-            <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Client</TableHead>
+            <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Company</TableHead>
             <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Project</TableHead>
             <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider text-center">Purchased</TableHead>
             <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider text-center">Reserved</TableHead>

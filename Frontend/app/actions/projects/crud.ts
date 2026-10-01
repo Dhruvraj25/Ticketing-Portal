@@ -1,8 +1,8 @@
 'use server'
 
 import { db } from '@/lib/db'
-import { project, projectClient, user } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { company, project, projectClient, user } from '@/lib/db/schema'
+import { asc, eq } from 'drizzle-orm'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { VALIDATION, validateField } from '@/lib/types'
 import { getPortalUrl } from '@/lib/urls'
@@ -11,7 +11,7 @@ import { wrapServerAction } from '@/lib/performance-profiler'
 import { getCurrentUser } from '@/lib/auth-utils'
 import { dispatchNotification } from '@/lib/notify-all'
 import { deriveProjectCodeBase, withUniqueProjectCode } from '@/lib/project-code'
-import { buildCompanyDirectory, resolveCompany } from '@/lib/company-directory'
+import { companyClientUsers } from '@/lib/company-wallet'
 
 // ============================================================================
 // CREATE
@@ -26,19 +26,13 @@ function invalidateProjectCaches(projectId?: number) {
   revalidateTag('project-ticket-analytics', { expire: 60 })
 }
 
-/** Client users (with their company fields) — the only source of company data. */
-async function loadCompanyDirectoryUsers() {
-  return db
-    .select({
-      id: user.id,
-      role: user.role,
-      companyName: user.companyName,
-      companyCode: user.companyCode,
-      userType: user.userType,
-      createdAt: user.createdAt,
-    })
-    .from(user)
-    .where(eq(user.role, 'client'))
+const COMPANY_KEY_PREFIX = 'company:'
+
+/** "company:<id>" → id (the UI passes the key back; resolved again server-side). */
+function companyIdFromKey(key: string): number | null {
+  if (!key.startsWith(COMPANY_KEY_PREFIX)) return null
+  const id = Number(key.slice(COMPANY_KEY_PREFIX.length))
+  return Number.isInteger(id) && id > 0 ? id : null
 }
 
 export interface ProjectCompanyOption {
@@ -49,21 +43,29 @@ export interface ProjectCompanyOption {
 }
 
 /**
- * New Project → Company dropdown: unique customer companies (from client
- * users' companyName/companyCode). Returns companies only — never individual
- * user names or emails.
+ * New Project → Company dropdown: the customer companies (company table, the
+ * same identity that owns the company's support wallet). Returns companies
+ * only — never individual user names or emails.
  */
 export const getProjectCompanies = wrapServerAction('getProjectCompanies', async function getProjectCompanies(): Promise<ProjectCompanyOption[]> {
   const currentUser = await getCurrentUser()
   if (currentUser.role !== 'project_manager' && currentUser.role !== 'admin') {
     throw new Error('Access denied')
   }
-  return buildCompanyDirectory(await loadCompanyDirectoryUsers()).map((c) => ({
-    key: c.key,
-    companyName: c.companyName,
-    companyCode: c.companyCode,
-    clientCount: c.clientUserIds.length,
-  }))
+  const [companies, clients] = await Promise.all([
+    db.select({ id: company.id, name: company.name, code: company.code }).from(company).orderBy(asc(company.name)),
+    db.select({ companyId: user.companyId }).from(user).where(eq(user.role, 'client')),
+  ])
+  const counts = new Map<number, number>()
+  for (const c of clients) if (c.companyId != null) counts.set(c.companyId, (counts.get(c.companyId) ?? 0) + 1)
+  return companies
+    .filter((c) => (counts.get(c.id) ?? 0) > 0)
+    .map((c) => ({
+      key: `${COMPANY_KEY_PREFIX}${c.id}`,
+      companyName: c.name,
+      companyCode: c.code ?? null,
+      clientCount: counts.get(c.id) ?? 0,
+    }))
 })
 
 export const createProject = wrapServerAction('createProject', async function createProject(data: {
@@ -91,14 +93,21 @@ export const createProject = wrapServerAction('createProject', async function cr
   // The project is created for EVERY client user of the selected company.
   // Resolved server-side from the database — never from a client-supplied
   // list of user ids. Only role='client' users belong to a company.
-  const company = resolveCompany(await loadCompanyDirectoryUsers(), data.companyKey)
-  if (!company) {
+  const companyId = companyIdFromKey(data.companyKey)
+  const [selectedCompany] = companyId
+    ? await db.select({ id: company.id }).from(company).where(eq(company.id, companyId)).limit(1)
+    : []
+  if (!selectedCompany) {
     throw new Error('The selected company was not found. Refresh the page and try again.')
   }
-  if (company.clientUserIds.length === 0) {
+  const companyUsers = await companyClientUsers(db, selectedCompany.id)
+  if (companyUsers.length === 0) {
     throw new Error('This company has no client users assigned.')
   }
-  const clientId = company.representativeId
+  // Owner (project.clientId) = the company's Approver, else its earliest client
+  // user — so the project resolves to this company (and its wallet).
+  const clientId = (companyUsers.find((u) => u.userType === 'approver') ?? companyUsers[0]).id
+  const clientUserIds = companyUsers.map((u) => u.id)
 
   const nameErr = validateField(data.projectName, VALIDATION.PROJECT_NAME_MAX_LENGTH, 'Project name')
   if (nameErr) throw new Error(nameErr)
@@ -128,7 +137,7 @@ export const createProject = wrapServerAction('createProject', async function cr
       .returning()
     const now = new Date()
     await tx.insert(projectClient).values(
-      company.clientUserIds.map((userId) => ({
+      clientUserIds.map((userId) => ({
         projectId: inserted.id,
         userId,
         assignedBy: currentUser.id,
@@ -139,7 +148,7 @@ export const createProject = wrapServerAction('createProject', async function cr
   }))
   const projectCode = newProject.projectCode
 
-  // Auto-create support wallet for the new project
+  // Ensure the company's support wallet (the existing one — never a second wallet)
   try {
     const { autoCreateWalletForProject } = await import('@/app/actions/wallets')
     await autoCreateWalletForProject(newProject.id, newProject.clientId)

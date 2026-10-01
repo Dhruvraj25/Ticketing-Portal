@@ -9,6 +9,7 @@ const ROOT = join(import.meta.dirname, '..')
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 const CRUD = read('app/actions/projects/crud.ts')
 const PAGE = read('app/dashboard/projects/new/page.tsx')
+const COMPANY_WALLET = read('lib/company-wallet.ts')
 
 const USERS: CompanyDirectoryUser[] = [
   { id: 'c1', role: 'client', companyName: 'Nirka Business Solutions', companyCode: 'NBS-001', userType: 'standard', createdAt: '2026-01-01' },
@@ -25,10 +26,12 @@ test('1/3. the dropdown source returns companies (name + code), not users', () =
   const dir = buildCompanyDirectory(USERS)
   assert.deepEqual(dir.map((c) => c.companyName), ['Infinixo Technologies', 'Nirka Business Solutions'])
   assert.equal(dir.find((c) => c.companyName === 'Nirka Business Solutions')!.companyCode, 'NBS-001')
-  // The server action only exposes company fields — never names/emails.
+  // The server action lists the company table (the identity that owns the
+  // company wallet) and only exposes company fields — never user names/emails.
   const action = CRUD.slice(CRUD.indexOf('export const getProjectCompanies'), CRUD.indexOf('export const createProject'))
-  assert.match(action, /key: c\.key,\s*companyName: c\.companyName,\s*companyCode: c\.companyCode,\s*clientCount: c\.clientUserIds\.length,/)
-  assert.doesNotMatch(action, /email|\.name\b/)
+  assert.match(action, /\.from\(company\)/)
+  assert.match(action, /key: `\$\{COMPANY_KEY_PREFIX\}\$\{c\.id\}`,\s*companyName: c\.name,\s*companyCode: c\.code \?\? null,\s*clientCount: counts\.get\(c\.id\) \?\? 0,/)
+  assert.doesNotMatch(action, /email|user\.name/)
 })
 
 test('2/11. users of the same company give ONE option (code first, whitespace/case-insensitive)', () => {
@@ -62,10 +65,12 @@ test('5. createProject resolves the company server-side and links ALL its client
   const fn = CRUD.slice(CRUD.indexOf('export const createProject'))
   assert.match(fn, /companyKey: string/)
   assert.doesNotMatch(fn.slice(0, fn.indexOf('{', fn.indexOf('async function createProject'))), /clientId: string/, 'no client id accepted from the frontend')
-  assert.match(fn, /const company = resolveCompany\(await loadCompanyDirectoryUsers\(\), data\.companyKey\)/)
-  assert.match(CRUD, /\.from\(user\)\s*\n\s*\.where\(eq\(user\.role, 'client'\)\)/, 'only client users are candidates')
+  // The key is resolved again on the server against the company table.
+  assert.match(fn, /const companyId = companyIdFromKey\(data\.companyKey\)/)
+  assert.match(fn, /const companyUsers = await companyClientUsers\(db, selectedCompany\.id\)/)
+  assert.match(COMPANY_WALLET, /\.where\(and\(eq\(user\.companyId, companyId\), eq\(user\.role, 'client'\)\)\)/, 'only client users of that company are candidates')
   assert.match(fn, /db\.transaction\(async \(tx\) => \{/)
-  assert.match(fn, /await tx\.insert\(projectClient\)\.values\(\s*\n\s*company\.clientUserIds\.map/)
+  assert.match(fn, /await tx\.insert\(projectClient\)\.values\(\s*\n\s*clientUserIds\.map/)
   assert.match(fn, /clientId,\s*\n\s*managerId: data\.managerId,/, 'owner = the company representative')
 })
 

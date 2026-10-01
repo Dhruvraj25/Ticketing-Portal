@@ -8,19 +8,49 @@ import type { ReportFilters, ReportResult } from './types'
 import { getDateRange } from './types'
 import type { CurrentUser } from './queries'
 import { getClientOrgUserIds } from '@/app/actions/tickets/queries'
+import { companiesByIds, companyIdOfUser, visibleCompanyIds } from '@/lib/company-wallet'
+import { walletOwnerLabel } from '@/lib/company-wallet-rules'
+
+/**
+ * Company-wallet scope for wallet reports: client → their company's wallet;
+ * project manager → wallets of the companies whose projects they manage;
+ * admin → all. A client filter means that client's company wallet.
+ * Returns null when nothing is visible.
+ */
+async function walletReportConditions(filters: ReportFilters, currentUser: CurrentUser): Promise<any[] | null> {
+  const conditions: any[] = []
+  const companyIds = await visibleCompanyIds(db, currentUser)
+  if (companyIds !== null) {
+    if (companyIds.length === 0) return null
+    conditions.push(inArray(supportWallet.companyId, companyIds))
+  }
+  if (filters.clientId) {
+    const filterCompanyId = await companyIdOfUser(db, filters.clientId)
+    if (!filterCompanyId) return null
+    conditions.push(eq(supportWallet.companyId, filterCompanyId))
+  }
+  return conditions
+}
+
+/** Wallet id → company name (falls back to the primary contact's name). */
+async function walletOwnerNames(walletIds: number[]): Promise<Map<number, string>> {
+  if (walletIds.length === 0) return new Map()
+  const rows = await db
+    .select({ id: supportWallet.id, companyId: supportWallet.companyId, contactName: user.name })
+    .from(supportWallet)
+    .leftJoin(user, eq(user.id, supportWallet.clientId))
+    .where(inArray(supportWallet.id, walletIds))
+  const companies = await companiesByIds(db, rows.map(r => r.companyId))
+  return new Map(rows.map(r => [r.id, walletOwnerLabel(r.companyId != null ? companies.get(r.companyId)?.name : null, r.contactName)]))
+}
 
 // ─── Report: Support Wallet ─────────────────────────────────────────────
 export async function getSupportWalletReport(filters: ReportFilters, currentUser: CurrentUser): Promise<ReportResult> {
-  const conditions: any[] = []
-  if (currentUser.role === 'client') conditions.push(eq(supportWallet.clientId, currentUser.id))
-  if (currentUser.role === 'project_manager') {
-    const managedClientIds = db.select({ clientId: project.clientId }).from(project).where(eq(project.managerId, currentUser.id))
-    conditions.push(inArray(supportWallet.clientId, managedClientIds))
-  }
-  if (filters.clientId) conditions.push(eq(supportWallet.clientId, filters.clientId))
-  // projectId filter removed — one wallet per client
+  const scope = await walletReportConditions(filters, currentUser)
+  const conditions: any[] = scope ?? []
+  // projectId filter removed — one wallet per company
 
-  const wallets = await db
+  const wallets = scope === null ? [] : await db
     .select({
       id: supportWallet.id, clientId: supportWallet.clientId,
       totalPurchasedHours: supportWallet.totalPurchasedHours,
@@ -33,9 +63,7 @@ export async function getSupportWalletReport(filters: ReportFilters, currentUser
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(supportWallet.updatedAt))
 
-  const userIds = [...new Set(wallets.map(w => w.clientId))]
-  const users = await db.select({ id: user.id, name: user.name }).from(user).where(inArray(user.id, userIds))
-  const userMap = new Map(users.map(u => [u.id, u.name]))
+  const ownerNames = await walletOwnerNames(wallets.map(w => w.id))
 
   const projectIds = [...new Set(wallets.map(w => w.projectId).filter((id): id is number => id !== null))]
   const projectsData = await db.select({ id: project.id, projectName: project.projectName }).from(project).where(inArray(project.id, projectIds))
@@ -54,7 +82,7 @@ export async function getSupportWalletReport(filters: ReportFilters, currentUser
       },
     },
     columns: [
-      { key: 'clientName', label: 'Client', type: 'text' },
+      { key: 'clientName', label: 'Company', type: 'text' },
       { key: 'projectName', label: 'Project', type: 'text' },
       { key: 'totalPurchasedHours', label: 'Purchased', type: 'number' },
       { key: 'reservedHours', label: 'Reserved', type: 'number' },
@@ -62,14 +90,14 @@ export async function getSupportWalletReport(filters: ReportFilters, currentUser
       { key: 'remainingHours', label: 'Remaining', type: 'number' },
     ],
     data: wallets.map(w => ({
-      clientName: userMap.get(w.clientId) || 'Unknown',
+      clientName: ownerNames.get(w.id) || 'Unknown',
       projectName: projectMap.get(w.projectId!) || 'Unknown',
       totalPurchasedHours: w.totalPurchasedHours,
       reservedHours: w.reservedHours,
       consumedHours: w.consumedHours,
       remainingHours: w.remainingHours,
     })),
-    charts: [{ type: 'bar' as const, title: 'Hours per Wallet', data: wallets.map(w => ({ name: projectMap.get(w.projectId!) || `Wallet #${w.id}`, value: w.totalPurchasedHours })) }],
+    charts: [{ type: 'bar' as const, title: 'Hours per Wallet', data: wallets.map(w => ({ name: ownerNames.get(w.id) || `Wallet #${w.id}`, value: w.totalPurchasedHours })) }],
   }
 }
 
@@ -77,15 +105,9 @@ export async function getSupportWalletReport(filters: ReportFilters, currentUser
 export async function getWalletTransactionReport(filters: ReportFilters, currentUser: CurrentUser): Promise<ReportResult> {
   const { since, until } = getDateRange(filters.dateFrom, filters.dateTo)
   let walletIds: number[] = []
-  const walletConditions: any[] = []
-  if (currentUser.role === 'client') walletConditions.push(eq(supportWallet.clientId, currentUser.id))
-  if (currentUser.role === 'project_manager') {
-    const managedClientIds = db.select({ clientId: project.clientId }).from(project).where(eq(project.managerId, currentUser.id))
-    walletConditions.push(inArray(supportWallet.clientId, managedClientIds))
-  }
-  if (filters.clientId) walletConditions.push(eq(supportWallet.clientId, filters.clientId))
+  const walletConditions = await walletReportConditions(filters, currentUser)
 
-  const wallets = await db.select({ id: supportWallet.id }).from(supportWallet).where(walletConditions.length > 0 ? and(...walletConditions) : undefined)
+  const wallets = walletConditions === null ? [] : await db.select({ id: supportWallet.id }).from(supportWallet).where(walletConditions.length > 0 ? and(...walletConditions) : undefined)
   walletIds = wallets.map(w => w.id)
 
   if (walletIds.length === 0) {
@@ -104,14 +126,13 @@ export async function getWalletTransactionReport(filters: ReportFilters, current
   // + projects in 3 parallel queries.
   const uniqueTxWalletIds = [...new Set(rows.map(r => r.walletId))]
 
-  const [fullWallets, users, projectsData] = await Promise.all([
+  const [fullWallets, ownerNames, projectsData] = await Promise.all([
     db.select({ id: supportWallet.id, clientId: supportWallet.clientId })
       .from(supportWallet)
       .where(inArray(supportWallet.id, uniqueTxWalletIds)),
-    db.select({ id: user.id, name: user.name }).from(user),
+    walletOwnerNames(uniqueTxWalletIds),
     db.select({ id: project.id, projectName: project.projectName }).from(project),
   ])
-  const userMap = new Map(users.map(u => [u.id, u.name]))
   const projectMap = new Map(projectsData.map(p => [p.id, p.projectName]))
   const walletDetails = new Map(fullWallets.map(w => [w.id, { clientId: w.clientId, projectId: w.projectId }]))
 
@@ -122,7 +143,7 @@ export async function getWalletTransactionReport(filters: ReportFilters, current
       const details = walletDetails.get(r.walletId)
       return {
         date: r.performedAt.toISOString(),
-        client: details ? userMap.get(details.clientId) || 'Unknown' : 'Unknown',
+        client: ownerNames.get(r.walletId) || 'Unknown',
         project: details ? projectMap.get(details.projectId!) || 'Unknown' : 'Unknown',
         transactionType: r.transactionType,
         hours: r.hours,
@@ -137,7 +158,7 @@ export async function getWalletTransactionReport(filters: ReportFilters, current
 function defaultTxColumns() {
   return [
     { key: 'date', label: 'Date', type: 'date' },
-    { key: 'client', label: 'Client', type: 'text' },
+    { key: 'client', label: 'Company', type: 'text' },
     { key: 'project', label: 'Project', type: 'text' },
     { key: 'transactionType', label: 'Type', type: 'badge' },
     { key: 'hours', label: 'Hours', type: 'number' },
@@ -202,15 +223,9 @@ export async function getWalletConsumptionReport(filters: ReportFilters, current
 export async function getWalletHistoryReport(filters: ReportFilters, currentUser: CurrentUser): Promise<ReportResult> {
   const { since, until } = getDateRange(filters.dateFrom, filters.dateTo)
   let walletIds: number[] = []
-  const walletConditions: any[] = []
-  if (currentUser.role === 'client') walletConditions.push(eq(supportWallet.clientId, currentUser.id))
-  if (currentUser.role === 'project_manager') {
-    const managedClientIds = db.select({ clientId: project.clientId }).from(project).where(eq(project.managerId, currentUser.id))
-    walletConditions.push(inArray(supportWallet.clientId, managedClientIds))
-  }
-  if (filters.clientId) walletConditions.push(eq(supportWallet.clientId, filters.clientId))
+  const walletConditions = await walletReportConditions(filters, currentUser)
 
-  const wallets = await db.select({ id: supportWallet.id, clientId: supportWallet.clientId })
+  const wallets = walletConditions === null ? [] : await db.select({ id: supportWallet.id, clientId: supportWallet.clientId })
     .from(supportWallet).where(walletConditions.length > 0 ? and(...walletConditions) : undefined)
   walletIds = wallets.map(w => w.id)
 
@@ -227,14 +242,7 @@ export async function getWalletHistoryReport(filters: ReportFilters, currentUser
   }
 
   // ── OPTIMIZATION: Merge 3 sequential enrichment queries into 1 parallel ──
-  const [fullWallets, users] = await Promise.all([
-    db.select({ id: supportWallet.id, clientId: supportWallet.clientId })
-      .from(supportWallet)
-      .where(inArray(supportWallet.id, [...new Set(rows.map(r => r.walletId))])),
-    db.select({ id: user.id, name: user.name }).from(user),
-  ])
-  const userMap = new Map(users.map(u => [u.id, u.name]))
-  const walletDetails = new Map(fullWallets.map(w => [w.id, { clientId: w.clientId, projectId: w.projectId }]))
+  const ownerNames = await walletOwnerNames([...new Set(rows.map(r => r.walletId))])
 
   let totalAdded = 0, totalUsed = 0
   const dataRows = rows.map(r => {
@@ -242,10 +250,9 @@ export async function getWalletHistoryReport(filters: ReportFilters, currentUser
     const isDeduct = r.transactionType === 'Deduct Hours'
     if (isAdd) totalAdded += r.hours
     if (isDeduct) totalUsed += r.hours
-    const details = walletDetails.get(r.walletId)
     return {
       date: r.performedAt.toISOString(),
-      client: details ? userMap.get(details.clientId) || 'Unknown' : 'Unknown',
+      client: ownerNames.get(r.walletId) || 'Unknown',
       openingBalance: r.previousBalance,
       hoursAdded: isAdd ? r.hours : 0,
       hoursUsed: isDeduct ? r.hours : 0,
@@ -270,7 +277,7 @@ export async function getWalletHistoryReport(filters: ReportFilters, currentUser
 function defaultHistoryColumns() {
   return [
     { key: 'date', label: 'Date', type: 'date' },
-    { key: 'client', label: 'Client', type: 'text' },
+    { key: 'client', label: 'Company', type: 'text' },
     { key: 'openingBalance', label: 'Opening Balance', type: 'number' },
     { key: 'hoursAdded', label: 'Hours Added', type: 'number' },
     { key: 'hoursUsed', label: 'Hours Used', type: 'number' },

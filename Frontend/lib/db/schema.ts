@@ -30,10 +30,13 @@ export const user = pgTable('user', {
   // to the user's own name when companyName is empty.
   companyName: text('companyName'),
   companyCode: text('companyCode'),
+  // The customer company this (client) user belongs to — authoritative; see company.
+  companyId: integer('companyId').references(() => company.id, { onDelete: 'restrict' }),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 }, (table) => ({
   roleIdx: index('user_role_idx').on(table.role),
+  companyIdIdx: index('user_company_id_idx').on(table.companyId),
   // Index for admin getUsers() which orders by createdAt DESC.
   // Without this, PostgreSQL must sort the full user table in heap.
   createdAtIdx: index('user_created_at_idx').on(table.createdAt.desc()),
@@ -335,6 +338,24 @@ export const branding = pgTable('branding', {
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 })
 
+// --- Company (customer organisation) --------------------------------------
+// The authoritative customer company. Client users belong to one company
+// (user.companyId) and the company owns ONE Support Wallet
+// (support_wallet.companyId, unique). user.companyName / user.companyCode are
+// kept as a display mirror of company.name / company.code only — never used
+// to relate users or wallets. Migration 0035 + scripts/migrate-company-wallets.ts.
+
+export const company = pgTable('company', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  code: text('code'),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+}, (table) => ({
+  // A company code, when set, identifies exactly one company.
+  codeUnique: uniqueIndex('company_code_unique_idx').on(sql`lower(${table.code})`).where(sql`${table.code} IS NOT NULL`),
+}))
+
 // --- Support Wallet Tables ------------------------------------------------
 
 export const supportWallet = pgTable('support_wallet', {
@@ -342,6 +363,12 @@ export const supportWallet = pgTable('support_wallet', {
   clientId: text('clientId')
     .notNull()
     .references(() => user.id, { onDelete: 'restrict' }),
+  // Authoritative owner: the company (one wallet per company — unique index
+  // below). clientId is kept for backward compatibility as the wallet's
+  // primary contact (the user it was created for); it does NOT decide who
+  // can see or use the wallet.
+  companyId: integer('companyId')
+    .references(() => company.id, { onDelete: 'restrict' }),
   projectId: integer('projectId')
     .references(() => project.id, { onDelete: 'cascade' }),
   totalPurchasedHours: integer('totalPurchasedHours').notNull().default(0),
@@ -358,6 +385,7 @@ export const supportWallet = pgTable('support_wallet', {
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 }, (table) => ({
   clientIdIdx: index('wallet_client_id_idx').on(table.clientId),
+  companyIdUnique: uniqueIndex('support_wallet_company_id_unique_idx').on(table.companyId),
   statusIdx: index('wallet_status_idx').on(table.status),
   clientStatusIdx: index('wallet_client_status_idx').on(table.clientId, table.status),
   // Index for wallet-per-project queries
@@ -680,6 +708,10 @@ export const projectDeveloperRelations = relations(projectDeveloper, ({ one }) =
 }))
 
 export const supportWalletRelations = relations(supportWallet, ({ one }) => ({
+  company: one(company, {
+    fields: [supportWallet.companyId],
+    references: [company.id],
+  }),
   client: one(user, {
     fields: [supportWallet.clientId],
     references: [user.id],

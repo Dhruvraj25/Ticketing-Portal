@@ -16,6 +16,7 @@ import { format } from 'date-fns'
 import { ArrowLeft, FolderKanban, Users, Calendar, Ticket, Layers, Edit, BarChart3 } from 'lucide-react'
 import Link from 'next/link'
 import { PROJECT_STATUS_CONFIG } from '@/lib/types'
+import { classifyProjectLoadError } from '@/lib/project-access-rules'
 import { ModuleManager } from '@/components/dashboard/module-manager'
 import { ProjectStats } from '@/components/dashboard/project-stats'
 import { ProjectAssignmentPanel } from '@/components/dashboard/project-assignment-panel'
@@ -275,6 +276,32 @@ export default async function ProjectDetailPage({
       </div>
     )
   } catch (error) {
-    notFound()
+    // Not found → 404; authenticated without access → "no access"; anything
+    // else (database/query failure) is logged and re-thrown as a real error.
+    const failure = classifyProjectLoadError(error)
+    if (failure === 'not_found') notFound()
+    if (failure === 'forbidden') {
+      return (
+        <WorkspaceContainer>
+          <div className="flex flex-col items-center text-center gap-3 py-12">
+            <PageHeaderIcon variant="blue">
+              <FolderKanban className="h-5 w-5" />
+            </PageHeaderIcon>
+            <h1 className="text-xl font-semibold text-foreground">You don&apos;t have access to this project</h1>
+            <p className="text-sm text-muted-foreground max-w-md">
+              Ask your project manager to add you to this project if you need access.
+            </p>
+            <Link href="/dashboard/projects">
+              <Button variant="outline" size="sm" className="rounded-xl">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to projects
+              </Button>
+            </Link>
+          </div>
+        </WorkspaceContainer>
+      )
+    }
+    console.error(`[ProjectDetailPage] Error loading project ${projectId}:`, error)
+    throw error
   }
 }

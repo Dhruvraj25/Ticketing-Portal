@@ -9,6 +9,7 @@ import { getCurrentUser } from '@/lib/auth-utils'
 import { isAtOrBelowCreateThreshold } from '@/lib/wallet-validation'
 import { sendNotification } from '@/lib/email-backend'
 import { getPortalUrl } from '@/lib/urls'
+import { companiesByIds, companyIdOfUser, walletOfUser } from '@/lib/company-wallet'
 
 // ─── Internal implementation (no getCurrentUser — accepts currentUser object) ─
 
@@ -18,17 +19,8 @@ export async function _getClientRenewalStatusImpl(currentUser: { id: string; rol
   }
 
   const clientId = currentUser.id
-  const [wallet] = await db
-    .select({
-      id: supportWallet.id,
-      remainingHours: supportWallet.remainingHours,
-      totalPurchasedHours: supportWallet.totalPurchasedHours,
-      contractStartDate: supportWallet.contractStartDate,
-      contractEndDate: supportWallet.contractEndDate,
-    })
-    .from(supportWallet)
-    .where(eq(supportWallet.clientId, clientId))
-    .limit(1)
+  // The company's shared wallet — every user of the company sees the same values.
+  const wallet = await walletOfUser(db, clientId)
 
   if (!wallet) {
     return {
@@ -147,12 +139,17 @@ export const requestSupportRenewal = async function requestSupportRenewal(): Pro
     return { success: false, error: 'Only client users can request a support renewal.' }
   }
 
-  // Projects this client owns or is assigned to as an additional client user.
+  // The request is for the COMPANY wallet: the company's projects (owned by any
+  // of its users) plus any project this user is assigned to.
+  const companyId = await companyIdOfUser(db, currentUser.id)
   const assigned = await db
     .select({ projectId: projectClient.projectId })
     .from(projectClient)
     .where(eq(projectClient.userId, currentUser.id))
   const assignedIds = assigned.map((a) => a.projectId)
+  const companyUserIds = companyId
+    ? (await db.select({ id: user.id }).from(user).where(and(eq(user.companyId, companyId), eq(user.role, 'client')))).map((u) => u.id)
+    : [currentUser.id]
 
   const projects = await db
     .select({ projectName: project.projectName, managerId: project.managerId })
@@ -160,8 +157,8 @@ export const requestSupportRenewal = async function requestSupportRenewal(): Pro
     .where(and(
       ne(project.status, 'archived'),
       assignedIds.length > 0
-        ? or(eq(project.clientId, currentUser.id), inArray(project.id, assignedIds))
-        : eq(project.clientId, currentUser.id),
+        ? or(inArray(project.clientId, companyUserIds), inArray(project.id, assignedIds))
+        : inArray(project.clientId, companyUserIds),
     ))
 
   const managerIds = [...new Set(projects.map((p) => p.managerId).filter(Boolean))]
@@ -169,9 +166,10 @@ export const requestSupportRenewal = async function requestSupportRenewal(): Pro
     return { success: false, error: 'No Project Manager is assigned to your project yet. Please contact support.' }
   }
 
-  const [managers, [client]] = await Promise.all([
+  const [managers, [client], companies] = await Promise.all([
     db.select({ email: user.email }).from(user).where(inArray(user.id, managerIds)),
     db.select({ name: user.name, email: user.email, companyName: user.companyName }).from(user).where(eq(user.id, currentUser.id)).limit(1),
+    companiesByIds(db, [companyId]),
   ])
   const managerEmails = managers.map((m) => m.email).filter(Boolean)
   if (managerEmails.length === 0) {
@@ -184,7 +182,7 @@ export const requestSupportRenewal = async function requestSupportRenewal(): Pro
   const sent = await sendNotification('support_renewal_request', managerEmails, {
     clientName: client?.name || currentUser.name || '',
     clientEmail: client?.email || '',
-    customerCompanyName: client?.companyName || undefined,
+    customerCompanyName: (companyId ? companies.get(companyId)?.name : null) || client?.companyName || undefined,
     projectNames: [...new Set(projects.map((p) => p.projectName))],
     remainingHours: status.remainingHours,
     totalPurchasedHours: status.totalPurchasedHours,
@@ -206,18 +204,13 @@ export const requestSupportRenewal = async function requestSupportRenewal(): Pro
 export const checkClientCanCreateTicket = async function checkClientCanCreateTicket(
   clientId: string, projectId?: number | null
 ) {
-  // One wallet per client — always fetch by clientId, ignore projectId
-  const wallets = await db
-    .select()
-    .from(supportWallet)
-    .where(eq(supportWallet.clientId, clientId))
-    .limit(1)
+  // One wallet per company — the ticket's company wallet (project first, else the client's company).
+  const { findTicketWallet } = await import('@/lib/ticket-wallet')
+  const wallet = await findTicketWallet(db, { clientId, projectId: projectId ?? null })
 
-  if (wallets.length === 0) {
+  if (!wallet) {
     return { canCreate: true, reason: null }
   }
-
-  const wallet = wallets[0]
 
   // Check contract validity
   if (wallet.contractEndDate) {
@@ -285,7 +278,7 @@ export const getMyWalletThresholdStatus = async function getMyWalletThresholdSta
     return { applicable: false, atOrBelowThreshold: false, remainingHours: null, totalPurchasedHours: null }
   }
 
-  const [wallet] = await db.select().from(supportWallet).where(eq(supportWallet.clientId, currentUser.id)).limit(1)
+  const wallet = await walletOfUser(db, currentUser.id)
   if (!wallet) {
     return { applicable: false, atOrBelowThreshold: false, remainingHours: null, totalPurchasedHours: null }
   }

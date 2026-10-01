@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { wrapServerAction } from '@/lib/performance-profiler'
 import { getCurrentUser } from '@/lib/auth-utils'
 import type { ClientUserType } from '@/lib/types'
+import { companiesByIds, companyIdOfProject, companyIdOfUser } from '@/lib/company-wallet'
 
 // ============================================================================
 // PROJECT USERS (Phase 6) — client-org users linked to a project via
@@ -70,6 +71,8 @@ export const addUserToProject = wrapServerAction('addUserToProject', async funct
   // ── Validate project exists ────────────────────────────────────────────
   const [p] = await db.select({ id: project.id }).from(project).where(eq(project.id, projectId)).limit(1)
   if (!p) throw new Error('Project not found')
+  // Project users belong to the project's company and share its one wallet.
+  const projectCompanyId = await companyIdOfProject(db, projectId)
 
   // ── Validate email ──────────────────────────────────────────────────────
   const normalizedEmail = (data.email ?? '').trim().toLowerCase()
@@ -88,6 +91,13 @@ export const addUserToProject = wrapServerAction('addUserToProject', async funct
   if (existing) {
     if (existing.role !== 'client') {
       throw new Error('This email belongs to a non-client account and cannot be added as a project user.')
+    }
+
+    // A user of ANOTHER company can't join this project: its tickets draw on
+    // this company's wallet, which that user must not use.
+    const existingCompanyId = await companyIdOfUser(db, existing.id)
+    if (projectCompanyId && existingCompanyId && existingCompanyId !== projectCompanyId) {
+      throw new Error('This user belongs to a different company and cannot be added to this project.')
     }
 
     const [dup] = await db
@@ -131,6 +141,7 @@ export const addUserToProject = wrapServerAction('addUserToProject', async funct
   const userId = crypto.randomUUID()
   const accountId = crypto.randomUUID()
   const now = new Date()
+  const projectCompany = projectCompanyId ? (await companiesByIds(db, [projectCompanyId])).get(projectCompanyId) : undefined
 
   try {
     await db.transaction(async (tx) => {
@@ -141,6 +152,10 @@ export const addUserToProject = wrapServerAction('addUserToProject', async funct
         emailVerified: false,
         role: 'client',
         userType: data.userType,
+        // Joins the project's company (display mirror kept in sync).
+        companyId: projectCompanyId,
+        companyName: projectCompany?.name ?? null,
+        companyCode: projectCompany?.code ?? null,
         banned: false,
         createdAt: now,
         updatedAt: now,
@@ -180,7 +195,7 @@ export const addUserToProject = wrapServerAction('addUserToProject', async funct
     throw new Error('Could not create the new user account. Please try again.')
   }
 
-  // Auto-create support wallet for the new client user (non-critical, matches createUser()).
+  // Ensure the COMPANY wallet (returns the existing one — never a second wallet).
   try {
     const { autoCreateWalletForClient } = await import('@/app/actions/wallets')
     await autoCreateWalletForClient(userId)

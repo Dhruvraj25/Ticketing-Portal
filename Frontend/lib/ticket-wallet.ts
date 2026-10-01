@@ -2,19 +2,18 @@
 // Ticket ↔ Support Wallet: which wallet a ticket uses, and its reservations
 // ============================================================================
 // Wallet of a ticket (same rule everywhere — estimate, approval, close):
-//   1. the wallet of the client who raised the ticket (ticket.clientId) —
-//      the long-standing lookup;
-//   2. otherwise the wallet of the ticket project's owner (project.clientId),
-//      as getWalletByProject does. A Standard account usually has no wallet
-//      of its own; its tickets draw on the company's (project owner's) wallet
-//      instead of silently bypassing the wallet.
+//   the wallet of the ticket's COMPANY — ticket → project → company (else the
+//   company of the client who raised it). Every client user of that company
+//   shares this one wallet; personal wallets of the raiser or of the project
+//   owner are never used. Resolution lives in lib/company-wallet.ts.
 // ============================================================================
 
 import { eq } from 'drizzle-orm'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { db } from '@/lib/db'
-import { project, supportWallet, ticket, walletTransaction } from '@/lib/db/schema'
+import { supportWallet, ticket, walletTransaction } from '@/lib/db/schema'
 import { hoursOf, releaseWalletReservationAtomic, reserveWalletHoursAtomic } from '@/lib/wallet-reservation'
+import { companyIdForTicket, walletOfCompany } from '@/lib/company-wallet'
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 type Handle = typeof db | Tx
@@ -24,18 +23,7 @@ export async function findTicketWallet(
   handle: Handle,
   t: { clientId: string | null; projectId: number | null },
 ): Promise<WalletRow | null> {
-  if (t.clientId) {
-    const [own] = await handle.select().from(supportWallet).where(eq(supportWallet.clientId, t.clientId)).limit(1)
-    if (own) return own
-  }
-  if (t.projectId) {
-    const [p] = await handle.select({ ownerId: project.clientId }).from(project).where(eq(project.id, t.projectId)).limit(1)
-    if (p?.ownerId && p.ownerId !== t.clientId) {
-      const [owner] = await handle.select().from(supportWallet).where(eq(supportWallet.clientId, p.ownerId)).limit(1)
-      if (owner) return owner
-    }
-  }
-  return null
+  return walletOfCompany(handle, await companyIdForTicket(handle, t))
 }
 
 export class WalletReservationError extends Error {

@@ -10,8 +10,9 @@ import {
   supportWallet,
   walletTransaction,
   ticketHistory,
+  company,
 } from '@/lib/db/schema'
-import { and, asc, eq, inArray, ne } from 'drizzle-orm'
+import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { revalidatePath } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth-utils'
@@ -25,6 +26,7 @@ import type {
 import { isValidPhoneForCountry } from '@/lib/phone'
 import { dispatchNotification } from '@/lib/notify-all'
 import { deriveProjectCodeBase, withUniqueProjectCode } from '@/lib/project-code'
+import { createCompany, ensureUserCompany, findCompanyByName } from '@/lib/company-wallet'
 
 const PASSWORD_MIN_LENGTH = 12
 
@@ -158,6 +160,14 @@ export const createCustomerOnboarding = wrapServerAction(
       throw new Error(`The following email(s) already exist: ${existingEmails.map((e) => e.email).join(', ')}`)
     }
 
+    // A new customer = a new company (one company → one wallet). An existing
+    // company must be extended via "add users to an existing project" instead,
+    // never re-onboarded (that would create a second company and wallet).
+    const existingCompany = await findCompanyByName(db, companyName)
+    if (existingCompany) {
+      throw new Error(`A company named "${existingCompany.name}" already exists. Add users to one of its existing projects instead of onboarding it again.`)
+    }
+
     const isHypercare = data.supportWallet.contractType === 'hypercare'
 
     if (isHypercare) {
@@ -189,6 +199,10 @@ export const createCustomerOnboarding = wrapServerAction(
       // ids, no already-committed rows to collide with) rather than replaying
       // a partial, already-persisted state.
       result = await withUniqueProjectCode(projectCodeBase, (projectCode) => db.transaction(async (tx) => {
+        // The customer company — every client user below belongs to it and it
+        // owns the single support wallet created further down.
+        const companyId = await createCompany(tx, { name: companyName, code: companyCode })
+
         // Create FIRST client user as the project owner/client
         const firstUser = data.clientUsers[0]
         const primaryUserFullName = `${firstUser.firstName.trim()} ${firstUser.lastName.trim()}`
@@ -206,6 +220,7 @@ export const createCustomerOnboarding = wrapServerAction(
           enableTeamsNotifications: !!data.enableTeamsNotifications,
           companyName,
           companyCode,
+          companyId,
         }).returning()
         
         const primaryHashedPassword = await bcrypt.hash(firstUser.password, 10)
@@ -238,6 +253,7 @@ export const createCustomerOnboarding = wrapServerAction(
             enableTeamsNotifications: !!data.enableTeamsNotifications,
             companyName,
             companyCode,
+            companyId,
           }).returning()
 
           const hashedPassword = await bcrypt.hash(cu.password, 10)
@@ -312,6 +328,7 @@ export const createCustomerOnboarding = wrapServerAction(
           // Hypercare: create minimal wallet record (no hours, no transactions)
           const [newWallet] = await tx.insert(supportWallet).values({
             clientId: primaryUser.id,
+            companyId,
             projectId: null,
             totalPurchasedHours: 0,
             reservedHours: 0,
@@ -325,9 +342,10 @@ export const createCustomerOnboarding = wrapServerAction(
             status: 'active',
           }).returning()
         } else {
-          // Standard support: create wallet + initial transaction
+          // Standard support: create the COMPANY wallet + initial transaction
           const [newWallet] = await tx.insert(supportWallet).values({
             clientId: primaryUser.id,
+            companyId,
             projectId: null,
             totalPurchasedHours: data.supportWallet.supportHours,
             reservedHours: 0,
@@ -737,7 +755,7 @@ export const addClientUsersToExistingProject = wrapServerAction(
 
     // Validate the project exists
     const [projectInfo] = await db
-      .select({ id: project.id, projectName: project.projectName, projectCode: project.projectCode, clientId: project.clientId, clientCompanyName: user.companyName, clientCompanyCode: user.companyCode })
+      .select({ id: project.id, projectName: project.projectName, projectCode: project.projectCode, clientId: project.clientId, clientCompanyName: user.companyName, clientCompanyCode: user.companyCode, clientCompanyId: user.companyId })
       .from(project)
       .leftJoin(user, eq(project.clientId, user.id))
       .where(and(eq(project.id, data.projectId), ne(project.status, 'archived')))
@@ -793,6 +811,9 @@ export const addClientUsersToExistingProject = wrapServerAction(
         const createdUserIds: string[] = []
         const createdUserEmails: string[] = []
         const createdUserNames: string[] = []
+        // New users join the project's company and share its existing wallet —
+        // no wallet is created for them.
+        const companyId = projectInfo.clientCompanyId ?? (await ensureUserCompany(tx, projectInfo.clientId))
 
         for (const cu of data.clientUsers) {
           const userFullName = `${cu.firstName.trim()} ${cu.lastName.trim()}`
@@ -810,6 +831,7 @@ export const addClientUsersToExistingProject = wrapServerAction(
             enableTeamsNotifications: !!data.enableTeamsNotifications,
             companyName,
             companyCode,
+            companyId,
           }).returning()
 
           const hashedPassword = await bcrypt.hash(cu.password, 10)
@@ -826,19 +848,20 @@ export const addClientUsersToExistingProject = wrapServerAction(
           createdUserEmails.push(cu.email.trim().toLowerCase())
           createdUserNames.push(userFullName)
         }
-        // Edited company info → apply it to the project's existing customer users
-        // (owner + client users already linked to this project) so the customer
-        // record stays consistent. Only client-role users are ever touched.
+        // Edited company info → update the company record (authoritative) and
+        // its display mirror on every client user of the company. Only
+        // client-role users are ever touched.
         if (companyChanged) {
-          const linked = await tx
-            .select({ userId: projectClient.userId })
-            .from(projectClient)
-            .where(eq(projectClient.projectId, projectInfo.id))
-          const customerUserIds = [...new Set([projectInfo.clientId, ...linked.map((l) => l.userId)])]
+          if (companyCode) {
+            const [taken] = await tx.select({ id: company.id }).from(company)
+              .where(and(sql`lower(${company.code}) = lower(${companyCode})`, ne(company.id, companyId))).limit(1)
+            if (taken) throw new Error(`Company code "${companyCode}" is already used by another company.`)
+          }
+          await tx.update(company).set({ name: companyName ?? undefined, code: companyCode, updatedAt: new Date() }).where(eq(company.id, companyId))
           await tx
             .update(user)
             .set({ companyName, companyCode, updatedAt: new Date() })
-            .where(and(inArray(user.id, customerUserIds), eq(user.role, 'client')))
+            .where(and(eq(user.companyId, companyId), eq(user.role, 'client')))
         }
 
         // Link ALL created client users to the project (so they can see it in create ticket page)

@@ -8,44 +8,67 @@ import { unstable_cache, revalidateTag } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth-utils'
 import type { WalletStatus, WalletTransactionType } from '@/lib/types'
 import { WALLET_CACHE_TAGS } from './constants'
+import { companiesByIds, companyIdOfProject, companyIdOfUser, visibleCompanyIds } from '@/lib/company-wallet'
+import { walletOwnerLabel } from '@/lib/company-wallet-rules'
 
 // ─── Internal helpers (no getCurrentUser — accept currentUser object) ─────
 // These are called from both cached wrappers and orchestrators.
 // They NEVER call headers() or getCurrentUser().
 
+// Company wallets: one wallet per company, shared by all its client users.
+// admin → every wallet; client → their company's wallet; project manager →
+// wallets of the companies whose projects they manage (lib/company-wallet.ts).
 async function getVisibleWalletIds(currentUser: { id: string; role: string }): Promise<number[] | null> {
-  if (currentUser.role === 'admin') return null // null = all
-  if (currentUser.role === 'client') {
-    const rows = await db
-      .select({ id: supportWallet.id })
-      .from(supportWallet)
-      .where(eq(supportWallet.clientId, currentUser.id))
-    return rows.map(r => r.id)
-  }
-  if (currentUser.role === 'project_manager') {
-    const projectRows = await db
-      .select({ id: project.id, clientId: project.clientId })
-      .from(project)
-      .where(eq(project.managerId, currentUser.id))
-    const managedClientIds = [...new Set(projectRows.map(r => r.clientId))]
-    if (managedClientIds.length === 0) return []
-    const walletRows = await db
-      .select({ id: supportWallet.id })
-      .from(supportWallet)
-      .where(inArray(supportWallet.clientId, managedClientIds))
-    return walletRows.map(r => r.id)
-  }
-  return []
+  const companyIds = await visibleCompanyIds(db, currentUser)
+  if (companyIds === null) return null // null = all
+  if (companyIds.length === 0) return []
+  const rows = await db
+    .select({ id: supportWallet.id })
+    .from(supportWallet)
+    .where(inArray(supportWallet.companyId, companyIds))
+  return rows.map(r => r.id)
 }
 
-function buildPermissionConditions(currentUser: { id: string; role: string }): any[] {
-  const conditions: any[] = []
-  if (currentUser.role === 'client') {
-    conditions.push(eq(supportWallet.clientId, currentUser.id))
-  } else if (currentUser.role === 'project_manager') {
-    // Permission handled via walletId filter after fetching visible IDs
-  }
-  return conditions
+/** Restrict a wallet query to what the current user may see; null → nothing visible. */
+async function walletScopeConditions(currentUser: { id: string; role: string }): Promise<any[] | null> {
+  const visibleIds = await getVisibleWalletIds(currentUser)
+  if (visibleIds === null) return []
+  if (visibleIds.length === 0) return null
+  return [inArray(supportWallet.id, visibleIds)]
+}
+
+/** Company name (the wallet owner) + primary contact for display. */
+async function withWalletOwners<W extends { clientId: string; companyId: number | null; projectId: number | null }>(wallets: W[]) {
+  const userIds = [...new Set(wallets.map(w => w.clientId))]
+  const projectIds = [...new Set(wallets.map(w => w.projectId).filter((id): id is number => id !== null))]
+  const [users, projects, companies] = await Promise.all([
+    userIds.length > 0
+      ? db.select({ id: user.id, name: user.name, email: user.email }).from(user).where(inArray(user.id, userIds))
+      : Promise.resolve([] as { id: string; name: string; email: string }[]),
+    projectIds.length > 0
+      ? db.select({ id: project.id, projectName: project.projectName, projectCode: project.projectCode }).from(project).where(inArray(project.id, projectIds))
+      : Promise.resolve([] as { id: number; projectName: string; projectCode: string }[]),
+    companiesByIds(db, wallets.map(w => w.companyId)),
+  ])
+  const userMap = new Map(users.map(u => [u.id, u]))
+  const projectMap = new Map(projects.map(p => [p.id, p]))
+  return wallets.map(w => {
+    const contact = userMap.get(w.clientId)
+    const co = w.companyId != null ? companies.get(w.companyId) : undefined
+    return {
+      ...w,
+      companyName: walletOwnerLabel(co?.name, contact?.name),
+      companyCode: co?.code ?? null,
+      // Primary contact (the user the wallet was created for) — display only.
+      contactName: contact?.name ?? undefined,
+      contactEmail: contact?.email ?? undefined,
+      // Wallet lists/search are company-first: clientName carries the company.
+      clientName: walletOwnerLabel(co?.name, contact?.name),
+      clientEmail: contact?.email ?? undefined,
+      projectName: projectMap.get(w.projectId!)?.projectName ?? undefined,
+      projectCode: projectMap.get(w.projectId!)?.projectCode ?? undefined,
+    }
+  })
 }
 
 function getZeroStats() {
@@ -61,22 +84,19 @@ async function _getWalletsImpl(
   currentUser: { id: string; role: string },
   filters?: { clientId?: string; projectId?: number; status?: string }
 ) {
-  const conditions = buildPermissionConditions(currentUser)
+  const scope = await walletScopeConditions(currentUser)
+  if (scope === null) return []
+  const conditions = [...scope]
 
+  // A client filter means "that client's company wallet".
   if (filters?.clientId && currentUser.role !== 'client') {
-    conditions.push(eq(supportWallet.clientId, filters.clientId))
+    const filterCompanyId = await companyIdOfUser(db, filters.clientId)
+    if (!filterCompanyId) return []
+    conditions.push(eq(supportWallet.companyId, filterCompanyId))
   }
-  // projectId filter removed — one wallet per client
+  // projectId filter removed — one wallet per company
   if (filters?.status) {
     conditions.push(eq(supportWallet.status, filters.status))
-  }
-
-  // For managers, use wallet ID filter
-  let visibleIds: number[] | null = null
-  if (currentUser.role === 'project_manager') {
-    visibleIds = await getVisibleWalletIds(currentUser)
-    if (visibleIds && visibleIds.length === 0) return []
-    if (visibleIds) conditions.push(inArray(supportWallet.id, visibleIds))
   }
 
   const wallets = await db
@@ -87,29 +107,7 @@ async function _getWalletsImpl(
 
   if (wallets.length === 0) return []
 
-  const userIds = [...new Set(wallets.map(w => w.clientId))]
-  const projectIds = [...new Set(wallets.map(w => w.projectId).filter((id): id is number => id !== null))]
-
-  const [users, projects] = await Promise.all([
-    userIds.length > 0
-      ? db.select({ id: user.id, name: user.name, email: user.email }).from(user).where(inArray(user.id, userIds))
-      : Promise.resolve([] as { id: string; name: string; email: string }[]),
-    projectIds.length > 0
-      ? db.select({ id: project.id, projectName: project.projectName, projectCode: project.projectCode }).from(project).where(inArray(project.id, projectIds))
-      : Promise.resolve([] as { id: number; projectName: string; projectCode: string }[]),
-  ])
-
-  const userMap = new Map(users.map(u => [u.id, u]))
-  const projectMap = new Map(projects.map(p => [p.id, p]))
-
-  return wallets.map(w => ({
-    ...w,
-    status: w.status as WalletStatus,
-    clientName: userMap.get(w.clientId)?.name ?? undefined,
-    clientEmail: userMap.get(w.clientId)?.email ?? undefined,
-    projectName: projectMap.get(w.projectId!)?.projectName ?? undefined,
-    projectCode: projectMap.get(w.projectId!)?.projectCode ?? undefined,
-  }))
+  return (await withWalletOwners(wallets)).map(w => ({ ...w, status: w.status as WalletStatus }))
 }
 
 /** Cross-request cached wrapper — primitives only, no headers() inside */
@@ -134,7 +132,8 @@ async function _getWalletByIdImpl(currentUser: { id: string; role: string }, wal
     .limit(1)
 
   if (!w) throw new Error('Wallet not found')
-  if (currentUser.role === 'client' && w.clientId !== currentUser.id) {
+  // Clients: only their own company's wallet (every user of the company).
+  if (currentUser.role === 'client' && (w.companyId == null || w.companyId !== await companyIdOfUser(db, currentUser.id))) {
     throw new Error('Access denied')
   }
   if (currentUser.role === 'project_manager' && w.projectId !== null) {
@@ -146,11 +145,7 @@ async function _getWalletByIdImpl(currentUser: { id: string; role: string }, wal
     if (p && p.managerId !== currentUser.id) throw new Error('Access denied')
   }
 
-  const [clientData] = await db
-    .select({ name: user.name, email: user.email })
-    .from(user)
-    .where(eq(user.id, w.clientId))
-    .limit(1)
+  const [owned] = await withWalletOwners([w])
 
   const alerts = await db
     .select()
@@ -159,10 +154,9 @@ async function _getWalletByIdImpl(currentUser: { id: string; role: string }, wal
     .orderBy(desc(walletAlert.createdAt))
 
   return {
-    ...w,
+    ...owned,
     status: w.status as WalletStatus,
-    clientName: clientData?.name || 'Unknown',
-    clientEmail: clientData?.email || '',
+    clientEmail: owned.clientEmail || '',
     alerts,
   }
 }
@@ -180,13 +174,8 @@ const getCachedWalletById = unstable_cache(
 
 // ─── Internal implementation: get wallet dashboard stats ─────────────────
 async function _getWalletDashboardStatsImpl(currentUser: { id: string; role: string }) {
-  const conditions = buildPermissionConditions(currentUser)
-
-  if (currentUser.role === 'project_manager') {
-    const visibleIds = await getVisibleWalletIds(currentUser)
-    if (visibleIds && visibleIds.length === 0) return getZeroStats()
-    if (visibleIds) conditions.push(inArray(supportWallet.id, visibleIds))
-  }
+  const conditions = await walletScopeConditions(currentUser)
+  if (conditions === null) return getZeroStats()
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined
 
@@ -244,15 +233,9 @@ const getCachedWalletDashboardStats = unstable_cache(
 
 // ─── Internal implementation: get low balance wallets ────────────────────
 async function _getLowBalanceWalletsImpl(currentUser: { id: string; role: string }, threshold: number = 20) {
-  const conditions = [lte(supportWallet.remainingHours, threshold)]
-
-  if (currentUser.role === 'client') {
-    conditions.push(eq(supportWallet.clientId, currentUser.id))
-  } else if (currentUser.role === 'project_manager') {
-    const visibleIds = await getVisibleWalletIds(currentUser)
-    if (visibleIds && visibleIds.length === 0) return []
-    if (visibleIds) conditions.push(inArray(supportWallet.id, visibleIds))
-  }
+  const scope = await walletScopeConditions(currentUser)
+  if (scope === null) return []
+  const conditions = [lte(supportWallet.remainingHours, threshold), ...scope]
 
   const wallets = await db
     .select()
@@ -262,26 +245,7 @@ async function _getLowBalanceWalletsImpl(currentUser: { id: string; role: string
 
   if (wallets.length === 0) return []
 
-  const userIds = [...new Set(wallets.map(w => w.clientId))]
-  const projectIds = [...new Set(wallets.map(w => w.projectId).filter((id): id is number => id !== null))]
-
-  const [users, projects] = await Promise.all([
-    userIds.length > 0
-      ? db.select({ id: user.id, name: user.name }).from(user).where(inArray(user.id, userIds))
-      : Promise.resolve([]),
-    projectIds.length > 0
-      ? db.select({ id: project.id, projectName: project.projectName }).from(project).where(inArray(project.id, projectIds))
-      : Promise.resolve([]),
-  ])
-
-  const userMap = new Map(users.map(u => [u.id, u]))
-  const projectMap = new Map(projects.map(p => [p.id, p.projectName]))
-
-  return wallets.map(w => ({
-    ...w,
-    clientName: userMap.get(w.clientId)?.name ?? undefined,
-    projectName: projectMap.get(w.projectId!) ?? undefined,
-  }))
+  return withWalletOwners(wallets)
 }
 
 const getCachedLowBalanceWallets = unstable_cache(
@@ -298,17 +262,13 @@ const getCachedLowBalanceWallets = unstable_cache(
 // ─── Get wallet by project (no getCurrentUser needed) ───────────────────
 export const getWalletByProject = unstable_cache(
   async function getWalletByProject(projectId: number) {
-    // One wallet per client — find wallet via the project's clientId
-    const [proj] = await db
-      .select({ clientId: project.clientId })
-      .from(project)
-      .where(eq(project.id, projectId))
-      .limit(1)
-    if (!proj) return null
+    // One wallet per company — the project's company (via its owner).
+    const companyId = await companyIdOfProject(db, projectId)
+    if (!companyId) return null
     const [w] = await db
       .select()
       .from(supportWallet)
-      .where(eq(supportWallet.clientId, proj.clientId))
+      .where(eq(supportWallet.companyId, companyId))
       .limit(1)
     return w || null
   },

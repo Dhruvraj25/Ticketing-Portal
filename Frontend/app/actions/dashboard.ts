@@ -4,7 +4,7 @@ import { getCurrentUser } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
 import {
   ticket, timeLog, user, project, module as moduleTable,
-  projectDeveloper, projectClient, supportWallet, attachment,
+  projectDeveloper, projectClient, attachment,
   notification as notificationSchema,
 } from '@/lib/db/schema'
 import { and, eq, desc, sql, isNull, isNotNull, ne, count, inArray, gte } from 'drizzle-orm'
@@ -18,6 +18,7 @@ import { getConsolidatedDashboardData } from '@/app/actions/tickets/queries'
 // Without this, the first dashboard query races against the async pool
 // warmup, causing cascading timeouts on Neon cold start.
 import { waitForDb } from '@/lib/db'
+import { walletOfUser } from '@/lib/company-wallet'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -416,13 +417,8 @@ async function _fireNotificationReminder(
 }
 
 async function getRenewalStatusInternal(currentUser: { id: string }): Promise<RenewalStatus> {
-  const [wallet] = await db
-    .select({
-      id: supportWallet.id, remainingHours: supportWallet.remainingHours,
-      totalPurchasedHours: supportWallet.totalPurchasedHours,
-      contractStartDate: supportWallet.contractStartDate, contractEndDate: supportWallet.contractEndDate,
-    })
-    .from(supportWallet).where(eq(supportWallet.clientId, currentUser.id)).limit(1)
+  // The client's COMPANY wallet — every user of the company sees the same values.
+  const wallet = await walletOfUser(db, currentUser.id)
 
   if (!wallet) return { showReminder: false, lowHours: false, expiringSoon: false, contractExpired: false, remainingHours: 0, totalPurchasedHours: 0, contractStartDate: null, contractEndDate: null, daysRemaining: 0, walletId: null }
 

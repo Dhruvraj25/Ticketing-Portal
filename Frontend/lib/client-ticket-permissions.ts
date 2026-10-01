@@ -8,24 +8,43 @@
 import { db } from '@/lib/db'
 import { project, projectClient, user } from '@/lib/db/schema'
 import { and, eq, inArray } from 'drizzle-orm'
+import { isProjectClientUser } from '@/lib/project-access-rules'
 
 interface TicketRef {
   clientId: string | null
   projectId: number | null
 }
 
-/** Is `userId` a client account of the ticket's project (primary client or linked via project_client)? */
-export async function isClientOfTicketProject(userId: string, t: TicketRef): Promise<boolean> {
-  if (!t.projectId) return false
+/**
+ * Is `userId` a client user of the project — its primary client
+ * (project.clientId) or linked via project_client? The single project-access
+ * check for clients (lib/project-access-rules.ts); false for a missing project.
+ */
+export async function isClientOfProject(userId: string, projectId: number): Promise<boolean> {
   const [[proj], links] = await Promise.all([
-    db.select({ clientId: project.clientId }).from(project).where(eq(project.id, t.projectId)).limit(1),
+    db.select({ clientId: project.clientId }).from(project).where(eq(project.id, projectId)).limit(1),
     db
       .select({ userId: projectClient.userId })
       .from(projectClient)
-      .where(and(eq(projectClient.projectId, t.projectId), eq(projectClient.userId, userId))),
+      .where(and(eq(projectClient.projectId, projectId), eq(projectClient.userId, userId))),
   ])
   if (!proj) return false
-  return proj.clientId === userId || links.length > 0
+  return isProjectClientUser(proj.clientId, links.map((l) => l.userId), userId)
+}
+
+/** Ids of every project the client user belongs to (primary client or linked) — the project list scope. */
+export async function clientProjectIds(userId: string): Promise<number[]> {
+  const [owned, linked] = await Promise.all([
+    db.select({ projectId: project.id }).from(project).where(eq(project.clientId, userId)),
+    db.select({ projectId: projectClient.projectId }).from(projectClient).where(eq(projectClient.userId, userId)),
+  ])
+  return [...new Set([...owned.map((p) => p.projectId), ...linked.map((p) => p.projectId)])]
+}
+
+/** Is `userId` a client account of the ticket's project (primary client or linked via project_client)? */
+export async function isClientOfTicketProject(userId: string, t: TicketRef): Promise<boolean> {
+  if (!t.projectId) return false
+  return isClientOfProject(userId, t.projectId)
 }
 
 /**

@@ -40,6 +40,8 @@ interface ClientWallet {
   createdAt: Date
   updatedAt: Date
   clientName?: string
+  /** Owning company — the wallet is shared by every user of this company. */
+  companyName?: string
   projectName?: string
   projectCode?: string
 }
@@ -114,10 +116,12 @@ export function SupportWalletClient({ user, wallet, transactions }: SupportWalle
               <Wallet className="h-5 w-5" />
             </PageHeaderIcon>
             <div>
-              <h1 className="text-2xl font-bold text-foreground tracking-tight">Support Wallet</h1>
-              {wallet.projectName && (
-                <p className="text-sm text-muted-foreground">{wallet.projectName}</p>
-              )}
+              <h1 className="text-2xl font-bold text-foreground tracking-tight">
+                {wallet.companyName ? `${wallet.companyName} — Support Wallet` : 'Support Wallet'}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                {wallet.companyName ? 'Shared by all users of your company' : wallet.projectName}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">

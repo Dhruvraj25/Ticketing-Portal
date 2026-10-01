@@ -125,11 +125,13 @@ test('close settles the reservation atomically with the status claim', () => {
   assert.doesNotMatch(UPDATE, /deductWalletHoursAtomic/)
 })
 
-test('every wallet lookup for a ticket uses the shared resolver (raiser, else project owner)', () => {
+test('every wallet lookup for a ticket uses the shared resolver (the ticket company wallet)', () => {
   assert.doesNotMatch(ESTIMATES, /eq\(supportWallet\.clientId, t\.clientId\)/)
   assert.doesNotMatch(UPDATE, /eq\(supportWallet\.clientId, t\.clientId\)/)
   assert.doesNotMatch(CREATE, /eq\(supportWallet\.clientId, actualClientId\)/)
-  assert.match(TICKET_WALLET, /select\(\{ ownerId: project\.clientId \}\)/)
+  // ticket → project → company → wallet (lib/company-wallet.ts); never a personal wallet.
+  assert.match(TICKET_WALLET, /return walletOfCompany\(handle, await companyIdForTicket\(handle, t\)\)/)
+  assert.doesNotMatch(TICKET_WALLET, /supportWallet\.clientId/)
   // Reservations are logged as Adjustment, never as consumption.
   assert.match(TICKET_WALLET, /transactionType: 'Adjustment', hours: h,/)
   assert.doesNotMatch(TICKET_WALLET, /transactionType: 'Deduct Hours'/)

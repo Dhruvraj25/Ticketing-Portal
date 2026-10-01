@@ -36,11 +36,14 @@ test('responsive: 1 column on phones, 2 on small screens, 4 on desktop (wraps, n
   assert.match(CLIENT, /data-tour="wallet-summary" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"/)
 })
 
-test('same data source, authorization unchanged: a client only ever gets their own wallet row', () => {
+test('same data source, authorization unchanged: a client only ever gets their own COMPANY wallet row', () => {
   assert.match(CLIENT_PAGE, /if \(user\.role !== 'client'\) \{\s*\n\s*redirect\('\/dashboard'\)/)
   assert.match(CLIENT_PAGE, /const wallets = await getWallets\(\)/)
-  assert.match(QUERIES, /if \(currentUser\.role === 'client'\) \{\s*\n\s*conditions\.push\(eq\(supportWallet\.clientId, currentUser\.id\)\)/)
-  assert.match(QUERIES, /if \(currentUser\.role === 'client' && w\.clientId !== currentUser\.id\) \{\s*\n\s*throw new Error\('Access denied'\)/)
+  // List: restricted to the wallets of the companies the caller may see (client → own company).
+  assert.match(QUERIES, /const scope = await walletScopeConditions\(currentUser\)\s*\n\s*if \(scope === null\) return \[\]/)
+  assert.match(QUERIES, /\.where\(inArray\(supportWallet\.companyId, companyIds\)\)/)
+  // Detail: a client of another company is refused.
+  assert.match(QUERIES, /if \(currentUser\.role === 'client' && \(w\.companyId == null \|\| w\.companyId !== await companyIdOfUser\(db, currentUser\.id\)\)\) \{\s*\n\s*throw new Error\('Access denied'\)/)
   // Both pages read the full support_wallet row (reservedHours included).
   assert.match(QUERIES, /const wallets = await db\s*\n\s*\.select\(\)\s*\n\s*\.from\(supportWallet\)/)
 })

@@ -1,137 +1,78 @@
 /**
- * Backfill Support Wallets for Existing Clients
+ * Backfill Support Wallets — Company-Level Architecture
  *
- * Ensures every client user in the system has a linked support wallet.
- * Creates one with default values (0 hours, inactive) if none exists.
- * Also creates project-linked wallets for projects that don't have one.
+ * Ensures every company that has client users owns exactly ONE support
+ * wallet (support_wallet.companyId). A company without one gets an empty,
+ * inactive wallet (0 hours) whose primary contact is its Approver (else its
+ * earliest client user). Never creates per-user or per-project wallets.
  *
- * Usage:
- *   npx tsx frontend/scripts/backfill-client-wallets.ts
+ * Client users without a company must be linked first:
+ *   node --env-file=.env --experimental-strip-types scripts/migrate-company-wallets.ts
  *
- * Note: Run from the project root so the @/ path alias resolves correctly
- * (requires tsconfig paths configured).
- * If @/ alias does not resolve, use: npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/backfill-client-wallets.ts
+ * Usage (from Frontend/):
+ *   npx tsx --tsconfig tsconfig.json scripts/backfill-client-wallets.ts
  */
 
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { Pool } from 'pg'
-import { eq, and, isNull, count } from 'drizzle-orm'
-import { user, project, supportWallet } from '@/lib/db/schema'
+import { and, asc, eq, isNull, sql } from 'drizzle-orm'
+import { user, company, supportWallet } from '@/lib/db/schema'
 
 async function main() {
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-  })
-
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL })
   const db = drizzle(pool)
 
-  console.log('🔍 Scanning for clients without support wallets...')
-
-  // Get all client users
-  const allClients = await db
-    .select({ id: user.id, name: user.name, email: user.email })
+  const unlinked = await db
+    .select({ id: user.id })
     .from(user)
-    .where(eq(user.role, 'client'))
-
-  console.log(`   Found ${allClients.length} total client users`)
-
-  // Get all existing wallets grouped by client
-  const existingWallets = await db
-    .select({ clientId: supportWallet.clientId })
-    .from(supportWallet)
-
-  const walletClientIds = new Set(existingWallets.map((w) => w.clientId))
-
-  // Find clients without wallets (no wallet record at all)
-  const clientsWithoutWallets = allClients.filter((c) => !walletClientIds.has(c.id))
-
-  if (clientsWithoutWallets.length === 0) {
-    console.log('✅ All clients already have support wallets. Nothing to backfill for clients.')
-  } else {
-    console.log(`   ${clientsWithoutWallets.length} clients missing support wallets`)
-
-    // Create wallets for each client without one
-    let created = 0
-    for (const c of clientsWithoutWallets) {
-      await db.insert(supportWallet).values({
-        clientId: c.id,
-        projectId: null,
-        totalPurchasedHours: 0,
-        reservedHours: 0,
-        consumedHours: 0,
-        remainingHours: 0,
-        status: 'inactive',
-      })
-      created++
-      console.log(`   ✅ Created wallet for client #${c.id} — ${c.name || c.email}`)
-    }
-
-    console.log()
-    console.log(`🎉 Created ${created} client support wallet(s).`)
-    console.log('   These wallets are inactive with 0 hours. Add hours to activate them.')
-    console.log()
+    .where(and(eq(user.role, 'client'), isNull(user.companyId)))
+  if (unlinked.length > 0) {
+    console.log(`⚠️  ${unlinked.length} client user(s) have no company. Run scripts/migrate-company-wallets.ts first.`)
   }
 
-  // Also check for projects without wallets
-  console.log('🔍 Scanning for projects without support wallets...')
+  const companies = await db
+    .select({ id: company.id, name: company.name })
+    .from(company)
+    .leftJoin(supportWallet, eq(supportWallet.companyId, company.id))
+    .where(isNull(supportWallet.id))
 
-  const allProjects = await db
-    .select({ id: project.id, projectName: project.projectName, clientId: project.clientId })
-    .from(project)
-
-  console.log(`   Found ${allProjects.length} total projects`)
-
-  // Get all existing wallets that are linked to a project
-  const allProjectWallets = await db
-    .select({ projectId: supportWallet.projectId })
-    .from(supportWallet)
-
-  const walletProjectIds = new Set(
-    allProjectWallets
-      .filter((w) => w.projectId !== null)
-      .map((w) => w.projectId as number)
-  )
-
-  const projectsWithoutWallets = allProjects.filter((p) => !walletProjectIds.has(p.id))
-
-  if (projectsWithoutWallets.length === 0) {
-    console.log('✅ All projects already have support wallets. Nothing to backfill for projects.')
-  } else {
-    console.log(`   ${projectsWithoutWallets.length} projects missing support wallets`)
-
-    let created = 0
-    for (const p of projectsWithoutWallets) {
-      await db.insert(supportWallet).values({
-        clientId: p.clientId,
-        projectId: p.id,
-        totalPurchasedHours: 0,
-        reservedHours: 0,
-        consumedHours: 0,
-        remainingHours: 0,
+  let created = 0
+  for (const c of companies) {
+    const members = await db
+      .select({ id: user.id, userType: user.userType })
+      .from(user)
+      .where(and(eq(user.companyId, c.id), eq(user.role, 'client')))
+      .orderBy(asc(user.createdAt), asc(user.id))
+    if (members.length === 0) continue
+    const contact = members.find((m) => m.userType === 'approver') ?? members[0]
+    const rows = await db
+      .insert(supportWallet)
+      .values({
+        clientId: contact.id, companyId: c.id, projectId: null,
+        totalPurchasedHours: 0, reservedHours: 0, consumedHours: 0, remainingHours: 0,
         status: 'inactive',
       })
+      .onConflictDoNothing()
+      .returning({ id: supportWallet.id })
+    if (rows.length) {
       created++
-      console.log(`   ✅ Created wallet for project #${p.id} — ${p.projectName}`)
+      console.log(`   ✅ Created company wallet #${rows[0].id} — ${c.name}`)
     }
-
-    console.log()
-    console.log(`🎉 Created ${created} project support wallet(s).`)
   }
+  console.log(created ? `🎉 Created ${created} company wallet(s) (inactive, 0 hours).` : '✅ Every company already has its wallet.')
 
-  // Summary
-  const [totalWalletCount] = await db
-    .select({ value: count() })
+  const duplicates = await db
+    .select({ companyId: supportWallet.companyId, n: sql<number>`count(*)::int` })
     .from(supportWallet)
-
-  const [totalClientCount] = await db
-    .select({ value: count() })
-    .from(user)
-    .where(eq(user.role, 'client'))
+    .where(sql`${supportWallet.companyId} IS NOT NULL`)
+    .groupBy(supportWallet.companyId)
+    .having(sql`count(*) > 1`)
+  if (duplicates.length) console.log('⚠️  Companies with more than one wallet:', duplicates)
 
   await pool.end()
 }
 
 main().catch((err) => {
-  console.error('❌ Backfill failed:', err)
+  console.error('❌ Backfill failed:', err instanceof Error ? err.message : err)
   process.exit(1)
 })

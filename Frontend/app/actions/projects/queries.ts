@@ -2,13 +2,15 @@
 
 import { unstable_cache } from 'next/cache'
 import { db } from '@/lib/db'
-import { project, user, ticket, module as moduleTable, projectDeveloper, projectClient } from '@/lib/db/schema'
+import { project, user, ticket, module as moduleTable, projectDeveloper } from '@/lib/db/schema'
 import { and, eq, desc, asc, count, inArray, isNotNull, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { wrapServerAction, recordActionExecution, cached } from '@/lib/performance-profiler'
 import { getCurrentUser } from '@/lib/auth-utils'
 import type { ProjectStatus } from '@/lib/types'
 import { PROJECT_CACHE_TTL, getProjectListCacheKey } from './cache'
+import { clientProjectIds, isClientOfProject } from '@/lib/client-ticket-permissions'
+import { PROJECT_ACCESS_DENIED_MESSAGE, PROJECT_NOT_FOUND_MESSAGE } from '@/lib/project-access-rules'
 
 // ============================================================================
 // PROJECT TICKET STATS — lightweight single-query aggregations (cached 60s TTL)
@@ -165,22 +167,9 @@ export const getProjects = wrapServerAction('getProjects', async function getPro
 
   // Role-based filtering
   if (currentUser.role === 'client') {
-    // Check both: direct project.clientId match AND project_client junction table
-    // This ensures ALL client users (primary + secondary) can see their projects.
-    const [directProjects, linkedProjectIds] = await Promise.all([
-      db
-        .select({ projectId: project.id })
-        .from(project)
-        .where(eq(project.clientId, currentUser.id)),
-      db
-        .select({ projectId: projectClient.projectId })
-        .from(projectClient)
-        .where(eq(projectClient.userId, currentUser.id)),
-    ])
-    const allProjectIds = [...new Set([
-      ...directProjects.map((p) => p.projectId),
-      ...linkedProjectIds.map((pc) => pc.projectId),
-    ])]
+    // Primary client (project.clientId) OR linked via project_client — the
+    // same rule getProjectById uses (lib/client-ticket-permissions.ts).
+    const allProjectIds = await clientProjectIds(currentUser.id)
     if (allProjectIds.length === 0) {
       conditions.push(eq(project.id, -1))
     } else {
@@ -472,14 +461,17 @@ export const getProjectById = wrapServerAction('getProjectById', async function 
   const currentUser = await getCurrentUser()
 
   const projectData = await getCachedProjectById(projectId)
-  if (!projectData) throw new Error('Project not found')
+  if (!projectData) throw new Error(PROJECT_NOT_FOUND_MESSAGE)
 
-  // Permission check — runs every time (lightweight, can't cache)
-  if (currentUser.role === 'client' && projectData.clientId !== currentUser.id) {
-    throw new Error('Access denied')
+  // Permission check — runs every time (lightweight, can't cache).
+  // Clients: the primary client OR a client user linked to the project
+  // (project_client — e.g. added from Project Detail → Add User). Same rule
+  // as the project list, so a listed project can always be opened.
+  if (currentUser.role === 'client' && !(await isClientOfProject(currentUser.id, projectId))) {
+    throw new Error(PROJECT_ACCESS_DENIED_MESSAGE)
   }
   if (currentUser.role === 'project_manager' && projectData.managerId !== currentUser.id) {
-    throw new Error('Access denied')
+    throw new Error(PROJECT_ACCESS_DENIED_MESSAGE)
   }
   if (currentUser.role === 'developer') {
     const [devAccess] = await db
@@ -495,7 +487,7 @@ export const getProjectById = wrapServerAction('getProjectById', async function 
         .where(and(eq(ticket.projectId, projectId), eq(ticket.assignedToId, currentUser.id)))
         .limit(1)
       if (Number(ticketAccess?.count) === 0) {
-        throw new Error('Access denied')
+        throw new Error(PROJECT_ACCESS_DENIED_MESSAGE)
       }
     }
   }
@@ -516,21 +508,8 @@ async function _getProjectNamesData(role: string, userId: string, filters?: {
   const conditions: ReturnType<typeof eq>[] = []
 
   if (role === 'client') {
-    // Check both: direct project.clientId match AND project_client junction table
-    const [directProjects, linkedProjectIds] = await Promise.all([
-      db
-        .select({ projectId: project.id })
-        .from(project)
-        .where(eq(project.clientId, userId)),
-      db
-        .select({ projectId: projectClient.projectId })
-        .from(projectClient)
-        .where(eq(projectClient.userId, userId)),
-    ])
-    const allProjectIds = [...new Set([
-      ...directProjects.map((p) => p.projectId),
-      ...linkedProjectIds.map((pc) => pc.projectId),
-    ])]
+    // Primary client OR linked via project_client (same rule as the list/detail).
+    const allProjectIds = await clientProjectIds(userId)
     if (allProjectIds.length === 0) {
       conditions.push(eq(project.id, -1))
     } else {

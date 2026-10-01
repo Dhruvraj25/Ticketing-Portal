@@ -2,7 +2,8 @@
 // wallet-validation — shared Support Wallet business rules for ticket
 // creation, estimate submission/approval, and the final hour deduction.
 //
-// SOURCE OF TRUTH: the `supportWallet` table (one row per client). The
+// SOURCE OF TRUTH: the `supportWallet` table (one row per COMPANY, shared by
+// all of its client users — lib/company-wallet.ts). The
 // authoritative remaining-hours formula, already used elsewhere in this
 // codebase (see recalculateWallet in app/actions/wallet/renewals.ts), is:
 //   remaining = totalPurchasedHours - consumedHours - reservedHours

@@ -94,11 +94,15 @@ test('getClientProjectReport: a client-role caller\'s own id always wins over an
   assert.match(body, /else if \(filters\.clientId\) clientIds = \[filters\.clientId\]/, 'the filter branch must be an ELSE — unreachable for a client-role caller')
 })
 
-test('wallet report handlers all AND a role-derived client scope before any filter-supplied clientId', () => {
+test('wallet report handlers all AND a role-derived company scope before any filter-supplied clientId', () => {
   for (const fn of ['getSupportWalletReport', 'getWalletTransactionReport', 'getWalletHistoryReport']) {
     const body = functionBody(WALLET_REPORTS_SRC, `export async function ${fn}`)
-    assert.match(body, /currentUser\.role === 'client'\) (conditions|walletConditions)\.push\(eq\(supportWallet\.clientId, currentUser\.id\)\)/, `${fn} must unconditionally scope a client-role caller to their own wallet`)
+    assert.match(body, /await walletReportConditions\(filters, currentUser\)/, `${fn} must scope a client-role caller to their own company wallet`)
   }
+  // The role scope is pushed first; a client filter can only narrow it further (AND), never widen it.
+  const scope = functionBody(WALLET_REPORTS_SRC, 'async function walletReportConditions')
+  assert.ok(scope.indexOf('visibleCompanyIds(db, currentUser)') < scope.indexOf('filters.clientId'))
+  assert.match(scope, /conditions\.push\(inArray\(supportWallet\.companyId, companyIds\)\)/)
 })
 
 test('getWalletConsumptionReport already uses the org-aware getClientOrgUserIds scope (unchanged by this phase)', () => {

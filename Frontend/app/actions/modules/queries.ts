@@ -5,6 +5,7 @@ import { unstable_cache } from 'next/cache'
 import { db } from '@/lib/db'
 import { module as moduleTable, project, ticket, projectDeveloper } from '@/lib/db/schema'
 import { and, eq, desc, asc, count, inArray, isNotNull, sql, like, or } from 'drizzle-orm'
+import { isClientOfProject } from '@/lib/client-ticket-permissions'
 import { TicketStatus } from '@/lib/types'
 import type { ModuleStatus } from '@/lib/types'
 import { wrapServerAction } from '@/lib/performance-profiler'
@@ -477,14 +478,10 @@ const getCachedModulesByProject = unstable_cache(
 export const getModulesByProject = wrapServerAction('getModulesByProject', async function getModulesByProject(projectId: number) {
   const currentUser = await getCurrentUser()
 
-  // Access check
+  // Access check — clients: primary client OR linked via project_client
+  // (same rule as getProjectById / the project list).
   if (currentUser.role === 'client') {
-    const [p] = await db
-      .select({ id: project.id })
-      .from(project)
-      .where(and(eq(project.id, projectId), eq(project.clientId, currentUser.id)))
-      .limit(1)
-    if (!p) throw new Error('Access denied')
+    if (!(await isClientOfProject(currentUser.id, projectId))) throw new Error('Access denied')
   } else if (currentUser.role === 'developer') {
     const [devAccess] = await db
       .select({ count: count() })

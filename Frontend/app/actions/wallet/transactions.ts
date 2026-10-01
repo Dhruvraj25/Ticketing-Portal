@@ -7,6 +7,8 @@ import { and, eq, desc, inArray, gte, lte, sql, isNull, count as drizzleCount } 
 import { unstable_cache } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth-utils'
 import type { WalletTransactionType } from '@/lib/types'
+import { assertClientWalletAccess } from '@/lib/company-wallet'
+import { alias } from 'drizzle-orm/pg-core'
 
 const TRANSACTIONS_PER_PAGE = 20
 
@@ -26,9 +28,8 @@ export async function _getWalletTransactionsImpl(
     .limit(1)
 
   if (!w) throw new Error('Wallet not found')
-  if (currentUser.role === 'client' && w.clientId !== currentUser.id) {
-    throw new Error('Access denied')
-  }
+  // Company-wide history: any client user of the wallet's company, nobody else.
+  await assertClientWalletAccess(db, currentUser, w)
 
   const conditions = [eq(walletTransaction.walletId, walletId)]
 
@@ -90,11 +91,15 @@ export async function _getWalletTicketConsumptionImpl(currentUser: { id: string;
     .limit(1)
 
   if (!w) throw new Error('Wallet not found')
-  if (currentUser.role === 'client' && w.clientId !== currentUser.id) {
-    throw new Error('Access denied')
-  }
+  // Company-wide history: any client user of the wallet's company, nobody else.
+  await assertClientWalletAccess(db, currentUser, w)
 
-  // One wallet per client — fetch all tickets for this client
+  // One wallet per company — every ticket that draws on it: tickets of the
+  // company's projects, plus tickets raised by its users that have no project
+  // company (the same ticket → project → company rule as lib/company-wallet.ts).
+  if (w.companyId == null) return []
+  const owner = alias(user, 'project_owner')
+  const raiser = alias(user, 'ticket_raiser')
   const tickets = await db
     .select({
       id: ticket.id,
@@ -109,7 +114,10 @@ export async function _getWalletTicketConsumptionImpl(currentUser: { id: string;
       createdAt: ticket.createdAt,
     })
     .from(ticket)
-    .where(eq(ticket.clientId, w.clientId))
+    .leftJoin(project, eq(project.id, ticket.projectId))
+    .leftJoin(owner, eq(owner.id, project.clientId))
+    .leftJoin(raiser, eq(raiser.id, ticket.clientId))
+    .where(sql`COALESCE(${owner.companyId}, ${raiser.companyId}) = ${w.companyId}`)
     .orderBy(desc(ticket.createdAt))
 
   return tickets.map(t => ({

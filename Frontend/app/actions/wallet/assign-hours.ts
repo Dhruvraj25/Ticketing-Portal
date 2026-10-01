@@ -9,6 +9,7 @@ import { getCurrentUser } from '@/lib/auth-utils'
 import { getPortalUrl } from '@/lib/urls'
 import { dispatchNotification, resetNotificationState } from '@/lib/notify-all'
 import { WALLET_CACHE_TAGS } from './constants'
+import { companyIdOfProject, ensureCompanyWallet, ensureUserCompany } from '@/lib/company-wallet'
 
 // ─── Invalidate all wallet caches ──────────────────────────────────────
 function invalidateWalletCaches(walletId: number) {
@@ -327,31 +328,17 @@ export const adjustWalletHours = async function adjustWalletHours(data: {
   return updated
 }
 
-// ─── Auto-create wallet for client ─────────────────────────────────────
+// ─── Ensure the client's COMPANY wallet ───────────────────────────────
+// One wallet per company: returns the company's existing wallet, or creates
+// an empty inactive one (0 hours) if the company has none. A user added to an
+// existing company never gets a wallet of their own.
 export const autoCreateWalletForClient = async function autoCreateWalletForClient(clientId: string) {
-  const [existing] = await db
-    .select()
-    .from(supportWallet)
-    .where(eq(supportWallet.clientId, clientId))
-    .limit(1)
-
-  if (existing) return existing
-
-  const [newWallet] = await db
-    .insert(supportWallet)
-    .values({
-      clientId, projectId: null,
-      totalPurchasedHours: 0, reservedHours: 0, consumedHours: 0, remainingHours: 0,
-      status: 'inactive',
-    })
-    .returning()
-
-  console.log(`[Support Hero] Auto-created client wallet #${newWallet.id} for client ${clientId}`)
-  return newWallet
+  const companyId = await ensureUserCompany(db, clientId)
+  return ensureCompanyWallet(db, companyId, clientId)
 }
 
-// ─── Auto-create wallet for project (redirects to client-level wallet) ──
+// ─── Ensure the project's company wallet ───────────────────────────────
 export const autoCreateWalletForProject = async function autoCreateWalletForProject(projectId: number, clientId: string) {
-  // One wallet per client — just ensure the client has a wallet
-  return autoCreateWalletForClient(clientId)
+  const companyId = (await companyIdOfProject(db, projectId)) ?? (await ensureUserCompany(db, clientId))
+  return ensureCompanyWallet(db, companyId, clientId)
 }

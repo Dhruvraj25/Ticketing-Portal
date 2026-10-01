@@ -299,6 +299,14 @@ export interface SupportWallet {
   status: WalletStatus
   createdAt: Date
   updatedAt: Date
+  /** Owning company (one wallet per company, shared by all its client users). */
+  companyId?: number | null
+  companyName?: string
+  companyCode?: string | null
+  /** Primary contact — the user the wallet was created for (display only). */
+  contactName?: string
+  contactEmail?: string
+  /** Company-first label used by wallet lists and search (= companyName). */
   clientName?: string
   clientEmail?: string
   projectName?: string
