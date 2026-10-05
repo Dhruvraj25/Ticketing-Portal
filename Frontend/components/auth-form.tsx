@@ -27,34 +27,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { getFriendlyError } from '@/lib/error-utils'
+import { SupportHeroLogo, SupportHeroMark } from '@/components/brand/support-hero-logo'
 
 interface AuthFormProps {
   mode: 'sign-in' | 'sign-up'
-}
-
-/* ────────────────────────────────────────────────────────────────────────
- * SupportHub brand mark — connected-nodes logo used across the portal
- * ──────────────────────────────────────────────────────────────────────── */
-function LogoMark({ className = 'h-8 w-8' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 32 32" fill="none" className={className} aria-hidden="true">
-      <circle cx="8" cy="16" r="4" fill="currentColor" />
-      <circle cx="24" cy="8" r="4" fill="currentColor" />
-      <circle cx="24" cy="24" r="4" className="fill-emerald-500" />
-      <path
-        d="M11.5 14.5L20.5 9.5"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-      />
-      <path
-        d="M11.5 17.5L20.5 22.5"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -294,13 +270,13 @@ export function AuthForm({ mode }: AuthFormProps) {
     <div className="min-h-screen w-full flex flex-col lg:flex-row lg:h-screen lg:overflow-hidden font-inter transition-colors bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
       {/* ── Mobile brand strip ─────────────────────────────────────────── */}
       <div className="lg:hidden flex items-center px-6 pt-8 pb-2">
-        <div className="flex items-center gap-2.5 text-slate-900 dark:text-slate-100">
-          <LogoMark className="h-7 w-7" />
-          <div>
-            <p className="text-lg font-bold tracking-tight leading-none">Support Hero</p>
-            <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+        <div className="flex items-center gap-3 min-w-0 text-slate-900 dark:text-slate-100">
+          <SupportHeroLogo className="h-10 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
               Enterprise Ticketing Portal
-            </p>              <p className="mt-0.5 text-[8px] font-medium uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
+            </p>
+            <p className="mt-0.5 text-[8px] font-medium uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
               Product by Infinixo Technologies
             </p>
           </div>
@@ -319,12 +295,9 @@ export function AuthForm({ mode }: AuthFormProps) {
 
         {/* Header */}
         <div className="relative z-10 flex items-center gap-3 animate-fade-in">
-          <LogoMark className="h-9 w-9 text-slate-900 dark:text-slate-100" />
+          <SupportHeroLogo className="h-12 shrink-0" />
           <div>
-            <p className="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
-              Support Hero
-            </p>
-            <p className="mt-1.5 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+            <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
               Enterprise Ticketing Portal
             </p>
             <p className="mt-1 text-[8px] font-medium uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
@@ -388,8 +361,8 @@ export function AuthForm({ mode }: AuthFormProps) {
           <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_-12px_rgba(15,23,42,0.12)]">
             {/* Card header */}
             <div className="mb-6">
-              <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-950 text-white dark:bg-white dark:text-slate-950">
-                <LogoMark className="h-5 w-5" />
+              <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700">
+                <SupportHeroMark alt="" className="h-8 w-8" sizes="40px" />
               </div>
               <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">
                 {isSignIn ? 'Welcome back' : 'Create Account'}

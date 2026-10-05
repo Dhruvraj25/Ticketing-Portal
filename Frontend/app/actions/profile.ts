@@ -430,8 +430,13 @@ export const updateProfileImage = wrapServerAction('updateProfileImage', async f
     })
     .where(eq(user.id, currentUser.id))
 
+  // The sidebar and top-header avatars read avatarUrl from the cached session
+  // user. Drop this process's entry and expire the shared one outright (a
+  // stale-while-revalidate expiry would serve the old photo on the next render
+  // and re-cache it for 5 minutes).
+  invalidateAuthUserCache(currentUser.id)
   revalidatePath('/dashboard/profile')
-  revalidateTag('auth-user', { expire: 300 })
+  revalidateTag('auth-user', { expire: 0 })
   return { success: true }
 })
 
@@ -457,7 +462,9 @@ export const removeProfileImage = wrapServerAction('removeProfileImage', async f
     .set({ avatarUrl: null, image: null, updatedAt: new Date() })
     .where(eq(user.id, currentUser.id))
 
+  // Same as updateProfileImage: make the header/sidebar drop the photo now.
+  invalidateAuthUserCache(currentUser.id)
   revalidatePath('/dashboard/profile')
-  revalidateTag('auth-user', { expire: 300 })
+  revalidateTag('auth-user', { expire: 0 })
   return { success: true }
 })

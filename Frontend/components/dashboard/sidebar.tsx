@@ -10,6 +10,8 @@ import { resolveActiveNav, isRouteActive } from '@/lib/navigation'
 import { useTheme } from '@/components/theme-provider'
 import { useBranding } from '@/components/dashboard/branding-provider'
 import { useSidebar } from '@/components/dashboard/sidebar-provider'
+import { SupportHeroLogo, SupportHeroMark } from '@/components/brand/support-hero-logo'
+import { UserAvatar } from '@/components/dashboard/user-avatar'
 import { signOutAndRedirect } from '@/lib/client-sign-out'
 import {
   Ticket,
@@ -194,7 +196,6 @@ export function DashboardSidebar({ userRole, userName, userEmail, userAvatarUrl 
 
   const isDark = theme === 'dark'
   const navItems = navItemsByRole[userRole] ?? []
-  const isClientRole = userRole === 'client'
 
   // Single-winner active state: resolve the highlight against the full nav
   // list so the most specific route wins — a dedicated child item (e.g.
@@ -203,18 +204,18 @@ export function DashboardSidebar({ userRole, userName, userEmail, userAvatarUrl 
   // back to the parent module ("My Tickets").
   const activeHrefs = resolveActiveNav(pathname, navItems)
 
+  // Every role gets the same Support Hero branding until an admin uploads a
+  // custom logo in Branding Settings. The full logo already spells the name,
+  // so it replaces tile + text unless the company was renamed without a logo.
+  const showWordmark = !branding.logoUrl && (!branding.companyName || branding.companyName === 'Support Hero')
+
   const brandTile = branding.logoUrl ? (
     <div className="w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm shrink-0">
       <Image src={branding.logoUrl} alt={branding.companyName} width={36} height={36} className="w-9 h-9 object-contain" />
     </div>
   ) : (
-    <div
-      className={cn(
-        'w-9 h-9 rounded-xl flex items-center justify-center font-bold text-white shadow-sm transition-transform group-hover:scale-105 font-mono text-base shrink-0',
-        isDark ? 'bg-emerald-500 text-slate-950' : 'bg-slate-950'
-      )}
-    >
-      {isClientRole ? 'N' : 'S'}
+    <div className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center bg-white border border-slate-200 dark:border-slate-700 shadow-sm transition-transform group-hover:scale-105 shrink-0">
+      <SupportHeroMark className="w-9 h-9" sizes="40px" />
     </div>
   )
 
@@ -238,13 +239,29 @@ export function DashboardSidebar({ userRole, userName, userEmail, userAvatarUrl 
         )}
       >
         {/* Brand Header */}
-        <div className="flex items-center justify-between mb-6 px-1">
-          <Link href="/dashboard" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 cursor-pointer group">
-            {brandTile}
-            {!collapsed && (
-              <span className="font-bold text-lg leading-none tracking-tight flex items-center gap-1">
-                {branding.companyName || (isClientRole ? 'Nirka' : 'Support Hero')}
-              </span>
+        {/* The collapsed desktop rail is too narrow for mark + toggle side by
+            side, so they stack there. */}
+        <div className={cn('flex items-center justify-between gap-2 mb-6 px-1', collapsed && 'lg:flex-col lg:gap-3')}>
+          <Link href="/dashboard" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 min-w-0 cursor-pointer group">
+            {showWordmark ? (
+              <>
+                {/* Collapsed desktop rail shows the square mascot mark; the
+                    mobile drawer is always full width, so it keeps the full logo. */}
+                {collapsed && <span className="hidden lg:block">{brandTile}</span>}
+                <span className={cn('block min-w-0', collapsed && 'lg:hidden')}>
+                  {/* 64px tall ≈ 164px wide — fills the brand row beside the collapse toggle. */}
+                  <SupportHeroLogo surface={isDark ? 'dark' : 'light'} className="h-16" sizes="170px" />
+                </span>
+              </>
+            ) : (
+              <>
+                {brandTile}
+                {!collapsed && (
+                  <span className="font-bold text-lg leading-none tracking-tight flex items-center gap-1">
+                    {branding.companyName || 'Support Hero'}
+                  </span>
+                )}
+              </>
             )}
           </Link>
           <button
@@ -360,11 +377,7 @@ export function DashboardSidebar({ userRole, userName, userEmail, userAvatarUrl 
                   isDark ? 'bg-emerald-500 text-slate-950' : 'bg-slate-950 text-white'
                 )}
               >
-                {userAvatarUrl ? (
-                  <Image src={userAvatarUrl} alt={userName} width={36} height={36} className="w-full h-full object-cover" />
-                ) : (
-                  userName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
-                )}
+                <UserAvatar name={userName} src={userAvatarUrl} size={36} />
               </div>
               {!collapsed && (
                 <div className="flex-1 min-w-0">

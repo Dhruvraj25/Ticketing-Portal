@@ -16,6 +16,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { getFriendlyError } from '@/lib/error-utils'
+import { SupportHeroLogo } from '@/components/brand/support-hero-logo'
 
 function ResetPasswordForm() {
   const router = useRouter()
@@ -100,16 +101,8 @@ function ResetPasswordForm() {
 
         <div className="relative z-10">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 flex items-center justify-center text-white">
-              <svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="8" cy="16" r="4" fill="white" />
-                <circle cx="24" cy="8" r="4" fill="white" />
-                <circle cx="24" cy="24" r="4" fill="white" />
-                <path d="M11.5 14.5L20.5 9.5" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
-                <path d="M11.5 17.5L20.5 22.5" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
-              </svg>
-            </div>
-            <span className="text-2xl font-extrabold tracking-tight text-white font-sans">Support Hero</span>
+            {/* This panel is black in both themes, so always use the dark-surface logo. */}
+            <SupportHeroLogo surface="dark" className="h-12" />
           </div>
         </div>
 

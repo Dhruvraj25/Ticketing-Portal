@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
+import { UserAvatar } from '@/components/dashboard/user-avatar'
 import { usePathname, useRouter } from 'next/navigation'
 import { Search, User, LogOut, Menu, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -148,11 +148,7 @@ export function TopHeader({ userName, userEmail, userAvatarUrl, userRole }: TopH
               aria-expanded={showUserMenu}
             >
               <div className="w-full h-full bg-slate-950 dark:bg-emerald-500 text-white dark:text-slate-950 flex items-center justify-center font-bold text-xs font-mono">
-                {userAvatarUrl ? (
-                  <Image src={userAvatarUrl} alt={userName} width={32} height={32} className="w-full h-full object-cover" />
-                ) : (
-                  userName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
-                )}
+                <UserAvatar name={userName} src={userAvatarUrl} size={32} />
               </div>
             </button>
 

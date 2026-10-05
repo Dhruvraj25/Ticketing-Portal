@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Sparkles, Clock, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { SupportHeroMark } from '@/components/brand/support-hero-logo'
 
 interface WelcomeModalProps {
   open: boolean
@@ -78,8 +79,8 @@ export function WelcomeModal({
             <div className="relative p-7">
               {/* Brand tile */}
               <div className="flex items-center gap-4 mb-6">
-                <div className="h-14 w-14 rounded-2xl bg-slate-950 dark:bg-emerald-500 flex items-center justify-center shadow-lg shadow-slate-950/20">
-                  <span className="text-xl font-bold text-white dark:text-slate-950 font-mono">S</span>
+                <div className="h-14 w-14 shrink-0 rounded-2xl bg-white border border-slate-200 dark:border-slate-700 flex items-center justify-center shadow-lg shadow-slate-950/20">
+                  <SupportHeroMark alt="" className="h-12 w-12" sizes="56px" />
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
